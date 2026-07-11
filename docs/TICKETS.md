@@ -21,10 +21,10 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
 | GC-015 | R2 image upload in editor | 1 | M | Blocked (needs: CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_PUBLIC_BASE_URL) | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Done | GC-014 |
-| GC-017 | AWS SES sending service | 1 | M | Not Started | GC-013 |
-| GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Not Started | GC-017 |
-| GC-019 | Open + click tracking | 1 | M | Not Started | GC-017 |
-| GC-020 | One-off campaign send flow | 1 | L | Not Started | GC-011, GC-016, GC-017, GC-018, GC-019 |
+| GC-017 | AWS SES sending service | 1 | M | Blocked (needs: AWS credentials, verified SES identity) | GC-013 |
+| GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Blocked (needs: GC-017) | GC-017 |
+| GC-019 | Open + click tracking | 1 | M | Blocked (needs: GC-017) | GC-017 |
+| GC-020 | One-off campaign send flow | 1 | L | Blocked (needs: GC-017, GC-018, GC-019) | GC-011, GC-016, GC-017, GC-018, GC-019 |
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
