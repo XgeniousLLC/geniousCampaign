@@ -30,7 +30,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Blocked (needs: reference implementation) | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Blocked (needs: GC-031, GC-017) | GC-031, GC-020 |
-| GC-033 | Admin UI: sequence builder | 2 | M | Not Started | GC-030, GC-021 |
+| GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
 | GC-034 | Admin UI: contact enrollment panel | 2 | S | Blocked (needs: GC-031) | GC-031, GC-021 |
 | GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |

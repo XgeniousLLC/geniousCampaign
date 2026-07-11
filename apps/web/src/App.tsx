@@ -5,6 +5,8 @@ import { TemplatesList } from './routes/TemplatesList';
 import { TemplateEditor } from './routes/TemplateEditor';
 import { ContactsList } from './routes/ContactsList';
 import { ContactDetail } from './routes/ContactDetail';
+import { SequencesList } from './routes/SequencesList';
+import { SequenceBuilder } from './routes/SequenceBuilder';
 
 function App() {
   return (
@@ -17,6 +19,8 @@ function App() {
           <Route path="templates" element={<TemplatesList />} />
           <Route path="templates/new" element={<TemplateEditor />} />
           <Route path="templates/:id" element={<TemplateEditor />} />
+          <Route path="sequences" element={<SequencesList />} />
+          <Route path="sequences/:id" element={<SequenceBuilder />} />
         </Route>
       </Routes>
     </BrowserRouter>
