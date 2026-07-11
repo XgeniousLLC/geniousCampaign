@@ -19,7 +19,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-012 | CSV contact import (queued) | 1 | M | Done | GC-010, GC-011 |
 | GC-013 | Templates schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
-| GC-015 | R2 image upload in editor | 1 | M | Not Started | GC-014 |
+| GC-015 | R2 image upload in editor | 1 | M | Blocked (needs: CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_PUBLIC_BASE_URL) | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Not Started | GC-014 |
 | GC-017 | AWS SES sending service | 1 | M | Not Started | GC-013 |
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Not Started | GC-017 |
@@ -181,6 +181,8 @@ Import the R2 reference implementation (see `CLAUDE.md`): presign endpoint, `R2I
 **Acceptance criteria:**
 - Pasting/dropping/inserting an image results in an R2 URL in the saved template, never a base64 data URI.
 - R2 bucket CORS is configured per the reference implementation's README; direct browser-to-R2 upload works.
+
+**Blocked 2026-07-11**: `.env`'s `CLOUDFLARE_R2_*` vars are all empty — no R2 account/bucket/keys provided yet. Also still need the reference implementation itself pasted in per `CLAUDE.md`'s "Reference implementations already drafted" section. Move to GC-016 in the meantime.
 
 ### GC-016 — Spintax spinBlock extension + resolver
 Custom TipTap node for `{option A|option B}` in both subject and body, plus a `resolveSpintax(text): string` function used at send time (not save time).
