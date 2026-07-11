@@ -15,6 +15,11 @@ export function Layout() {
                 Dashboard
               </Link>
             </li>
+            <li>
+              <Link to="/templates" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Templates
+              </Link>
+            </li>
           </ul>
         </nav>
       )}

@@ -18,7 +18,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-011 | Lists + tags schema + CRUD API | 1 | M | Done | GC-010 |
 | GC-012 | CSV contact import (queued) | 1 | M | Done | GC-010, GC-011 |
 | GC-013 | Templates schema + CRUD API | 1 | M | Done | GC-004 |
-| GC-014 | TipTap editor base integration | 1 | M | Not Started | GC-013, GC-006 |
+| GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
 | GC-015 | R2 image upload in editor | 1 | M | Not Started | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Not Started | GC-014 |
 | GC-017 | AWS SES sending service | 1 | M | Not Started | GC-013 |
@@ -173,6 +173,8 @@ TipTap wired into the React admin for template subject + body editing, with Star
 **Acceptance criteria:**
 - Editing and saving a template round-trips `bodyJson` correctly through GC-013's API.
 - Personalization token insertion (`{{contact.firstName}}`) works as a distinct, visually-marked node, not raw text the user could accidentally mangle.
+
+*(Implementation note: subject is a plain text field, not a second TipTap instance — matches the design file's TEMPLATE EDITOR section, which renders `activeTemplate.subject` as flat text with no token pills, unlike the body. Personalization tokens in the subject are typed as literal `{{contact.firstName}}` text.)*
 
 ### GC-015 — R2 image upload in editor
 Import the R2 reference implementation (see `CLAUDE.md`): presign endpoint, `R2Image` TipTap extension, upload placeholder, toolbar button.
