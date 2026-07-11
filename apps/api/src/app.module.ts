@@ -7,6 +7,7 @@ import { HealthModule } from './health/health.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { ListsModule } from './lists/lists.module';
 import { TagsModule } from './tags/tags.module';
+import { TemplatesModule } from './templates/templates.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TagsModule } from './tags/tags.module';
     ContactsModule,
     ListsModule,
     TagsModule,
+    TemplatesModule,
   ],
 })
 export class AppModule {}

@@ -17,7 +17,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-010 | Contacts schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-011 | Lists + tags schema + CRUD API | 1 | M | Done | GC-010 |
 | GC-012 | CSV contact import (queued) | 1 | M | Done | GC-010, GC-011 |
-| GC-013 | Templates schema + CRUD API | 1 | M | Not Started | GC-004 |
+| GC-013 | Templates schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-014 | TipTap editor base integration | 1 | M | Not Started | GC-013, GC-006 |
 | GC-015 | R2 image upload in editor | 1 | M | Not Started | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Not Started | GC-014 |
