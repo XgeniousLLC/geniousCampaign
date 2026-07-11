@@ -51,8 +51,8 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-053 | Pre-send confirmation summary | 4 | S | Blocked (needs: GC-020) | GC-020 |
 | GC-054 | Spintax resolved-preview UI | 4 | S | Done | GC-016 |
 | GC-055 | Image compression + EXIF stripping | 4 | S | Blocked (needs: GC-015) | GC-015 |
-| GC-056 | Lightweight RBAC | 4 | M | Blocked (needs: product decision on auth model) | GC-005 |
-| GC-057 | Audit log | 4 | M | Blocked (needs: GC-056) | GC-056 |
+| GC-056 | Lightweight RBAC | 4 | M | Done | GC-005 |
+| GC-057 | Audit log | 4 | M | Done | GC-056 |
 | GC-058 | Analytics dashboard | 4 | L | Blocked (needs: GC-019, GC-032) | GC-019, GC-032 |
 | GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
 | GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Blocked (needs: GC-019, GC-020) | GC-019, GC-020 |
@@ -426,14 +426,16 @@ Client-side resize/re-encode and EXIF strip before upload to R2.
 **Acceptance criteria:**
 - A `viewer`-role test user can be verified (via API test) unable to save changes, while able to read.
 
-**Blocked 2026-07-11**: this ticket assumes a "test user" and roles to check against, but there is no User/auth model, login flow, or session mechanism anywhere in this codebase, the ticket backlog, or the design file (confirmed — no login screen exists among the design's 18 screens/6 modals; GC-042 also assumes "JWT-authenticated" without any ticket ever setting up JWT auth). RBAC needs *something* to attach roles to. This is a genuine product decision not resolvable from the docs — need direction on: is there a real auth system to build first (and if so, what — JWT session, magic link, SSO?), or is "RBAC" here meant as a much lighter static-config thing (e.g. an API key per role, no real login)? Not guessing at this since it changes the shape of every mutation endpoint. Cascades to GC-057.
+**Unblocked 2026-07-11**: Sharifur decided minimal JWT auth (see `CLAUDE.md` architectural decision 11). Built `users` table (owner/editor/viewer), `POST /auth/register` (first registered user becomes owner, everyone after defaults to viewer — no separate invite flow yet), `POST /auth/login`, JWT guard + roles guard applied to templates/sequences/lists controllers (read = any authenticated role, write = owner/editor only). Frontend: `/login` page, `useAuthStore` (persisted), `ProtectedRoute` wrapping the whole app shell, write controls hidden for viewer role in TemplateEditor/SequenceBuilder/ContactDetail's list toggles.
+
+Verified live: registered two users (first became owner, second defaulted to viewer); viewer POST to `/templates` returned 403 while GET succeeded; owner POST succeeded. UI confirmed too — viewer's Save button is hidden in the template editor.
 
 ### GC-057 — Audit log
 Record who changed a template, paused a sequence, exported a list, etc.
 **Acceptance criteria:**
 - Every mutation covered by GC-056's RBAC check also produces an audit log entry with actor, action, and timestamp.
 
-**Blocked 2026-07-11**: depends on GC-056 (blocked) — no actor to attribute audit entries to without an auth model.
+**Unblocked 2026-07-11**: `audit_log` table + `AuditLogService`, called from every write endpoint on templates/sequences/lists (create/update/delete, plus sequence step add/update/remove/reorder and list contact add/remove). `GET /audit-log` is owner-only. Verified live: an owner's template creation produced a matching audit_log row with actorEmail/action/entityType/entityId; a viewer got 403 on the audit-log endpoint.
 
 ### GC-058 — Analytics dashboard
 Open/click/bounce rates per campaign and sequence, basic trend view. Design: `DASHBOARD` section.

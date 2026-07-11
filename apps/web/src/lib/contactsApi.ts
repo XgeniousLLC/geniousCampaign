@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost, API_BASE_URL, authHeadersForUpload } from './api';
 
 export interface Contact {
   id: string;
@@ -102,10 +102,13 @@ export function removeContactList(listId: string, contactId: string) {
 }
 
 export async function uploadContactsCsv(file: File): Promise<{ jobId: string }> {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${API_BASE_URL}/contacts/import`, { method: 'POST', body: form });
+  const res = await fetch(`${API_BASE_URL}/contacts/import`, {
+    method: 'POST',
+    headers: { ...authHeadersForUpload() },
+    body: form,
+  });
   if (!res.ok) throw new Error(`Import upload failed: ${res.status}`);
   return res.json();
 }

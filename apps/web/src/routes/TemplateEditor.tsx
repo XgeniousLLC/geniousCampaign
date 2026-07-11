@@ -8,6 +8,7 @@ import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
+import { useAuthStore } from '../stores/useAuthStore';
 
 const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] };
 
@@ -21,10 +22,12 @@ export function TemplateEditor() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [loaded, setLoaded] = useState(isNew);
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   const editor = useEditor({
     extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken, SpintaxBlock],
     content: EMPTY_DOC,
+    editable: canWrite,
   });
 
   useEffect(() => {
@@ -67,13 +70,15 @@ export function TemplateEditor() {
             onChange={(e) => setName(e.target.value)}
             className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-text-heading outline-none"
           />
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          {canWrite && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          )}
         </div>
 
         <TemplateEditorToolbar editor={editor} />

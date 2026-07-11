@@ -14,6 +14,7 @@ import {
   type StepType,
 } from '../lib/sequencesApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
+import { useAuthStore } from '../stores/useAuthStore';
 
 const STEP_LABELS: Record<StepType, string> = {
   send_email: 'Send email',
@@ -29,6 +30,7 @@ export function SequenceBuilder() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
     if (!id) return;
@@ -105,7 +107,8 @@ export function SequenceBuilder() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={saveName}
-          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-text-heading outline-none"
+          disabled={!canWrite}
+          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-text-heading outline-none disabled:opacity-70"
         />
         {savingName && <span className="text-xs text-text-faint">Saving…</span>}
       </div>
@@ -134,7 +137,8 @@ export function SequenceBuilder() {
                     <select
                       value={step.type}
                       onChange={(e) => handleStepTypeChange(step.id, e.target.value as StepType)}
-                      className="mb-1.5 h-6 rounded border border-border-default bg-field px-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-label"
+                      disabled={!canWrite}
+                      className="mb-1.5 h-6 rounded border border-border-default bg-field px-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-label disabled:opacity-60"
                     >
                       {(Object.keys(STEP_LABELS) as StepType[]).map((t) => (
                         <option key={t} value={t}>
@@ -147,7 +151,8 @@ export function SequenceBuilder() {
                       <select
                         value={step.templateId ?? ''}
                         onChange={(e) => handleTemplateChange(step.id, e.target.value)}
-                        className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary"
+                        disabled={!canWrite}
+                        className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
                       >
                         <option value="">Select a template…</option>
                         {templates.map((t) => (
@@ -178,37 +183,43 @@ export function SequenceBuilder() {
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <button
-                      onClick={() => move(i, -1)}
-                      disabled={i === 0}
-                      className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => move(i, 1)}
-                      disabled={i === steps.length - 1}
-                      className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                  <button onClick={() => handleRemoveStep(step.id)} className="ml-1 text-text-faint hover:text-danger">
-                    ✕
-                  </button>
+                  {canWrite && (
+                    <>
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => move(i, -1)}
+                          disabled={i === 0}
+                          className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          onClick={() => move(i, 1)}
+                          disabled={i === steps.length - 1}
+                          className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      <button onClick={() => handleRemoveStep(step.id)} className="ml-1 text-text-faint hover:text-danger">
+                        ✕
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           ))}
 
           <div className="ml-4 h-4 w-0.5 bg-border-strong" />
-          <button
-            onClick={handleAddStep}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border-emphasis bg-surface py-3 text-xs font-semibold text-accent-light hover:bg-raised"
-          >
-            + Add step
-          </button>
+          {canWrite && (
+            <button
+              onClick={handleAddStep}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border-emphasis bg-surface py-3 text-xs font-semibold text-accent-light hover:bg-raised"
+            >
+              + Add step
+            </button>
+          )}
         </div>
 
         <div className="rounded-md border border-border-default bg-panel p-4">

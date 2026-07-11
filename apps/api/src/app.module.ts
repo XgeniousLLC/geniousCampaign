@@ -11,6 +11,7 @@ import { TemplatesModule } from './templates/templates.module';
 import { SequencesModule } from './sequences/sequences.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { VerificationModule } from './verification/verification.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { VerificationModule } from './verification/verification.module';
     SequencesModule,
     WebhooksModule,
     VerificationModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

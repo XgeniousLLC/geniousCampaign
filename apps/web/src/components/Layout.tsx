@@ -1,8 +1,16 @@
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useUiStore } from '../stores/useUiStore';
+import { useAuthStore } from '../stores/useAuthStore';
 
 export function Layout() {
   const { sidebarOpen, toggleSidebar } = useUiStore();
+  const { user, logout } = useAuthStore();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate('/login');
+  }
 
   return (
     <div className="flex min-h-screen bg-base">
@@ -41,6 +49,16 @@ export function Layout() {
           >
             {sidebarOpen ? 'Hide nav' : 'Show nav'}
           </button>
+          {user && (
+            <div className="flex items-center gap-3 text-xs text-text-muted">
+              <span>
+                {user.email} <span className="text-text-faint">· {user.role}</span>
+              </span>
+              <button onClick={handleLogout} className="text-text-muted hover:text-text-primary">
+                Sign out
+              </button>
+            </div>
+          )}
         </header>
         <main className="p-6">
           <Outlet />

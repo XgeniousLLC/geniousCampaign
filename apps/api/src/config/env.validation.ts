@@ -5,4 +5,5 @@ export const envValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   DATABASE_URL: Joi.string().uri({ scheme: ['postgresql', 'postgres'] }).required(),
   REDIS_URL: Joi.string().uri({ scheme: ['redis'] }).required(),
+  JWT_SECRET: Joi.string().min(16).required(),
 });

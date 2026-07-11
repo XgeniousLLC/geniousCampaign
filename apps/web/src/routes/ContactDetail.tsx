@@ -14,12 +14,14 @@ import {
   type List,
   type Tag,
 } from '../lib/contactsApi';
+import { useAuthStore } from '../stores/useAuthStore';
 
 export function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const [contact, setContact] = useState<Contact | null>(null);
   const [tags, setTags] = useState<{ tag: Tag; has: boolean }[]>([]);
   const [lists, setLists] = useState<{ list: List; has: boolean }[]>([]);
+  const canWriteLists = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
     if (!id) return;
@@ -106,8 +108,9 @@ export function ContactDetail() {
               {lists.map(({ list, has }) => (
                 <button
                   key={list.id}
-                  onClick={() => toggleList(list.id, has)}
-                  className={`flex items-center gap-2 text-left text-xs ${has ? 'text-text-tertiary' : 'text-text-faint hover:text-text-muted'}`}
+                  onClick={() => canWriteLists && toggleList(list.id, has)}
+                  disabled={!canWriteLists}
+                  className={`flex items-center gap-2 text-left text-xs disabled:cursor-default ${has ? 'text-text-tertiary' : 'text-text-faint hover:text-text-muted'}`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${has ? 'bg-accent-light' : 'bg-border-emphasis'}`} />
                   {list.name}

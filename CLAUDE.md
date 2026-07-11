@@ -69,6 +69,7 @@ These came out of earlier design work and are load-bearing — if a ticket seems
 8. **Suppression list is checked before every send, not just at contact-import time.** Hard bounces and complaints go in immediately; soft/transient bounces only after repeated occurrences (see GC-018).
 9. **Gmail sending defaults to a conservative daily cap per mailbox (300/day)**, well under Google's ~2,000/day ceiling — this is intentional, not a bug to "fix" by raising it without discussion. Gmail bounce detection is inbox-polling/DSN-parsing (heuristic), unlike SES's structured SNS events — treat single Gmail-detected bounces as a softer signal.
 10. **Everything that happens "later"** (a sequence step wait, a scheduled send, a verification API call, a webhook retry) **is a BullMQ job**, not a custom setTimeout/cron loop. This is what makes the system survive restarts and scale past one process.
+11. **Auth is minimal JWT, decided 2026-07-11.** `users` table with `owner | editor | viewer` roles. `POST /auth/register` — the first user ever registered becomes `owner`, everyone after defaults to `viewer` (no invite-by-email flow; an owner promotes others via `PATCH /users/:id/role`). `JwtAuthGuard` + `RolesGuard` currently gate only the RBAC-scoped controllers named in GC-056 (templates/sequences/lists) — reads need any authenticated role, writes need `owner`/`editor`. Don't silently expand guard coverage to other controllers (contacts, tags, webhooks) without a ticket — GC-056 named its scope deliberately. `AuditLogService` is called from every guarded write endpoint; `GET /audit-log` is `owner`-only.
 
 ## Reference implementations already drafted
 
@@ -87,9 +88,16 @@ Ask for these to be re-delivered/pasted in when you reach those tickets if they'
 DATABASE_URL=postgresql://localhost:5432/geniuscampaign_dev
 REDIS_URL=redis://localhost:6379
 
-# AWS SES
+# Auth (JWT) — generate with `openssl rand -hex 32`
+JWT_SECRET=
+
+# AWS SES — AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY read from the standard AWS SDK
+# credential chain rather than a custom var name
 AWS_REGION=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
 SES_CONFIGURATION_SET=
+SES_FROM_EMAIL=
 
 # Cloudflare R2
 CLOUDFLARE_R2_ACCOUNT_ID=
@@ -112,6 +120,18 @@ NEVERBOUNCE_API_KEY=
 
 # Tracking
 TRACKING_DOMAIN=track.yourdomain.com
+TRACKING_SIGNING_SECRET=
+
+# Outbound webhooks
+OUTBOUND_WEBHOOK_HMAC_SECRET=
+
+# Slack notifications
+SLACK_WEBHOOK_URL=
+
+# GC-059 AI-assisted template copy — multi-provider (openai | deepseek)
+LLM_PROVIDER=openai
+OPENAI_API_KEY=
+DEEPSEEK_API_KEY=
 ```
 
 Keep `.env.example` at the repo root in sync with this list as tickets add new integrations.

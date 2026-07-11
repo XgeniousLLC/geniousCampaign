@@ -43,6 +43,13 @@
       "when": 1783789338824,
       "tag": "0005_big_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783792042435,
+      "tag": "0006_deep_violations",
+      "breakpoints": true
     }
   ]
 }

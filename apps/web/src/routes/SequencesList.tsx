@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createSequence, listSequences, listSteps, type Sequence } from '../lib/sequencesApi';
+import { useAuthStore } from '../stores/useAuthStore';
 
 export function SequencesList() {
   const [sequences, setSequences] = useState<(Sequence & { stepCount: number })[]>([]);
   const navigate = useNavigate();
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
     listSequences().then(async (seqs) => {
@@ -27,9 +29,11 @@ export function SequencesList() {
           <h1 className="text-lg font-semibold text-text-heading">Sequences</h1>
           <p className="mt-1 text-xs text-text-muted">Multi-step automated outreach with delays between each send.</p>
         </div>
-        <button onClick={handleNew} className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover">
-          New sequence
-        </button>
+        {canWrite && (
+          <button onClick={handleNew} className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover">
+            New sequence
+          </button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-md border border-border-default bg-panel">
