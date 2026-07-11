@@ -57,6 +57,13 @@
       "when": 1783792888701,
       "tag": "0007_aromatic_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783793313128,
+      "tag": "0008_married_frog_thor",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,8 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { VerificationModule } from './verification/verification.module';
 import { AuthModule } from './auth/auth.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { SendingModule } from './sending/sending.module';
+import { SuppressionModule } from './suppression/suppression.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { EnrollmentsModule } from './enrollments/enrollments.module';
     VerificationModule,
     AuthModule,
     EnrollmentsModule,
+    SendingModule,
+    SuppressionModule,
   ],
 })
 export class AppModule {}

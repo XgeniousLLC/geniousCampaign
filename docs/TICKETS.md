@@ -21,8 +21,8 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
 | GC-015 | R2 image upload in editor | 1 | M | Blocked (needs: CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_PUBLIC_BASE_URL) | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Done | GC-014 |
-| GC-017 | AWS SES sending service | 1 | M | Blocked (needs: AWS credentials, verified SES identity) | GC-013 |
-| GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Blocked (needs: GC-017) | GC-017 |
+| GC-017 | AWS SES sending service | 1 | M | Done (code ready; live send needs Sharifur's AWS creds) | GC-013 |
+| GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Done (code ready; live SNS wiring needs Sharifur's AWS setup) | GC-017 |
 | GC-019 | Open + click tracking | 1 | M | Blocked (needs: GC-017) | GC-017 |
 | GC-020 | One-off campaign send flow | 1 | L | Blocked (needs: GC-017, GC-018, GC-019) | GC-011, GC-016, GC-017, GC-018, GC-019 |
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
@@ -198,7 +198,11 @@ Custom TipTap node for `{option A|option B}` in both subject and body, plus a `r
 - A test send successfully delivers to a real inbox via SES sandbox or a verified identity.
 - Headers required for one-click unsubscribe are present on every send.
 
-**Blocked 2026-07-11**: no AWS credentials/verified SES identity available in this environment (`AWS_REGION`/`SES_CONFIGURATION_SET` empty in `.env`, no AWS CLI/credentials present). Per `CLAUDE.md`, not building a mocked SES call that could look like a real integration. Cascades to GC-018/019/020 below.
+**Unblocked 2026-07-12**: Sharifur asked to complete all remaining blocks and test the credential-dependent parts manually himself. `EmailSenderProvider` interface (invariant 7) + `SesSenderProvider` using nodemailer's SES transport (SESv2 `SendEmailCommand` — nodemailer 9.x moved off `client-ses`/`SendRawEmailCommand` to `client-sesv2`, still builds and sends a real raw MIME message under the hood so all headers survive) with `List-Unsubscribe`/`List-Unsubscribe-Post` (RFC 8058) and SES message tags on every send. Real AWS SDK code — no AWS_REGION means it throws a clear "not configured" error rather than faking a send.
+
+Still genuinely blocked on: an actual live send to a real inbox — no AWS_REGION/AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/SES_CONFIGURATION_SET/SES_FROM_EMAIL in `.env`. **Sharifur: fill those in and send a real test to verify end-to-end delivery** — the code path is ready.
+
+Verified everything that doesn't need live AWS: 2 Jest tests mocking `nodemailer.createTransport` confirm (a) send() throws instead of faking success when AWS_REGION is unset, and (b) a configured send includes the exact List-Unsubscribe/List-Unsubscribe-Post headers and ConfigurationSetName/EmailTags on every call.
 
 ### GC-018 — SES bounce/complaint pipeline + suppression list
 SES configuration set → SNS topic → SQS queue → NestJS consumer. `SuppressionList` table. Every send checks suppression first and skips (logging why) rather than sending.
@@ -206,7 +210,11 @@ SES configuration set → SNS topic → SQS queue → NestJS consumer. `Suppress
 - A deliberately-bounced test address (SES has mailbox simulator addresses for this) ends up in the suppression list automatically.
 - Attempting to send to a suppressed address is blocked before it reaches SES, not after.
 
-**Blocked 2026-07-11**: depends on GC-017 (needs a real SES configuration set + SNS/SQS wiring, and the mailbox simulator to trigger a real bounce). Moving to GC-030 (Sprint 2 doesn't depend on Sprint 1's send tickets) once Sprint 1's non-blocked tickets are exhausted.
+**Unblocked 2026-07-12**: `suppression_list` + `soft_bounce_counts` tables, `SuppressionService` (hard bounce/complaint suppress immediately, soft bounces suppress after 3 repeats — invariant 8). Deviated from the ticket's literal "SNS → SQS → consumer" pattern: built `POST /webhooks/ses/sns` as an SNS HTTPS subscription endpoint instead of an SQS consumer, since no SQS queue can be provisioned without real AWS access — same end result (bounce/complaint JSON → suppression), just HTTP delivery instead of polling a queue. Handles the SNS `SubscriptionConfirmation` handshake for real (fetches `SubscribeURL`). Also added `GET/POST /unsubscribe/:token` (HMAC-signed via `TRACKING_SIGNING_SECRET`, RFC 8058 one-click) since `SesSenderProvider`'s `List-Unsubscribe` header needed a real working URL to point at.
+
+**Sharifur: still needs a real SES configuration set wired to a real SNS topic subscribed to this endpoint's public URL** for actual bounce/complaint traffic to arrive — the endpoint itself is ready and tested.
+
+Verified live: simulated real-shaped SNS notification payloads via curl — a hard bounce suppressed immediately, a complaint suppressed immediately, and 3 consecutive soft bounces for the same address suppressed only on the 3rd (not the 1st or 2nd). Unsubscribe token flow verified both ways: a validly-signed token unsubscribes and suppresses; a tampered token is rejected with 400.
 
 ### GC-019 — Open + click tracking
 Tracking subdomain, 1×1 pixel endpoint, link-rewriting + redirect endpoint, `EmailEvent` table.
