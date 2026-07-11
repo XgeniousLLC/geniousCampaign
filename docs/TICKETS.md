@@ -28,13 +28,13 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
-| GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Not Started | GC-030, GC-010 |
-| GC-032 | Sequence runner (BullMQ processor) | 2 | L | Not Started | GC-031, GC-020 |
+| GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Blocked (needs: reference implementation) | GC-030, GC-010 |
+| GC-032 | Sequence runner (BullMQ processor) | 2 | L | Blocked (needs: GC-031, GC-017) | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Not Started | GC-030, GC-021 |
-| GC-034 | Admin UI: contact enrollment panel | 2 | S | Not Started | GC-031, GC-021 |
-| GC-035 | Condition-based trigger engine | 2 | L | Not Started | GC-031 |
-| GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Not Started | GC-032 |
-| GC-037 | Internal event bus wiring | 2 | M | Not Started | GC-035 |
+| GC-034 | Admin UI: contact enrollment panel | 2 | S | Blocked (needs: GC-031) | GC-031, GC-021 |
+| GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
+| GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
+| GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
 | GC-040 | Inbound webhook framework (HMAC) | 3 | M | Not Started | GC-010 |
 | GC-041 | Sequence webhook controller | 3 | S | Not Started | GC-040, GC-031 |
 | GC-042 | Admin enrollment controller | 3 | S | Not Started | GC-031, GC-034 |
@@ -255,11 +255,15 @@ Import the reference implementation from `CLAUDE.md`. `SequenceEnrollment` schem
 - Matches the architectural invariants in `CLAUDE.md` items 1–3 exactly — this ticket exists specifically to not re-derive that design.
 - Duplicate enroll attempt (already active/paused) returns a clear conflict, not a silent no-op.
 
+**Blocked 2026-07-11**: reference implementation not present anywhere in this repo (checked). `CLAUDE.md` explicitly says to ask for it rather than re-derive it. Need this pasted in before starting. Cascades to GC-032/034/035/036/037.
+
 ### GC-032 — Sequence runner (BullMQ processor)
 Import the reference implementation. Wire up the repeatable job, connect to `SendDispatcherService` (stub is fine until GC-045 lands; can call `SesSenderProvider` directly for now).
 **Acceptance criteria:**
 - A 3-step sequence with short test delays (minutes, not days) runs end-to-end against a test contact.
 - Pausing mid-sequence (via direct service call, webhook lands in GC-041) stops further sends within one runner tick.
+
+**Blocked 2026-07-11**: depends on GC-031 (blocked) and needs a real send path (GC-017, also blocked).
 
 ### GC-033 — Admin UI: sequence builder
 Visual step editor: add/remove/reorder steps, pick template per step, set delay.
@@ -271,11 +275,15 @@ Import `ContactEnrollments.tsx` reference implementation onto the contact detail
 **Acceptance criteria:**
 - Pause/resume/stop buttons work against a real enrollment and reflect status changes without a manual page refresh.
 
+**Blocked 2026-07-11**: depends on GC-031 (blocked, needs reference implementation).
+
 ### GC-035 — Condition-based trigger engine
 `Trigger` + `TriggerCondition` schema, JSON-logic-style evaluator (`equals/contains/gt/lt/in/exists`, AND/OR groups), evaluation worker triggered off internal events.
 **Acceptance criteria:**
 - A trigger configured for "tag X added" correctly enrolls a contact into the linked sequence when that tag is added, and does not fire for unrelated field changes.
 - Evaluator has test coverage for at least each supported operator.
+
+**Blocked 2026-07-11**: depends on GC-031 (blocked) — trigger-driven enrollment needs `EnrollmentService` to exist.
 
 ### GC-036 — Schedule-based trigger (BullMQ repeatable)
 Recurring trigger evaluation (cron-style) plus one-off scheduled campaign sends, timezone-aware.
@@ -283,10 +291,14 @@ Recurring trigger evaluation (cron-style) plus one-off scheduled campaign sends,
 - A "every Monday 9am" recurring trigger fires correctly across a simulated multi-week test.
 - A one-off scheduled campaign set for a specific future timestamp in a specific timezone sends at the correct wall-clock time in that timezone.
 
+**Blocked 2026-07-11**: depends on GC-032 (blocked).
+
 ### GC-037 — Internal event bus wiring
 Wire `EventEmitter2` (or chosen equivalent) emissions into contact/list/tag mutation points: `contact.created`, `contact.tag_added`, `contact.field_changed`, `contact.list_joined`, plus the email events from GC-019 (`email.opened`, `email.clicked`, `email.bounced`).
 **Acceptance criteria:**
 - Every event type GC-035's trigger engine depends on is actually emitted somewhere in the codebase — cross-check against the trigger engine's supported `event_type` values.
+
+**Blocked 2026-07-11**: depends on GC-035 (blocked). Also partly on GC-019 (blocked, no AWS SES).
 
 ---
 
