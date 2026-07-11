@@ -45,17 +45,17 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-047 | Admin UI: sender accounts | 3 | S | Blocked (needs: GC-044) | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
 | GC-049 | Reoon + NeverBounce verification integration | 3 | M | Blocked (needs: REOON_API_KEY, NEVERBOUNCE_API_KEY) | GC-048 |
-| GC-050 | Bounce-rate circuit breaker | 4 | M | Not Started | GC-018, GC-032 |
-| GC-051 | Slack notifications | 4 | S | Not Started | GC-050 |
-| GC-052 | Dry-run / send-to-self mode | 4 | S | Not Started | GC-020, GC-032 |
-| GC-053 | Pre-send confirmation summary | 4 | S | Not Started | GC-020 |
+| GC-050 | Bounce-rate circuit breaker | 4 | M | Blocked (needs: GC-018, GC-032) | GC-018, GC-032 |
+| GC-051 | Slack notifications | 4 | S | Blocked (needs: GC-050) | GC-050 |
+| GC-052 | Dry-run / send-to-self mode | 4 | S | Blocked (needs: GC-020, GC-032) | GC-020, GC-032 |
+| GC-053 | Pre-send confirmation summary | 4 | S | Blocked (needs: GC-020) | GC-020 |
 | GC-054 | Spintax resolved-preview UI | 4 | S | Not Started | GC-016 |
-| GC-055 | Image compression + EXIF stripping | 4 | S | Not Started | GC-015 |
-| GC-056 | Lightweight RBAC | 4 | M | Not Started | GC-005 |
-| GC-057 | Audit log | 4 | M | Not Started | GC-056 |
-| GC-058 | Analytics dashboard | 4 | L | Not Started | GC-019, GC-032 |
+| GC-055 | Image compression + EXIF stripping | 4 | S | Blocked (needs: GC-015) | GC-015 |
+| GC-056 | Lightweight RBAC | 4 | M | Blocked (needs: product decision on auth model) | GC-005 |
+| GC-057 | Audit log | 4 | M | Blocked (needs: GC-056) | GC-056 |
+| GC-058 | Analytics dashboard | 4 | L | Blocked (needs: GC-019, GC-032) | GC-019, GC-032 |
 | GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
-| GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Not Started | GC-019, GC-020 |
+| GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Blocked (needs: GC-019, GC-020) | GC-019, GC-020 |
 
 ---
 
@@ -386,20 +386,28 @@ Rolling-window bounce/complaint rate check (e.g. last 500 sends). Crossing a thr
 - A simulated burst of bounces in a test run trips the breaker and verifiably pauses active sends within one evaluation cycle.
 - Breaker state and threshold are configurable, not hardcoded.
 
+**Blocked 2026-07-11**: depends on GC-018/GC-032 (blocked).
+
 ### GC-051 — Slack notifications
 Webhook-based Slack alerts for: circuit breaker tripped, campaign finished, verification credits low, large-send confirmation (ties to GC-053).
 **Acceptance criteria:**
 - Each event type produces a distinct, readable Slack message, not a generic "something happened."
+
+**Blocked 2026-07-11**: depends on GC-050 (blocked). Would also need a real Slack webhook URL, not yet in `.env`'s tracked var list.
 
 ### GC-052 — Dry-run / send-to-self mode
 Flag on campaign/sequence sends that renders the final resolved email but routes to a fixed internal test list (or just logs it) instead of real contacts.
 **Acceptance criteria:**
 - Dry-run mode never touches `SenderAccount.sentToday` counters or real contacts, verified by checking those are unchanged after a dry run.
 
+**Blocked 2026-07-11**: depends on GC-020/GC-032 (blocked) — no real send path to short-circuit yet.
+
 ### GC-053 — Pre-send confirmation summary
 UI + API check: sends above a configurable recipient threshold require an explicit confirm step showing recipient count, list, and template name.
 **Acceptance criteria:**
 - Attempting to send above the threshold without confirmation is blocked server-side, not just hidden client-side.
+
+**Blocked 2026-07-11**: depends on GC-020 (blocked).
 
 ### GC-054 — Spintax resolved-preview UI
 "Shuffle" button in the template editor showing a few random resolved variants side by side.
@@ -411,20 +419,28 @@ Client-side resize/re-encode and EXIF strip before upload to R2.
 **Acceptance criteria:**
 - A large (>2MB) test photo with EXIF GPS data results in a smaller, EXIF-stripped file in R2 — verify by inspecting the uploaded object's metadata.
 
+**Blocked 2026-07-11**: depends on GC-015 (blocked, no R2 credentials).
+
 ### GC-056 — Lightweight RBAC
 `owner | editor | viewer` role on templates/sequences/lists.
 **Acceptance criteria:**
 - A `viewer`-role test user can be verified (via API test) unable to save changes, while able to read.
+
+**Blocked 2026-07-11**: this ticket assumes a "test user" and roles to check against, but there is no User/auth model, login flow, or session mechanism anywhere in this codebase, the ticket backlog, or the design file (confirmed — no login screen exists among the design's 18 screens/6 modals; GC-042 also assumes "JWT-authenticated" without any ticket ever setting up JWT auth). RBAC needs *something* to attach roles to. This is a genuine product decision not resolvable from the docs — need direction on: is there a real auth system to build first (and if so, what — JWT session, magic link, SSO?), or is "RBAC" here meant as a much lighter static-config thing (e.g. an API key per role, no real login)? Not guessing at this since it changes the shape of every mutation endpoint. Cascades to GC-057.
 
 ### GC-057 — Audit log
 Record who changed a template, paused a sequence, exported a list, etc.
 **Acceptance criteria:**
 - Every mutation covered by GC-056's RBAC check also produces an audit log entry with actor, action, and timestamp.
 
+**Blocked 2026-07-11**: depends on GC-056 (blocked) — no actor to attribute audit entries to without an auth model.
+
 ### GC-058 — Analytics dashboard
 Open/click/bounce rates per campaign and sequence, basic trend view. Design: `DASHBOARD` section.
 **Acceptance criteria:**
 - Dashboard numbers match a manual `SELECT count(*)`-style spot check against `EmailEvent`/`Send` tables for at least one real test campaign.
+
+**Blocked 2026-07-11**: depends on GC-019/GC-032 (blocked) — no `EmailEvent`/`Send` data to aggregate yet.
 
 ### GC-059 — AI-assisted template copy
 Surfaced by the design's `AI ASSIST MODAL` — a prompt-to-copy tool inside the template editor (write a brief, get generated subject/body copy, optionally refine with quick actions like "make it shorter," insert into the editor). **Blocked**: needs a decision on LLM provider (Anthropic or OpenAI) and a real API key from Sharifur before this can start — do not stub this with a fake/mocked response and mark it done, and do not pick a provider unilaterally.
@@ -437,4 +453,6 @@ Surfaced by the design's `AI ASSIST MODAL` — a prompt-to-copy tool inside the 
 All-sends log (not the aggregate dashboard from GC-058 — this is the raw per-send list): status, recipient, template, timestamp, filterable, with a detail drawer showing the specific resolved subject/body and event history for one send. Design: `EMAIL LOG`, `EMAIL LOG DETAIL DRAWER`.
 **Acceptance criteria:**
 - Every row is backed by a real `Send` row — clicking into the detail drawer shows the actual resolved (post-spintax) subject/body stored on that row, not the live template.
+
+**Blocked 2026-07-11**: depends on GC-019/GC-020 (blocked) — no `Send` rows exist yet.
 - Filterable by at least status (sent/opened/clicked/bounced) and by campaign/sequence.
