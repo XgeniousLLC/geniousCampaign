@@ -15,6 +15,13 @@
       "when": 1783760172433,
       "tag": "0001_calm_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783760639892,
+      "tag": "0002_remarkable_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }
