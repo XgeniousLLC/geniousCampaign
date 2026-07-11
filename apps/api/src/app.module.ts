@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { envValidationSchema } from './config/env.validation';
 import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
@@ -13,6 +14,12 @@ import { TagsModule } from './tags/tags.module';
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
       validationSchema: envValidationSchema,
+    }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: { url: config.get<string>('REDIS_URL') },
+      }),
     }),
     DbModule,
     HealthModule,
