@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['../../.env', '.env'],
       validationSchema: envValidationSchema,
     }),
     DbModule,
