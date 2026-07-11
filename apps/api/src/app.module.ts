@@ -9,6 +9,7 @@ import { ListsModule } from './lists/lists.module';
 import { TagsModule } from './tags/tags.module';
 import { TemplatesModule } from './templates/templates.module';
 import { SequencesModule } from './sequences/sequences.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SequencesModule } from './sequences/sequences.module';
     TagsModule,
     TemplatesModule,
     SequencesModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

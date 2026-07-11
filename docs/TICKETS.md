@@ -35,7 +35,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
 | GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
-| GC-040 | Inbound webhook framework (HMAC) | 3 | M | Not Started | GC-010 |
+| GC-040 | Inbound webhook framework (HMAC) | 3 | M | Done | GC-010 |
 | GC-041 | Sequence webhook controller | 3 | S | Not Started | GC-040, GC-031 |
 | GC-042 | Admin enrollment controller | 3 | S | Not Started | GC-031, GC-034 |
 | GC-043 | Outbound webhook dispatcher | 3 | M | Not Started | GC-037 |
