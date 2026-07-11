@@ -36,13 +36,13 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
 | GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
 | GC-040 | Inbound webhook framework (HMAC) | 3 | M | Done | GC-010 |
-| GC-041 | Sequence webhook controller | 3 | S | Not Started | GC-040, GC-031 |
-| GC-042 | Admin enrollment controller | 3 | S | Not Started | GC-031, GC-034 |
-| GC-043 | Outbound webhook dispatcher | 3 | M | Not Started | GC-037 |
-| GC-044 | Gmail OAuth connect flow | 3 | M | Not Started | GC-005 |
-| GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Not Started | GC-044, GC-017 |
-| GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Not Started | GC-044, GC-018 |
-| GC-047 | Admin UI: sender accounts | 3 | S | Not Started | GC-044, GC-021 |
+| GC-041 | Sequence webhook controller | 3 | S | Blocked (needs: GC-031) | GC-040, GC-031 |
+| GC-042 | Admin enrollment controller | 3 | S | Blocked (needs: GC-031) | GC-031, GC-034 |
+| GC-043 | Outbound webhook dispatcher | 3 | M | Blocked (needs: GC-037) | GC-037 |
+| GC-044 | Gmail OAuth connect flow | 3 | M | Blocked (needs: Google OAuth credentials + reference implementation) | GC-005 |
+| GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Blocked (needs: GC-044, GC-017) | GC-044, GC-017 |
+| GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Blocked (needs: GC-044, GC-018) | GC-044, GC-018 |
+| GC-047 | Admin UI: sender accounts | 3 | S | Blocked (needs: GC-044) | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Not Started | GC-010 |
 | GC-049 | Reoon + NeverBounce verification integration | 3 | M | Not Started | GC-048 |
 | GC-050 | Bounce-rate circuit breaker | 4 | M | Not Started | GC-018, GC-032 |
@@ -316,10 +316,14 @@ Import the reference implementation: `POST /webhooks/in/sequences/:id/{enroll,pa
 - Calling each endpoint via `curl` with a correctly-signed request against a real sequence and contact produces the expected `SequenceEnrollment` status change.
 - Reuses `EnrollmentService` from GC-031 — no duplicated state-transition logic (per `CLAUDE.md` invariant 2).
 
+**Blocked 2026-07-11**: depends on GC-031 (blocked).
+
 ### GC-042 — Admin enrollment controller
 Import the reference implementation: JWT-authenticated equivalent of GC-041 for the admin UI (GC-034) to call.
 **Acceptance criteria:**
 - Produces identical `SequenceEnrollment` state changes to GC-041 for the same logical action.
+
+**Blocked 2026-07-11**: depends on GC-031/GC-034 (blocked).
 
 ### GC-043 — Outbound webhook dispatcher
 Let external systems subscribe to internal events (open/click/bounce/sequence-completed/etc.) via a registered outbound webhook URL, with retry/backoff on delivery failure.
@@ -327,11 +331,15 @@ Let external systems subscribe to internal events (open/click/bounce/sequence-co
 - A test receiving endpoint (e.g. a local ngrok tunnel or webhook.site) gets a correctly-formed payload when a subscribed event fires.
 - A failing receiver gets retried with backoff, not hammered or silently dropped after one attempt.
 
+**Blocked 2026-07-11**: depends on GC-037 (blocked) for the event source.
+
 ### GC-044 — Gmail OAuth connect flow
 Import the reference implementation: Google Cloud OAuth client setup (Internal user type), `/sender-accounts/gmail/connect` + `/callback`, encrypted refresh token storage.
 **Acceptance criteria:**
 - Connecting a real Gmail Workspace test mailbox succeeds and stores an encrypted refresh token.
 - Reconnecting the same mailbox updates rather than duplicates its `SenderAccount` row.
+
+**Blocked 2026-07-11**: `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` are empty in `.env`, and the Gmail Workspace reference implementation named in `CLAUDE.md` isn't in this repo — needs both a real Google Cloud OAuth client and the reference implementation pasted in.
 
 ### GC-045 — SendDispatcherService (SES + Gmail rotation)
 Import the reference implementation: `SenderAccountService.pickAccountForSend()`, `EmailSenderProvider` interface, `SendDispatcherService`. Wire GC-032's runner and GC-020's campaign flow to go through this instead of calling SES directly.
@@ -339,15 +347,21 @@ Import the reference implementation: `SenderAccountService.pickAccountForSend()`
 - With one Gmail account and SES both active, sends alternate based on quota headroom, verifiable by inspecting `sentToday` on each `SenderAccount` after a batch of test sends.
 - Exhausting a Gmail account's daily quota causes subsequent sends to route to SES (or another Gmail account) automatically, not to error out.
 
+**Blocked 2026-07-11**: depends on GC-044 (blocked) and GC-017 (blocked, no AWS SES).
+
 ### GC-046 — Gmail bounce scanner (DSN polling)
 Import the reference implementation: 15-minute inbox-poll job, DSN parsing.
 **Acceptance criteria:**
 - A deliberately-bounced test send from a connected Gmail account is detected within one poll cycle and logged (feeding into the suppression list per the "soft signal" note in `CLAUDE.md`).
 
+**Blocked 2026-07-11**: depends on GC-044/GC-018 (blocked).
+
 ### GC-047 — Admin UI: sender accounts
 Import the reference implementation: `SenderAccountsSettings.tsx`, quota bars, connect button.
 **Acceptance criteria:**
 - Shows live `sentToday`/`dailySendLimit` for every connected account, matching the DB state.
+
+**Blocked 2026-07-11**: depends on GC-044 (blocked).
 
 ### GC-048 — Local verification pre-filter
 Syntax regex, MX record lookup (`dns.resolveMx`), disposable-domain blocklist check — all before any paid API call.
