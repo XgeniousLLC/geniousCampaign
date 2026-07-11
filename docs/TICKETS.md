@@ -27,7 +27,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-020 | One-off campaign send flow | 1 | L | Not Started | GC-011, GC-016, GC-017, GC-018, GC-019 |
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
-| GC-030 | Sequences + steps schema + CRUD API | 2 | M | Not Started | GC-013 |
+| GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Not Started | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Not Started | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Not Started | GC-030, GC-021 |

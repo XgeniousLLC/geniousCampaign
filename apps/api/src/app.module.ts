@@ -8,6 +8,7 @@ import { ContactsModule } from './contacts/contacts.module';
 import { ListsModule } from './lists/lists.module';
 import { TagsModule } from './tags/tags.module';
 import { TemplatesModule } from './templates/templates.module';
+import { SequencesModule } from './sequences/sequences.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TemplatesModule } from './templates/templates.module';
     ListsModule,
     TagsModule,
     TemplatesModule,
+    SequencesModule,
   ],
 })
 export class AppModule {}
