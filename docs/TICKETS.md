@@ -25,7 +25,8 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Not Started | GC-017 |
 | GC-019 | Open + click tracking | 1 | M | Not Started | GC-017 |
 | GC-020 | One-off campaign send flow | 1 | L | Not Started | GC-011, GC-016, GC-017, GC-018, GC-019 |
-| GC-021 | Admin UI: contacts, templates, send campaign | 1 | L | Not Started | GC-020 |
+| GC-021 | Admin UI: contacts, templates | 1 | L | Not Started | GC-011, GC-016 |
+| GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Not Started | GC-013 |
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Not Started | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Not Started | GC-031, GC-020 |
@@ -66,7 +67,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 |---|---|
 | GC-021 (contacts UI) | `CONTACTS`, `CONTACT DETAIL`, `CSV IMPORT MODAL` |
 | GC-021 (templates UI) / GC-014 / GC-015 / GC-016 | `TEMPLATES`, `TEMPLATE EDITOR`, `SPINTAX EDIT MODAL` |
-| GC-021 (send flow) / GC-020 | `CAMPAIGNS LIST`, `CAMPAIGN COMPOSE`, `CAMPAIGN DETAIL` |
+| GC-021b (send flow) / GC-020 | `CAMPAIGNS LIST`, `CAMPAIGN COMPOSE`, `CAMPAIGN DETAIL` |
 | GC-011 (lists/tags UI) | `LISTS & TAGS` |
 | GC-033 (sequence builder) | `SEQUENCES LIST`, `SEQUENCE BUILDER / DETAIL`, `ENROLL MODAL` |
 | GC-034 (contact enrollment panel) | within `CONTACT DETAIL` |
@@ -197,11 +198,15 @@ Custom TipTap node for `{option A|option B}` in both subject and body, plus a `r
 - A test send successfully delivers to a real inbox via SES sandbox or a verified identity.
 - Headers required for one-click unsubscribe are present on every send.
 
+**Blocked 2026-07-11**: no AWS credentials/verified SES identity available in this environment (`AWS_REGION`/`SES_CONFIGURATION_SET` empty in `.env`, no AWS CLI/credentials present). Per `CLAUDE.md`, not building a mocked SES call that could look like a real integration. Cascades to GC-018/019/020 below.
+
 ### GC-018 — SES bounce/complaint pipeline + suppression list
 SES configuration set → SNS topic → SQS queue → NestJS consumer. `SuppressionList` table. Every send checks suppression first and skips (logging why) rather than sending.
 **Acceptance criteria:**
 - A deliberately-bounced test address (SES has mailbox simulator addresses for this) ends up in the suppression list automatically.
 - Attempting to send to a suppressed address is blocked before it reaches SES, not after.
+
+**Blocked 2026-07-11**: depends on GC-017 (needs a real SES configuration set + SNS/SQS wiring, and the mailbox simulator to trigger a real bounce). Moving to GC-030 (Sprint 2 doesn't depend on Sprint 1's send tickets) once Sprint 1's non-blocked tickets are exhausted.
 
 ### GC-019 — Open + click tracking
 Tracking subdomain, 1×1 pixel endpoint, link-rewriting + redirect endpoint, `EmailEvent` table.
@@ -210,16 +215,29 @@ Tracking subdomain, 1×1 pixel endpoint, link-rewriting + redirect endpoint, `Em
 - Clicking a link in a sent test email records a click event and correctly redirects to the original URL.
 - Tracking pixel/links use signed tokens, not raw sequential send IDs.
 
+**Blocked 2026-07-11**: depends on GC-017 — needs a real sent test email in a real client to open/click. `TRACKING_DOMAIN` is also unset in `.env`.
+
 ### GC-020 — One-off campaign send flow
 Ties GC-011/016/017/018/019 together: pick a template + a list, resolve spintax per recipient, check suppression, send via SES, record the resolved subject/body on the `Send` row per the spintax-resolution invariant in `CLAUDE.md`.
 **Acceptance criteria:**
 - Sending a campaign to a 5-contact test list produces 5 distinct (or at least independently-resolved) spintax variants if the template uses spintax.
 - Every `Send` row has its fully-resolved subject/body stored, independent of what the template looks like now.
 
-### GC-021 — Admin UI: contacts, templates, send campaign
-React screens: contacts list/detail/import, template list/editor (GC-014/015/016 wired in), and a "send campaign" flow (pick template, pick list, confirm, send).
+**Blocked 2026-07-11**: depends on GC-017/018/019, all blocked on AWS SES access.
+
+### GC-021 — Admin UI: contacts, templates
+React screens: contacts list/detail/import, template list/editor (GC-014/016 wired in; GC-015 image upload still pending R2 credentials).
+**Acceptance criteria:**
+- An admin can import contacts via CSV and browse/edit them, and create/edit a template with spintax + personalization tokens, entirely through the UI, no direct API calls needed.
+
+*(Split 2026-07-11 from the original combined "contacts, templates, send campaign" ticket — the send-campaign flow depends on GC-020, which is blocked on AWS SES access. See GC-021b.)*
+
+### GC-021b — Admin UI: send campaign flow
+"Send campaign" flow (pick template, pick list, confirm, send), wired to GC-020's one-off send endpoint.
 **Acceptance criteria:**
 - An admin can go from "no contacts" to "sent campaign" entirely through the UI, no direct API calls needed.
+
+**Blocked 2026-07-11**: depends on GC-020, blocked on AWS SES access.
 
 ---
 
