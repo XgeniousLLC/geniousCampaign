@@ -59,6 +59,13 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       <div className="mx-1 h-4 w-px bg-border-strong" />
       <button
         type="button"
+        onClick={() => editor.chain().focus().insertSpintaxBlock({ options: ['option A', 'option B'] }).run()}
+        className="flex h-8 items-center gap-1.5 rounded border border-accent-light/25 bg-accent-light/10 px-2.5 text-xs font-semibold text-accent-lighter hover:bg-accent-light/15"
+      >
+        Spintax
+      </button>
+      <button
+        type="button"
         onClick={() => setTokenOpen((o) => !o)}
         className="flex h-8 items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2.5 text-xs font-semibold text-accent-light hover:bg-accent/15"
       >

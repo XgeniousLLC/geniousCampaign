@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { PersonalizationToken } from '../lib/tiptap/personalization-token';
+import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
 
@@ -21,7 +22,7 @@ export function TemplateEditor() {
   const [loaded, setLoaded] = useState(isNew);
 
   const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken],
+    extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken, SpintaxBlock],
     content: EMPTY_DOC,
   });
 

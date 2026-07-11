@@ -20,7 +20,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-013 | Templates schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
 | GC-015 | R2 image upload in editor | 1 | M | Blocked (needs: CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_PUBLIC_BASE_URL) | GC-014 |
-| GC-016 | Spintax spinBlock extension + resolver | 1 | M | Not Started | GC-014 |
+| GC-016 | Spintax spinBlock extension + resolver | 1 | M | Done | GC-014 |
 | GC-017 | AWS SES sending service | 1 | M | Not Started | GC-013 |
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Not Started | GC-017 |
 | GC-019 | Open + click tracking | 1 | M | Not Started | GC-017 |

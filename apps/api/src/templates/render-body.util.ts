@@ -56,6 +56,10 @@ function renderNodeHtml(node: ProseMirrorNode): string {
       return '<br>';
     case 'text':
       return applyMarks(escapeHtml(node.text ?? ''), node.marks);
+    case 'personalizationToken':
+      return `{{${String(node.attrs?.field ?? '')}}}`;
+    case 'spintaxBlock':
+      return `{${((node.attrs?.options as string[]) ?? []).map(escapeHtml).join('|')}}`;
     default:
       return (node.content ?? []).map(renderNodeHtml).join('');
   }
@@ -77,6 +81,10 @@ function renderNodeText(node: ProseMirrorNode): string {
       return '\n';
     case 'text':
       return node.text ?? '';
+    case 'personalizationToken':
+      return `{{${String(node.attrs?.field ?? '')}}}`;
+    case 'spintaxBlock':
+      return `{${((node.attrs?.options as string[]) ?? []).join('|')}}`;
     default:
       return (node.content ?? []).map(renderNodeText).join('');
   }
