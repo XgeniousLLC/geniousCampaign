@@ -10,7 +10,7 @@ Work proceeds autonomously, ticket by ticket, per `CLAUDE.md`'s "Autonomous work
 
 **Goal:** a working local dev environment and empty-but-running NestJS + React apps talking to the already-installed local Postgres and Redis, with no containers involved.
 
-**Exit criteria:** `npm run dev` boots both apps locally; a health-check endpoint responds; Prisma can migrate against the local DB.
+**Exit criteria:** `npm run dev` boots both apps locally; a health-check endpoint responds; Drizzle can migrate against the local DB.
 
 Tickets: GC-001 – GC-008
 

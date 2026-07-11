@@ -16,7 +16,7 @@ Every UI ticket should be checked against the matching screen in the design file
 
 ## Stack
 
-- **Backend**: NestJS (TypeScript), PostgreSQL via Prisma, BullMQ + Redis for all queued/scheduled work
+- **Backend**: NestJS (TypeScript), PostgreSQL via Drizzle ORM, BullMQ + Redis for all queued/scheduled work
 - **Frontend**: React (Vite) + TypeScript, Tailwind CSS for styling, Zustand for client-side state, TipTap for the rich text template editor
 - **Sending**: AWS SES (bulk/primary) and Gmail Workspace API (rotated secondary senders) — see "Sender accounts" below
 - **Storage**: Cloudflare R2 for template images (never base64 in the DB)
@@ -119,7 +119,7 @@ Keep `.env.example` at the repo root in sync with this list as tickets add new i
 ## Conventions
 
 - TypeScript strict mode everywhere, no `any` beyond the narrow spots already called out in the reference implementations (Gmail/SES provider callback typing).
-- Prisma for all schema/migrations — never hand-write SQL migrations unless Prisma genuinely can't express something.
+- Drizzle ORM for all schema/migrations (`drizzle-kit`) — never hand-write SQL migrations unless Drizzle genuinely can't express something. (Changed from Prisma 2026-07-11 — Sharifur's call, coming from a Laravel background and wanting to work directly with the query builder/schema-as-code style.)
 - NestJS modules are feature-scoped (`contacts/`, `templates/`, `sequences/`, `sender-accounts/`, `webhooks/`, `tracking/`, `verification/`), each with its own controller/service/module — mirrors the folder layout used in the reference implementations.
 - Frontend state: Zustand stores are feature-scoped (one store per domain area — e.g. `useContactsStore`, `useSequenceBuilderStore`), not one giant global store. Server data fetched via the API client belongs in the component/query layer (or a small data-fetching hook), not duplicated into Zustand — Zustand is for client-only UI/session state, not a cache of server state.
 - Styling is Tailwind utility classes directly in JSX; avoid introducing a second styling approach (CSS modules, styled-components, etc.) alongside it.

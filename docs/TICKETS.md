@@ -6,10 +6,10 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 
 | ID | Title | Sprint | Size | Status | Depends on |
 |---|---|---|---|---|---|
-| GC-001 | Monorepo scaffolding (npm workspaces) | 0 | S | Not Started | — |
-| GC-002 | Create local PostgreSQL database | 0 | S | Not Started | — |
-| GC-003 | Verify local Redis connectivity | 0 | S | Not Started | — |
-| GC-004 | Prisma baseline schema + first migration | 0 | S | Not Started | GC-001, GC-002 |
+| GC-001 | Monorepo scaffolding (npm workspaces) | 0 | S | Done | — |
+| GC-002 | Create local PostgreSQL database | 0 | S | Done | — |
+| GC-003 | Verify local Redis connectivity | 0 | S | Done | — |
+| GC-004 | Drizzle baseline schema + first migration | 0 | S | Not Started | GC-001, GC-002 |
 | GC-005 | NestJS app bootstrap | 0 | S | Not Started | GC-001, GC-004 |
 | GC-006 | React app bootstrap (Vite + TS + Tailwind + Zustand) | 0 | S | Not Started | GC-001 |
 | GC-007 | Root dev scripts (no Docker) | 0 | S | Not Started | GC-005, GC-006 |
@@ -105,14 +105,16 @@ Redis is already installed and running — this ticket just confirms it's reacha
 - `redis-cli ping` returns `PONG`.
 - `REDIS_URL` in `.env.example` matches the local instance's connection string.
 
-### GC-004 — Prisma baseline schema + first migration
-Initialize Prisma in `apps/api`, pointed at `DATABASE_URL`. Baseline schema: just enough to prove migrations work — `Contact` with `id`, `email`, `createdAt` is sufficient for this ticket; full schema comes in later tickets.
+### GC-004 — Drizzle baseline schema + first migration
+Initialize Drizzle ORM (`drizzle-orm` + `drizzle-kit`) in `apps/api`, pointed at `DATABASE_URL`. Baseline schema: just enough to prove migrations work — `contacts` table with `id`, `email`, `createdAt` is sufficient for this ticket; full schema comes in later tickets.
 **Acceptance criteria:**
-- `prisma migrate dev` runs cleanly against the local DB from GC-002.
-- `prisma studio` can open and show the empty `Contact` table.
+- `drizzle-kit generate` + `drizzle-kit migrate` (or `push` for dev) run cleanly against the local DB from GC-002.
+- `drizzle-kit studio` can open and show the empty `contacts` table.
+
+*(Changed from Prisma to Drizzle 2026-07-11 — see CLAUDE.md Conventions.)*
 
 ### GC-005 — NestJS app bootstrap
-Standard NestJS app in `apps/api` with `ConfigModule` (validated env schema — fail fast on missing required vars), a `GET /health` endpoint, and Prisma wired in as an injectable `PrismaService`.
+Standard NestJS app in `apps/api` with `ConfigModule` (validated env schema — fail fast on missing required vars), a `GET /health` endpoint, and Drizzle wired in as an injectable `DrizzleService`.
 **Acceptance criteria:**
 - `nest start --watch` boots without errors given a valid `.env`.
 - `GET /health` returns `200 { status: "ok" }`.
