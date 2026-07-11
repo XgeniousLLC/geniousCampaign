@@ -9,7 +9,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-001 | Monorepo scaffolding (npm workspaces) | 0 | S | Done | — |
 | GC-002 | Create local PostgreSQL database | 0 | S | Done | — |
 | GC-003 | Verify local Redis connectivity | 0 | S | Done | — |
-| GC-004 | Drizzle baseline schema + first migration | 0 | S | Not Started | GC-001, GC-002 |
+| GC-004 | Drizzle baseline schema + first migration | 0 | S | Done | GC-001, GC-002 |
 | GC-005 | NestJS app bootstrap | 0 | S | Not Started | GC-001, GC-004 |
 | GC-006 | React app bootstrap (Vite + TS + Tailwind + Zustand) | 0 | S | Not Started | GC-001 |
 | GC-007 | Root dev scripts (no Docker) | 0 | S | Not Started | GC-005, GC-006 |
