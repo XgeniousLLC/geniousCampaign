@@ -49,7 +49,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-051 | Slack notifications | 4 | S | Blocked (needs: GC-050) | GC-050 |
 | GC-052 | Dry-run / send-to-self mode | 4 | S | Blocked (needs: GC-020, GC-032) | GC-020, GC-032 |
 | GC-053 | Pre-send confirmation summary | 4 | S | Blocked (needs: GC-020) | GC-020 |
-| GC-054 | Spintax resolved-preview UI | 4 | S | Not Started | GC-016 |
+| GC-054 | Spintax resolved-preview UI | 4 | S | Done | GC-016 |
 | GC-055 | Image compression + EXIF stripping | 4 | S | Blocked (needs: GC-015) | GC-015 |
 | GC-056 | Lightweight RBAC | 4 | M | Blocked (needs: product decision on auth model) | GC-005 |
 | GC-057 | Audit log | 4 | M | Blocked (needs: GC-056) | GC-056 |

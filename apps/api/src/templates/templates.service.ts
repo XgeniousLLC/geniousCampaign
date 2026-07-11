@@ -4,7 +4,7 @@ import { DrizzleService } from '../db/drizzle.service';
 import { templates, templateVersions } from '../db/schema';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
-import { renderBodyHtml, renderBodyText, ProseMirrorNode } from './render-body.util';
+import { renderBodyHtml, renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 
 @Injectable()
 export class TemplatesService {

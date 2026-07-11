@@ -1,4 +1,4 @@
-import { renderBodyHtml, renderBodyText, ProseMirrorNode } from './render-body.util';
+import { renderBodyHtml, renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 
 describe('renderBodyHtml / renderBodyText', () => {
   it('renders personalizationToken nodes as {{field}}, not empty', () => {
