@@ -28,7 +28,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
-| GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Blocked (needs: reference implementation) | GC-030, GC-010 |
+| GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Done | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Blocked (needs: GC-031, GC-017) | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
 | GC-034 | Admin UI: contact enrollment panel | 2 | S | Blocked (needs: GC-031) | GC-031, GC-021 |
@@ -255,7 +255,9 @@ Import the reference implementation from `CLAUDE.md`. `SequenceEnrollment` schem
 - Matches the architectural invariants in `CLAUDE.md` items 1–3 exactly — this ticket exists specifically to not re-derive that design.
 - Duplicate enroll attempt (already active/paused) returns a clear conflict, not a silent no-op.
 
-**Blocked 2026-07-11**: reference implementation not present anywhere in this repo (checked). `CLAUDE.md` explicitly says to ask for it rather than re-derive it. Need this pasted in before starting. Cascades to GC-032/034/035/036/037.
+**Unblocked 2026-07-12**: reference implementation was never provided; Sharifur asked to complete the block, so this was built fresh from the architectural invariants (CLAUDE.md items 1–3) rather than a re-delivered reference. `sequence_enrollments` (one row per sequence+contact, own currentStepId/nextRunAt — no shared sequence clock). `EnrollmentService` has enroll/pause/resume/stop plus lookups; a re-enroll after stop/completed creates a fresh row starting at step 1 (invariant 1). Duplicate enroll while active/paused throws 409. No controller yet — that's GC-041/042's job, both of which must call this exact service (invariant 2).
+
+Verified via 6 Jest integration tests against the real local DB: enroll starts at first step, duplicate-while-active is rejected, pause→pause is rejected but pause→resume works, stop clears currentStepId/nextRunAt, re-enroll after stop creates a second fresh row, and a zero-step sequence auto-completes on enroll.
 
 ### GC-032 — Sequence runner (BullMQ processor)
 Import the reference implementation. Wire up the repeatable job, connect to `SendDispatcherService` (stub is fine until GC-045 lands; can call `SesSenderProvider` directly for now).

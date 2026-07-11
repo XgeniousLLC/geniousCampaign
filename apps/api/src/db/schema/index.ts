@@ -5,3 +5,4 @@ export * from './sequences';
 export * from './webhooks';
 export * from './users';
 export * from './audit-log';
+export * from './enrollments';

@@ -12,6 +12,7 @@ import { SequencesModule } from './sequences/sequences.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { VerificationModule } from './verification/verification.module';
 import { AuthModule } from './auth/auth.module';
+import { EnrollmentsModule } from './enrollments/enrollments.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AuthModule } from './auth/auth.module';
     WebhooksModule,
     VerificationModule,
     AuthModule,
+    EnrollmentsModule,
   ],
 })
 export class AppModule {}
