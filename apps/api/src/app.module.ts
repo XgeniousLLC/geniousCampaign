@@ -10,6 +10,7 @@ import { TagsModule } from './tags/tags.module';
 import { TemplatesModule } from './templates/templates.module';
 import { SequencesModule } from './sequences/sequences.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { VerificationModule } from './verification/verification.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     TemplatesModule,
     SequencesModule,
     WebhooksModule,
+    VerificationModule,
   ],
 })
 export class AppModule {}

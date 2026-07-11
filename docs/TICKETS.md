@@ -43,7 +43,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Blocked (needs: GC-044, GC-017) | GC-044, GC-017 |
 | GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Blocked (needs: GC-044, GC-018) | GC-044, GC-018 |
 | GC-047 | Admin UI: sender accounts | 3 | S | Blocked (needs: GC-044) | GC-044, GC-021 |
-| GC-048 | Local verification pre-filter | 3 | S | Not Started | GC-010 |
+| GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
 | GC-049 | Reoon + NeverBounce verification integration | 3 | M | Not Started | GC-048 |
 | GC-050 | Bounce-rate circuit breaker | 4 | M | Not Started | GC-018, GC-032 |
 | GC-051 | Slack notifications | 4 | S | Not Started | GC-050 |
