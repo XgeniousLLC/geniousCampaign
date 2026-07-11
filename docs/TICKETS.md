@@ -44,7 +44,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Blocked (needs: GC-044, GC-018) | GC-044, GC-018 |
 | GC-047 | Admin UI: sender accounts | 3 | S | Blocked (needs: GC-044) | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
-| GC-049 | Reoon + NeverBounce verification integration | 3 | M | Not Started | GC-048 |
+| GC-049 | Reoon + NeverBounce verification integration | 3 | M | Blocked (needs: REOON_API_KEY, NEVERBOUNCE_API_KEY) | GC-048 |
 | GC-050 | Bounce-rate circuit breaker | 4 | M | Not Started | GC-018, GC-032 |
 | GC-051 | Slack notifications | 4 | S | Not Started | GC-050 |
 | GC-052 | Dry-run / send-to-self mode | 4 | S | Not Started | GC-020, GC-032 |
@@ -373,6 +373,8 @@ Paid-API step for addresses that pass GC-048, cached in `VerificationResult` wit
 **Acceptance criteria:**
 - Verifying the same address twice within the TTL window makes only one external API call, confirmed via request count.
 - Reoon being unavailable (mocked failure) correctly falls back to NeverBounce rather than failing the whole verification.
+
+**Blocked 2026-07-11**: `REOON_API_KEY`/`NEVERBOUNCE_API_KEY` are both empty in `.env` — no real API keys to call, and this ticket should not use mocked provider responses per `CLAUDE.md`.
 
 ---
 
