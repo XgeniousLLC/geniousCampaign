@@ -31,3 +31,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     }),
   );
 }
+
+export async function apiDelete<T>(path: string): Promise<T> {
+  return handle<T>(await fetch(`${API_BASE_URL}${path}`, { method: 'DELETE' }));
+}

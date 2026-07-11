@@ -16,6 +16,11 @@ export function Layout() {
               </Link>
             </li>
             <li>
+              <Link to="/contacts" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Contacts
+              </Link>
+            </li>
+            <li>
               <Link to="/templates" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
                 Templates
               </Link>
