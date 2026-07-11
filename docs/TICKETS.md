@@ -14,7 +14,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-006 | React app bootstrap (Vite + TS + Tailwind + Zustand) | 0 | S | Done | GC-001 |
 | GC-007 | Root dev scripts (no Docker) | 0 | S | Done | GC-005, GC-006 |
 | GC-008 | Consolidated .env.example | 0 | S | Done | GC-005 |
-| GC-010 | Contacts schema + CRUD API | 1 | M | Not Started | GC-004 |
+| GC-010 | Contacts schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-011 | Lists + tags schema + CRUD API | 1 | M | Not Started | GC-010 |
 | GC-012 | CSV contact import (queued) | 1 | M | Not Started | GC-010, GC-011 |
 | GC-013 | Templates schema + CRUD API | 1 | M | Not Started | GC-004 |
