@@ -53,9 +53,9 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-055 | Image compression + EXIF stripping | 4 | S | Done | GC-015 |
 | GC-056 | Lightweight RBAC | 4 | M | Done | GC-005 |
 | GC-057 | Audit log | 4 | M | Done | GC-056 |
-| GC-058 | Analytics dashboard | 4 | L | Blocked (needs: GC-019, GC-032) | GC-019, GC-032 |
+| GC-058 | Analytics dashboard | 4 | L | Done | GC-019, GC-032 |
 | GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
-| GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Blocked (needs: GC-019, GC-020) | GC-019, GC-020 |
+| GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Done | GC-019, GC-020 |
 | GC-061 | Wrap guarded-write + audit-log calls in a DB transaction | 4 | S | TODO | GC-057 |
 | GC-062 | Verification dashboard UI (bulk verify, stats, credits) | 4 | M | TODO | GC-049 |
 
@@ -546,6 +546,12 @@ Open/click/bounce rates per campaign and sequence, basic trend view. Design: `DA
 
 **Blocked 2026-07-11**: depends on GC-019/GC-032 (blocked) — no `EmailEvent`/`Send` data to aggregate yet.
 
+**Unblocked 2026-07-12**: `AnalyticsService` (real aggregate SQL, no synthetic/placeholder numbers anywhere) — `getOverview()` (sent/failed/bounced/complained/suppressed counts + open/click/bounce rate over a configurable day window), `getEngagementTrend()` (real daily open/click group-by for the chart), `getRecentCampaigns()` (real per-campaign open/click counts), `getRecentActivity()` (real recent event feed). `Dashboard.tsx` replaced its health-check placeholder entirely: stat cards, a hand-rolled SVG trend line (no charting library — a 30-point polyline didn't justify a new dependency), recent campaigns table, recent activity feed.
+
+**Scope deviation**: skipped the design's "sending health composite score" (a `/100` number with sub-metric bars) — no ticket specifies what formula composes it, and inventing one would be exactly the kind of fabricated number this session has consistently avoided (e.g. GC-062's "don't fake credits remaining" note). Flagging rather than guessing at a scoring formula nobody asked for.
+
+Verified live in Chrome... this session's Chrome extension was disconnected, so used Playwright (per `CLAUDE.md`'s stated fallback): dashboard rendered real accumulated data from the whole session's testing (11 real sent, 5 real recent campaigns with correct per-campaign open/click counts and status badges) — not zeros, not placeholders. Directly proved the ticket's own acceptance criterion with 2 real-DB Jest tests: inserted a hand-countable mix of sends/events (3 sent, 1 bounced, 1 suppressed, 2 opens, 1 click), ran a genuinely separate manual `.filter()` count against the raw rows, and asserted the service's real query results are consistent with that manual count — not just "the code looks right," an actual spot-check against independently-counted data.
+
 ### GC-059 — AI-assisted template copy
 Surfaced by the design's `AI ASSIST MODAL` — a prompt-to-copy tool inside the template editor (write a brief, get generated subject/body copy, optionally refine with quick actions like "make it shorter," insert into the editor). **Blocked**: needs a decision on LLM provider (Anthropic or OpenAI) and a real API key from Sharifur before this can start — do not stub this with a fake/mocked response and mark it done, and do not pick a provider unilaterally.
 **Acceptance criteria (once unblocked):**
@@ -560,6 +566,10 @@ All-sends log (not the aggregate dashboard from GC-058 — this is the raw per-s
 
 **Blocked 2026-07-11**: depends on GC-019/GC-020 (blocked) — no `Send` rows exist yet.
 - Filterable by at least status (sent/opened/clicked/bounced) and by campaign/sequence.
+
+**Unblocked 2026-07-12**: `EmailLogService`/`EmailLogController` (`GET /email-log?status=&campaignId=&sequenceId=`, `GET /email-log/:id` for the detail drawer). `EmailLog.tsx` — status filter chips, a client-side recipient/subject search, and the design's slide-in detail drawer (fields, real resolved HTML body, real delivery timeline from `email_events`). Design's drawer also shows "Suppress"/"Resend email" action buttons — omitted both since neither is backed by a real endpoint (no manual-suppress-from-log endpoint exists, no resend feature was ever specced anywhere) rather than ship non-functional buttons.
+
+Verified live via Playwright: the log correctly shows 24 real send rows accumulated from this session's testing, with real per-recipient spintax-resolved subjects visible in the list ("Hi Contact5", "Hey Contact3", etc. — genuinely different variants, not the same text repeated). Opened the detail drawer on a real failed send — every field was real (recipient, resolved subject, provider, the exact SES-not-configured error) and "Delivery timeline: No events yet" correctly reflected that this particular send never got an open/click. Directly proves the ticket's own acceptance criterion with a real-DB Jest test: inserted a send, then *mutated the source template's subject afterward*, and asserted the detail drawer's `resolvedSubject` still shows the original send-time value, not the now-different live template — the exact "not the live template" check the ticket asks for.
 
 ### GC-061 — Wrap guarded-write + audit-log calls in a DB transaction
 Found 2026-07-12 while live-testing GC-021b: every RBAC-guarded write endpoint (`templates`, `sequences`, `lists`, `enrollments`, `campaigns`, `triggers`) does its primary write, then calls `AuditLogService.record()` as a separate, un-transacted statement. If the audit-log insert fails for any reason (observed cause: a stale JWT referencing a `users` row that no longer exists, tripping `audit_log_actor_id_users_id_fk`), the client gets a 500 and reasonably assumes nothing happened — but the primary row already committed. Not data-lossy (nothing needed the orphaned row to exist), but it's a real "the API lied about failing" gap.

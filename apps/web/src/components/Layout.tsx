@@ -48,6 +48,11 @@ export function Layout() {
                 Sender Accounts
               </Link>
             </li>
+            <li>
+              <Link to="/email-log" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Email Log
+              </Link>
+            </li>
           </ul>
         </nav>
       )}

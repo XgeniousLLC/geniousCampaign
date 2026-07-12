@@ -13,6 +13,7 @@ import { CampaignsList } from './routes/CampaignsList';
 import { CampaignCompose } from './routes/CampaignCompose';
 import { CampaignDetail } from './routes/CampaignDetail';
 import { SenderAccountsSettings } from './routes/SenderAccountsSettings';
+import { EmailLog } from './routes/EmailLog';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
             <Route path="campaigns/new" element={<CampaignCompose />} />
             <Route path="campaigns/:id" element={<CampaignDetail />} />
             <Route path="settings/sender-accounts" element={<SenderAccountsSettings />} />
+            <Route path="email-log" element={<EmailLog />} />
           </Route>
         </Route>
       </Routes>
