@@ -10,5 +10,6 @@ import { InboundWebhookController } from './inbound-webhook.controller';
   imports: [ContactsModule],
   controllers: [WebhookEndpointsController, WebhookDeliveriesController, InboundWebhookController],
   providers: [WebhookEndpointsService, WebhookDeliveriesService],
+  exports: [WebhookDeliveriesService],
 })
 export class WebhooksModule {}

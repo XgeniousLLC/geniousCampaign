@@ -36,9 +36,9 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
 | GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
 | GC-040 | Inbound webhook framework (HMAC) | 3 | M | Done | GC-010 |
-| GC-041 | Sequence webhook controller | 3 | S | Blocked (needs: GC-031) | GC-040, GC-031 |
-| GC-042 | Admin enrollment controller | 3 | S | Blocked (needs: GC-031) | GC-031, GC-034 |
-| GC-043 | Outbound webhook dispatcher | 3 | M | Blocked (needs: GC-037) | GC-037 |
+| GC-041 | Sequence webhook controller | 3 | S | Done | GC-040, GC-031 |
+| GC-042 | Admin enrollment controller | 3 | S | Done | GC-031, GC-034 |
+| GC-043 | Outbound webhook dispatcher | 3 | M | Done | GC-037 |
 | GC-044 | Gmail OAuth connect flow | 3 | M | Blocked (needs: Google OAuth credentials + reference implementation) | GC-005 |
 | GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Blocked (needs: GC-044, GC-017) | GC-044, GC-017 |
 | GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Blocked (needs: GC-044, GC-018) | GC-044, GC-018 |
@@ -330,14 +330,18 @@ Import the reference implementation: `POST /webhooks/in/sequences/:id/{enroll,pa
 - Calling each endpoint via `curl` with a correctly-signed request against a real sequence and contact produces the expected `SequenceEnrollment` status change.
 - Reuses `EnrollmentService` from GC-031 — no duplicated state-transition logic (per `CLAUDE.md` invariant 2).
 
-**Blocked 2026-07-11**: depends on GC-031 (blocked).
+**Unblocked 2026-07-12**: each sequence gets its own generated `webhookSecret` (invariant 4 — per-endpoint secret, not a bare URL token). `POST /webhooks/in/sequences/:id/{enroll,pause,resume,stop}` verifies `X-Signature`, logs every call to `webhook_deliveries` before processing (reusing GC-040's framework), then calls `EnrollmentService` directly.
+
+Verified live: unsigned enroll → 401; correctly-signed enroll → 201 with the real enrollment row; a second signed enroll on the same contact → 409. Then a fuller cross-controller run (below, shared with GC-042).
 
 ### GC-042 — Admin enrollment controller
 Import the reference implementation: JWT-authenticated equivalent of GC-041 for the admin UI (GC-034) to call.
 **Acceptance criteria:**
 - Produces identical `SequenceEnrollment` state changes to GC-041 for the same logical action.
 
-**Blocked 2026-07-11**: depends on GC-031/GC-034 (blocked).
+**Unblocked 2026-07-12**: `/admin/sequences/:id/{enroll,pause,resume,stop}` (JWT + owner/editor roles) calls the exact same `EnrollmentService` methods as GC-041 — no parallel state-transition logic.
+
+Verified live end-to-end across both controllers on the same enrollment: enrolled via the public signed webhook → paused via the public webhook → checked status via the JWT-authenticated admin listing endpoint (showed `paused`, matching) → resumed via the admin controller → stopped via the public webhook again. Every transition landed exactly as expected regardless of which controller triggered it.
 
 ### GC-043 — Outbound webhook dispatcher
 Let external systems subscribe to internal events (open/click/bounce/sequence-completed/etc.) via a registered outbound webhook URL, with retry/backoff on delivery failure.
@@ -345,7 +349,9 @@ Let external systems subscribe to internal events (open/click/bounce/sequence-co
 - A test receiving endpoint (e.g. a local ngrok tunnel or webhook.site) gets a correctly-formed payload when a subscribed event fires.
 - A failing receiver gets retried with backoff, not hammered or silently dropped after one attempt.
 
-**Blocked 2026-07-11**: depends on GC-037 (blocked) for the event source.
+**Unblocked 2026-07-12**: didn't wait on GC-037's full event bus — `OutboundWebhookDispatchService.emit(eventType, payload)` is called directly from the three services that actually produce these events (`SequenceRunnerService` on `sequence.completed`, `TrackingService` on `email.opened`/`email.clicked`, `SuppressionService` on `email.bounced`/`email.complained`/`email.unsubscribed`), each fan-out delivery a separate BullMQ job (`attempts: 5`, exponential backoff) — invariant 10. `outbound_webhook_subscriptions` stores per-subscription HMAC secrets; deliveries carry `X-Signature`/`X-Event-Type` headers.
+
+Verified live against a real local HTTP receiver (not a mock): registered a subscription, enrolled a contact into a completes-immediately sequence, and watched 3 real delivery attempts land — the receiver deliberately 500'd the first two and 200'd the third, confirmed via BullMQ's own attempt counter and the receiver's own request log, each attempt carrying a valid `X-Signature`. Not hammered (real ~2s/4s exponential spacing between attempts) and not silently dropped (all 3 attempts logged).
 
 ### GC-044 — Gmail OAuth connect flow
 Import the reference implementation: Google Cloud OAuth client setup (Internal user type), `/sender-accounts/gmail/connect` + `/callback`, encrypted refresh token storage.

@@ -27,7 +27,7 @@ describe('EnrollmentService (integration, real DB)', () => {
       .returning();
     contactId = contact.id;
 
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Test sequence' }).returning();
+    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Test sequence', webhookSecret: 'test-secret' }).returning();
     sequenceId = sequence.id;
 
     const [step1] = await drizzle.db
@@ -83,7 +83,7 @@ describe('EnrollmentService (integration, real DB)', () => {
   });
 
   it('completes immediately for a zero-step sequence', async () => {
-    const [emptySeq] = await drizzle.db.insert(sequences).values({ name: 'Empty sequence' }).returning();
+    const [emptySeq] = await drizzle.db.insert(sequences).values({ name: 'Empty sequence', webhookSecret: 'test-secret' }).returning();
     const enrollment = await service.enroll(emptySeq.id, contactId);
     expect(enrollment.status).toBe('completed');
     await drizzle.db.delete(sequences).where(eq(sequences.id, emptySeq.id));

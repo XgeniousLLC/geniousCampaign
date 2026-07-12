@@ -8,6 +8,9 @@ export const sequences = pgTable('sequences', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   description: text('description'),
+  // Per-sequence HMAC secret for its inbound enroll/pause/resume/stop
+  // webhook (CLAUDE.md invariant 4 — never a bare token in the URL).
+  webhookSecret: text('webhook_secret').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

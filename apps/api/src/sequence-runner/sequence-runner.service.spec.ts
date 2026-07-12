@@ -1,11 +1,14 @@
 import { Test } from '@nestjs/testing';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { eq } from 'drizzle-orm';
 import { SequenceRunnerService } from './sequence-runner.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { SesSenderProvider } from '../sending/ses-sender.provider';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
+import { OutboundWebhookSubscriptionsService } from '../outbound-webhooks/outbound-webhook-subscriptions.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts, sequences, sequenceSteps, sequenceEnrollments, sends, templates } from '../db/schema';
 
@@ -19,8 +22,24 @@ describe('SequenceRunnerService (integration, real DB)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ envFilePath: ['../../.env', '.env'] })],
-      providers: [SequenceRunnerService, EnrollmentService, SesSenderProvider, SuppressionService, TrackingService, DrizzleService],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
+        BullModule.forRootAsync({
+          inject: [ConfigService],
+          useFactory: (config: ConfigService) => ({ connection: { url: config.get<string>('REDIS_URL') } }),
+        }),
+        BullModule.registerQueue({ name: 'outbound-webhooks' }),
+      ],
+      providers: [
+        SequenceRunnerService,
+        EnrollmentService,
+        SesSenderProvider,
+        SuppressionService,
+        TrackingService,
+        OutboundWebhookDispatchService,
+        OutboundWebhookSubscriptionsService,
+        DrizzleService,
+      ],
     }).compile();
 
     runner = moduleRef.get(SequenceRunnerService);
@@ -53,7 +72,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
   });
 
   it('does not process a paused enrollment even if its nextRunAt is due (invariant 3)', async () => {
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Pause test sequence' }).returning();
+    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Pause test sequence', webhookSecret: 'test-secret' }).returning();
     sequenceId = sequence.id;
     await drizzle.db.insert(sequenceSteps).values({ sequenceId, order: 0, type: 'send_email', templateId });
 
@@ -78,7 +97,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
   });
 
   it('runs a 3-step sequence end-to-end (send_email -> wait -> exit)', async () => {
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Full run sequence' }).returning();
+    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Full run sequence', webhookSecret: 'test-secret' }).returning();
     const fullSequenceId = sequence.id;
     await drizzle.db.insert(sequenceSteps).values([
       { sequenceId: fullSequenceId, order: 0, type: 'send_email', templateId },

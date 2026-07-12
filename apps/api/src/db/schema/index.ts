@@ -8,3 +8,4 @@ export * from './audit-log';
 export * from './enrollments';
 export * from './suppression';
 export * from './sends';
+export * from './outbound-webhooks';

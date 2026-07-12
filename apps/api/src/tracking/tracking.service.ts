@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { emailEvents, sends } from '../db/schema';
 import { signTrackingToken, verifyTrackingToken } from './tracking-token.util';
+import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
 
 interface OpenPayload {
   sendId: string;
@@ -19,6 +20,7 @@ export class TrackingService {
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly config: ConfigService,
+    private readonly outboundWebhooks: OutboundWebhookDispatchService,
   ) {}
 
   private get secret(): string {
@@ -60,11 +62,13 @@ export class TrackingService {
     const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
     if (!send) return;
     await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'open' });
+    await this.outboundWebhooks.emit('email.opened', { sendId, contactId: send.contactId });
   }
 
   async recordClick(sendId: string, url: string) {
     const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
     if (!send) return;
     await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'click', url });
+    await this.outboundWebhooks.emit('email.clicked', { sendId, contactId: send.contactId, url });
   }
 }

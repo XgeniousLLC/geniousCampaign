@@ -2,16 +2,27 @@ import { Injectable, Logger } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { suppressionList, softBounceCounts, type suppressionReasonEnum } from '../db/schema';
+import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
 
 const SOFT_BOUNCE_THRESHOLD = 3;
 
 type SuppressionReason = (typeof suppressionReasonEnum.enumValues)[number];
 
+const REASON_TO_EVENT: Record<SuppressionReason, string> = {
+  hard_bounce: 'email.bounced',
+  repeated_soft_bounce: 'email.bounced',
+  complaint: 'email.complained',
+  manual_unsubscribe: 'email.unsubscribed',
+};
+
 @Injectable()
 export class SuppressionService {
   private readonly logger = new Logger(SuppressionService.name);
 
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly outboundWebhooks: OutboundWebhookDispatchService,
+  ) {}
 
   async isSuppressed(email: string): Promise<boolean> {
     const row = await this.drizzle.db.query.suppressionList.findFirst({ where: eq(suppressionList.email, email) });
@@ -26,6 +37,7 @@ export class SuppressionService {
 
     const [created] = await this.drizzle.db.insert(suppressionList).values({ email, reason, source }).returning();
     this.logger.log(`Suppressed ${email} (${reason}, source=${source})`);
+    await this.outboundWebhooks.emit(REASON_TO_EVENT[reason], { email, reason, source });
     return created;
   }
 

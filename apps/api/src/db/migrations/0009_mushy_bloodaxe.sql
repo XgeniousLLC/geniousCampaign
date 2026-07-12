@@ -1,0 +1,1 @@
+ALTER TABLE "sequences" ADD COLUMN "webhook_secret" text NOT NULL;

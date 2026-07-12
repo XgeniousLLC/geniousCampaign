@@ -12,6 +12,7 @@ import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
+import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
 
 @Injectable()
 export class SequenceRunnerService {
@@ -23,6 +24,7 @@ export class SequenceRunnerService {
     private readonly sesSender: SesSenderProvider,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
+    private readonly outboundWebhooks: OutboundWebhookDispatchService,
   ) {}
 
   /**
@@ -64,6 +66,11 @@ export class SequenceRunnerService {
           .update(sequenceEnrollments)
           .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
           .where(eq(sequenceEnrollments.id, enrollmentId));
+        await this.outboundWebhooks.emit('sequence.completed', {
+          enrollmentId,
+          sequenceId: fresh.sequenceId,
+          contactId: fresh.contactId,
+        });
         return;
       }
 
@@ -73,7 +80,7 @@ export class SequenceRunnerService {
       // 'condition' steps always pass through for now — GC-035 replaces this
       // with a real evaluator against the trigger engine.
 
-      await this.advance(fresh.sequenceId, enrollmentId, step.order, now);
+      await this.advance(fresh.sequenceId, fresh.contactId, enrollmentId, step.order, now);
     } catch (err) {
       this.logger.error(
         `Sequence runner failed processing enrollment ${enrollmentId} at step ${step.id}: ${err instanceof Error ? err.message : err}`,
@@ -192,7 +199,7 @@ export class SequenceRunnerService {
     });
   }
 
-  private async advance(sequenceId: string, enrollmentId: string, fromOrder: number, now: Date) {
+  private async advance(sequenceId: string, contactId: string, enrollmentId: string, fromOrder: number, now: Date) {
     const allSteps: RunnerStep[] = await this.drizzle.db
       .select()
       .from(sequenceSteps)
@@ -206,6 +213,7 @@ export class SequenceRunnerService {
         .update(sequenceEnrollments)
         .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
         .where(eq(sequenceEnrollments.id, enrollmentId));
+      await this.outboundWebhooks.emit('sequence.completed', { enrollmentId, sequenceId, contactId });
       return;
     }
 

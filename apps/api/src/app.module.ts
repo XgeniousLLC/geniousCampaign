@@ -17,6 +17,7 @@ import { SendingModule } from './sending/sending.module';
 import { SuppressionModule } from './suppression/suppression.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { SequenceRunnerModule } from './sequence-runner/sequence-runner.module';
+import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { SequenceRunnerModule } from './sequence-runner/sequence-runner.module';
     SuppressionModule,
     TrackingModule,
     SequenceRunnerModule,
+    OutboundWebhooksModule,
   ],
 })
 export class AppModule {}

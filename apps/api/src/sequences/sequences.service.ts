@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { sequences, sequenceSteps } from '../db/schema';
@@ -15,7 +16,7 @@ export class SequencesService {
   async create(dto: CreateSequenceDto) {
     const [created] = await this.drizzle.db
       .insert(sequences)
-      .values({ name: dto.name, description: dto.description })
+      .values({ name: dto.name, description: dto.description, webhookSecret: randomBytes(32).toString('hex') })
       .returning();
     return created;
   }
