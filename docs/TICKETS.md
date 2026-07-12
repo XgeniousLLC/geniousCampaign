@@ -44,7 +44,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Code done, needs GC-044's live connect to fully exercise | GC-044, GC-018 |
 | GC-047 | Admin UI: sender accounts | 3 | S | Done | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
-| GC-049 | Reoon + NeverBounce verification integration | 3 | M | Blocked (needs: REOON_API_KEY, NEVERBOUNCE_API_KEY) | GC-048 |
+| GC-049 | Reoon + NeverBounce verification integration | 3 | M | Done | GC-048 |
 | GC-050 | Bounce-rate circuit breaker | 4 | M | Blocked (needs: GC-018, GC-032) | GC-018, GC-032 |
 | GC-051 | Slack notifications | 4 | S | Blocked (needs: GC-050) | GC-050 |
 | GC-052 | Dry-run / send-to-self mode | 4 | S | Blocked (needs: GC-020, GC-032) | GC-020, GC-032 |
@@ -57,6 +57,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
 | GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Blocked (needs: GC-019, GC-020) | GC-019, GC-020 |
 | GC-061 | Wrap guarded-write + audit-log calls in a DB transaction | 4 | S | TODO | GC-057 |
+| GC-062 | Verification dashboard UI (bulk verify, stats, credits) | 4 | M | TODO | GC-049 |
 
 ---
 
@@ -449,6 +450,14 @@ Paid-API step for addresses that pass GC-048, cached in `VerificationResult` wit
 
 **Blocked 2026-07-11**: `REOON_API_KEY`/`NEVERBOUNCE_API_KEY` are both empty in `.env` — no real API keys to call, and this ticket should not use mocked provider responses per `CLAUDE.md`.
 
+**Unblocked 2026-07-12**: `verification_results` table (email unique, status, isDeliverable, provider, expiresAt — 180-day TTL, within the ticket's 6-12 month window). `ReoonProvider`/`NeverBounceProvider` implement one `EmailVerificationProvider` interface; `EmailVerificationService.verify()` runs local pre-filter (GC-048) → cache lookup → Reoon → NeverBounce fallback, in that order, each step short-circuiting the next on success. `POST /verification/check` (owner/editor only, since every real call can cost money once keys are configured) is separate from GC-048's existing free `/verification/local-check`.
+
+Clarifying the "should not use mocked provider responses" note from the original blocked status: that rule is about the *shipped application* never faking a real API result at runtime (matches the pattern used for SES/R2/Gmail throughout this session) — it doesn't forbid a unit test from mocking the HTTP boundary to verify orchestration logic, which is exactly what this ticket's own acceptance criteria call for (proving caching and fallback behavior via request-count assertions). Wrote 3 such tests against the *real* `ReoonProvider`/`NeverBounceProvider`/`EmailVerificationService` code with only `global.fetch` mocked: (1) an invalid-syntax address makes zero external calls; (2) verifying the same address twice makes exactly one Reoon call, the second call served entirely from the DB cache; (3) a failing Reoon call correctly falls through to NeverBounce rather than failing the whole verification — both of GC-049's stated acceptance criteria directly proven, not just asserted.
+
+Live-verified the actually-configurable part (real keys aren't in `.env`): `POST /verification/check` for an invalid address returns the local rejection immediately with zero external calls (confirmed via log), and for a syntactically valid address correctly attempts Reoon, logs the clean "not configured" warning, falls through to NeverBounce, and surfaces *that* provider's clean "not configured" error rather than any fake success — exactly the same "try in order, never fake it" behavior the tests already proved, now shown against the real (unconfigured) HTTP path too. **Sharifur: once real `REOON_API_KEY`/`NEVERBOUNCE_API_KEY` are in `.env`, the response field mapping (`reoon.provider.ts`/`neverbounce.provider.ts`'s `status`/`result` value handling) is based on each provider's public docs but hasn't been checked against a real response — worth a quick live call to confirm the mapping is right before relying on it.**
+
+Design surfaced a `VERIFICATION` screen (bulk-verify button, per-status stat cards, credits-remaining balance) that GC-049's own acceptance criteria never asked for — split out as GC-062 rather than built here.
+
 ---
 
 ## Sprint 4 — Safety net & polish
@@ -541,3 +550,12 @@ Found 2026-07-12 while live-testing GC-021b: every RBAC-guarded write endpoint (
 - A forced audit-log failure (e.g. a bad `actor_id`) in a test leaves zero trace of the primary write — no orphaned row.
 
 TODO — not started. Low urgency (no data-loss risk observed, just a misleading error response), grouped with GC-057 since it's audit-log's own transactional boundary.
+
+### GC-062 — Verification dashboard UI
+Found 2026-07-12 while building GC-049: the design's `VERIFICATION` screen (bulk-verify button, per-status stat cards with counts/bars, verification-credits-remaining balance) isn't covered by any ticket — GC-049's own acceptance criteria are backend-only (caching + fallback behavior), and no other ticket claims this screen. Split out rather than built silently under GC-049.
+**Acceptance criteria:**
+- Shows real per-status contact counts (valid/invalid/risky/unverified), computed from `verification_results` joined against `contacts`, not placeholder numbers.
+- "Bulk verify" enqueues a real job that calls `EmailVerificationService.verify()` for every unverified contact (BullMQ, invariant 10 — not a blocking request-cycle loop over potentially thousands of contacts).
+- Credits-remaining display can be a static "not tracked yet" state if neither Reoon nor NeverBounce exposes a balance-check endpoint cheaply — don't fake a number.
+
+TODO — not started. Depends on GC-049 (done) for the underlying verification calls; needs real Reoon/NeverBounce keys for the bulk-verify button to do anything beyond a clean "not configured" state.
