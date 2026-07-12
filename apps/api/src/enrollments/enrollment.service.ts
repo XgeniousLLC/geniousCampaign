@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { sequenceEnrollments, sequenceSteps, sequences, contacts } from '../db/schema';
+import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.util';
 
 /**
  * All enroll/pause/resume/stop state transitions go through this service —
@@ -38,12 +39,15 @@ export class EnrollmentService {
 
     // Per invariant 1: a contact enrolled long after a sequence "started"
     // gets a fresh row starting at step 1 — no shared sequence-wide clock.
-    const [firstStep] = await this.drizzle.db
+    // A leading "wait" step (unusual but valid) is skipped over just like
+    // mid-sequence waits are, landing on the first real executable step.
+    const allSteps = await this.drizzle.db
       .select()
       .from(sequenceSteps)
       .where(eq(sequenceSteps.sequenceId, sequenceId))
-      .orderBy(asc(sequenceSteps.order))
-      .limit(1);
+      .orderBy(asc(sequenceSteps.order));
+
+    const resolution = resolveFirstExecutableStep(allSteps, new Date());
 
     const [created] = await this.drizzle.db
       .insert(sequenceEnrollments)
@@ -51,13 +55,13 @@ export class EnrollmentService {
         sequenceId,
         contactId,
         status: 'active',
-        currentStepId: firstStep?.id ?? null,
-        nextRunAt: firstStep ? new Date() : null,
+        currentStepId: resolution.done ? null : resolution.stepId,
+        nextRunAt: resolution.done ? null : resolution.runAt,
       })
       .returning();
 
-    if (!firstStep) {
-      // Zero-step sequence: nothing to run, complete immediately.
+    if (resolution.done) {
+      // No executable steps (zero-step, or wait-only sequence): nothing to run.
       const [completed] = await this.drizzle.db
         .update(sequenceEnrollments)
         .set({ status: 'completed', updatedAt: new Date() })

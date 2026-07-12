@@ -29,7 +29,7 @@ export class TrackingService {
     return secret;
   }
 
-  private get baseUrl(): string {
+  get baseUrl(): string {
     const domain = this.config.get<string>('TRACKING_DOMAIN');
     if (domain && domain !== 'track.yourdomain.com') {
       return `https://${domain}`;

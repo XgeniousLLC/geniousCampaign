@@ -29,7 +29,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Done | GC-030, GC-010 |
-| GC-032 | Sequence runner (BullMQ processor) | 2 | L | Blocked (needs: GC-031, GC-017) | GC-031, GC-020 |
+| GC-032 | Sequence runner (BullMQ processor) | 2 | L | Done | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
 | GC-034 | Admin UI: contact enrollment panel | 2 | S | Blocked (needs: GC-031) | GC-031, GC-021 |
 | GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
@@ -275,7 +275,9 @@ Import the reference implementation. Wire up the repeatable job, connect to `Sen
 - A 3-step sequence with short test delays (minutes, not days) runs end-to-end against a test contact.
 - Pausing mid-sequence (via direct service call, webhook lands in GC-041) stops further sends within one runner tick.
 
-**Blocked 2026-07-11**: depends on GC-031 (blocked) and needs a real send path (GC-017, also blocked).
+**Unblocked 2026-07-12**: BullMQ repeatable job (`upsertJobScheduler`, every 10s in dev — CLAUDE.md invariant 10, no setTimeout/cron loop) calling `SequenceRunnerService.tick()`, which queries due active enrollments and, per-enrollment, re-checks status immediately before executing (invariant 3) before touching `currentStepId`. Calls `SesSenderProvider` directly per the ticket's note (`SendDispatcherService` is GC-045). "wait" steps are pure delay markers — the runner sums consecutive waits and lands on the next executable step (`step-resolution.util.ts`), fixed the same way in `EnrollmentService.enroll()` for a sequence that starts with a wait. Resolves personalization tokens *before* spintax (a real bug the tests caught: spintax's `{a|b}` parser was mis-parsing `{{contact.firstName}}`'s doubled braces as a nested spintax group and eating them) — see CLAUDE.md invariant 5 note.
+
+Verified via 2 real-DB Jest integration tests: a paused enrollment with an overdue `nextRunAt` is not processed at all (0 sends, `currentStepId` unchanged) — direct proof of invariant 3; a 3-step sequence (send_email → wait 1min → exit) runs across two ticks (backdating `nextRunAt` to avoid a real 60s sleep, same tick logic either way) ending `completed`. Also verified live end-to-end through the *actual* BullMQ scheduler (not a direct test call) against a real running app: enrolled a contact via raw SQL, waited 14s with zero manual intervention, and watched the real repeatable job fire, resolve personalization ("Hi Grace"), attempt a real SES send that failed clearly (no AWS creds — expected, not faked), and mark the enrollment `completed`.
 
 ### GC-033 — Admin UI: sequence builder
 Visual step editor: add/remove/reorder steps, pick template per step, set delay.

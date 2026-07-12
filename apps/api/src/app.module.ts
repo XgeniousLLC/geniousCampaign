@@ -16,6 +16,7 @@ import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { SendingModule } from './sending/sending.module';
 import { SuppressionModule } from './suppression/suppression.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { SequenceRunnerModule } from './sequence-runner/sequence-runner.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { TrackingModule } from './tracking/tracking.module';
     SendingModule,
     SuppressionModule,
     TrackingModule,
+    SequenceRunnerModule,
   ],
 })
 export class AppModule {}
