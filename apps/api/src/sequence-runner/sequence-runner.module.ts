@@ -6,18 +6,11 @@ import { SequenceRunnerProcessor } from './sequence-runner.processor';
 import { SendingModule } from '../sending/sending.module';
 import { SuppressionModule } from '../suppression/suppression.module';
 import { TrackingModule } from '../tracking/tracking.module';
-import { OutboundWebhooksModule } from '../outbound-webhooks/outbound-webhooks.module';
 
 const TICK_INTERVAL_MS = 10_000;
 
 @Module({
-  imports: [
-    BullModule.registerQueue({ name: 'sequence-runner' }),
-    SendingModule,
-    SuppressionModule,
-    TrackingModule,
-    OutboundWebhooksModule,
-  ],
+  imports: [BullModule.registerQueue({ name: 'sequence-runner' }), SendingModule, SuppressionModule, TrackingModule],
   providers: [SequenceRunnerService, SequenceRunnerProcessor],
   exports: [SequenceRunnerService],
 })

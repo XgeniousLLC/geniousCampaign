@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { envValidationSchema } from './config/env.validation';
 import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
@@ -18,6 +19,8 @@ import { SuppressionModule } from './suppression/suppression.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { SequenceRunnerModule } from './sequence-runner/sequence-runner.module';
 import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.module';
+import { TriggersModule } from './triggers/triggers.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -26,6 +29,7 @@ import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.mo
       envFilePath: ['../../.env', '.env'],
       validationSchema: envValidationSchema,
     }),
+    EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -48,6 +52,8 @@ import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.mo
     TrackingModule,
     SequenceRunnerModule,
     OutboundWebhooksModule,
+    TriggersModule,
+    EventsModule,
   ],
 })
 export class AppModule {}

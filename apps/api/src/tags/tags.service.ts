@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { tags, contactTags, contacts } from '../db/schema';
@@ -7,7 +8,10 @@ import { UpdateTagDto } from './dto/update-tag.dto';
 
 @Injectable()
 export class TagsService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async create(dto: CreateTagDto) {
     const existing = await this.drizzle.db.query.tags.findFirst({ where: eq(tags.name, dto.name) });
@@ -43,7 +47,7 @@ export class TagsService {
   }
 
   async addContact(tagId: string, contactId: string) {
-    await this.findOne(tagId);
+    const tag = await this.findOne(tagId);
     const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
@@ -57,6 +61,7 @@ export class TagsService {
     }
 
     await this.drizzle.db.insert(contactTags).values({ tagId, contactId });
+    this.events.emit('contact.tag_added', { contactId, tagId, tagName: tag.name });
     return { tagId, contactId };
   }
 

@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts } from '../db/schema';
@@ -7,7 +8,10 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 
 @Injectable()
 export class ContactsService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async create(dto: CreateContactDto) {
     const existing = await this.drizzle.db.query.contacts.findFirst({
@@ -27,6 +31,7 @@ export class ContactsService {
         status: dto.status ?? 'active',
       })
       .returning();
+    this.events.emit('contact.created', { contactId: created.id, email: created.email });
     return created;
   }
 
@@ -59,6 +64,11 @@ export class ContactsService {
       .set({ ...dto, updatedAt: new Date() })
       .where(eq(contacts.id, id))
       .returning();
+
+    for (const field of Object.keys(dto) as (keyof UpdateContactDto)[]) {
+      this.events.emit('contact.field_changed', { contactId: id, field, value: dto[field] });
+    }
+
     return updated;
   }
 

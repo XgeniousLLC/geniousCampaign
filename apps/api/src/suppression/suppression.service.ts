@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { suppressionList, softBounceCounts, type suppressionReasonEnum } from '../db/schema';
-import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
 
 const SOFT_BOUNCE_THRESHOLD = 3;
 
@@ -21,7 +21,7 @@ export class SuppressionService {
 
   constructor(
     private readonly drizzle: DrizzleService,
-    private readonly outboundWebhooks: OutboundWebhookDispatchService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async isSuppressed(email: string): Promise<boolean> {
@@ -37,7 +37,7 @@ export class SuppressionService {
 
     const [created] = await this.drizzle.db.insert(suppressionList).values({ email, reason, source }).returning();
     this.logger.log(`Suppressed ${email} (${reason}, source=${source})`);
-    await this.outboundWebhooks.emit(REASON_TO_EVENT[reason], { email, reason, source });
+    this.events.emit(REASON_TO_EVENT[reason], { email, reason, source });
     return created;
   }
 

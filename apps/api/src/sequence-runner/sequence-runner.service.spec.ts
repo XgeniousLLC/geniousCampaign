@@ -1,14 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
 import { SequenceRunnerService } from './sequence-runner.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { SesSenderProvider } from '../sending/ses-sender.provider';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
-import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
-import { OutboundWebhookSubscriptionsService } from '../outbound-webhooks/outbound-webhook-subscriptions.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts, sequences, sequenceSteps, sequenceEnrollments, sends, templates } from '../db/schema';
 
@@ -28,7 +27,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
           inject: [ConfigService],
           useFactory: (config: ConfigService) => ({ connection: { url: config.get<string>('REDIS_URL') } }),
         }),
-        BullModule.registerQueue({ name: 'outbound-webhooks' }),
+        EventEmitterModule.forRoot(),
       ],
       providers: [
         SequenceRunnerService,
@@ -36,8 +35,6 @@ describe('SequenceRunnerService (integration, real DB)', () => {
         SesSenderProvider,
         SuppressionService,
         TrackingService,
-        OutboundWebhookDispatchService,
-        OutboundWebhookSubscriptionsService,
         DrizzleService,
       ],
     }).compile();

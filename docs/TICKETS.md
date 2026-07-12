@@ -32,9 +32,9 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Done | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
 | GC-034 | Admin UI: contact enrollment panel | 2 | S | Done | GC-031, GC-021 |
-| GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
+| GC-035 | Condition-based trigger engine | 2 | L | Done | GC-031 |
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
-| GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
+| GC-037 | Internal event bus wiring | 2 | M | Done | GC-035 |
 | GC-040 | Inbound webhook framework (HMAC) | 3 | M | Done | GC-010 |
 | GC-041 | Sequence webhook controller | 3 | S | Done | GC-040, GC-031 |
 | GC-042 | Admin enrollment controller | 3 | S | Done | GC-031, GC-034 |
@@ -301,6 +301,10 @@ Verified live in Chrome: enrolled a contact into a real sequence via the UI (car
 
 **Blocked 2026-07-11**: depends on GC-031 (blocked) — trigger-driven enrollment needs `EnrollmentService` to exist.
 
+**Unblocked 2026-07-12**: `triggers` table (`name, eventType, conditions jsonb, sequenceId fk→sequences cascade, isActive`) — one JSONB condition tree per trigger rather than a separate normalized `TriggerCondition` table, since the tree is only ever read/written whole, never queried by individual leaf. Pure `evaluateCondition(node, context)` in `condition-evaluator.ts`, no DB/Nest dependency, 8/8 unit tests covering every op (`equals/contains/gt/lt/in/exists`) plus nested AND/OR groups. `TriggerEvaluationService` listens on the event bus (GC-037) via explicit `@OnEvent()` per event type (not wildcard) — `contact.created`, `contact.tag_added`, `contact.field_changed`, `contact.list_joined`, `email.opened`, `email.clicked` — loads active triggers for that event type, evaluates, and on match calls `EnrollmentService.enroll()` (invariant 2, same shared service as the webhook/admin controllers). `TriggersController` behind `JwtAuthGuard`+`RolesGuard`, writes require owner/editor.
+
+Verified live: created a trigger (`contact.tag_added`, condition `{field:'tagName', op:'equals', value:'TriggerTag'}` → linked sequence with one `exit` step), added an unrelated tag to a real contact first — confirmed no enrollment (`GET /admin/sequences/contacts/:id` → `[]`). Then added the matching tag — confirmed real enrollment row created (`status: active`, `currentStepId` = the sequence's step) within ~1s of the real HTTP call, no polling/manual trigger needed.
+
 ### GC-036 — Schedule-based trigger (BullMQ repeatable)
 Recurring trigger evaluation (cron-style) plus one-off scheduled campaign sends, timezone-aware.
 **Acceptance criteria:**
@@ -315,6 +319,10 @@ Wire `EventEmitter2` (or chosen equivalent) emissions into contact/list/tag muta
 - Every event type GC-035's trigger engine depends on is actually emitted somewhere in the codebase — cross-check against the trigger engine's supported `event_type` values.
 
 **Blocked 2026-07-11**: depends on GC-035 (blocked). Also partly on GC-019 (blocked, no AWS SES).
+
+**Unblocked 2026-07-12**: `EventEmitterModule.forRoot()` wired globally in `app.module.ts` (same pattern as `ConfigModule.forRoot({isGlobal:true})`). Real emit sites added at every mutation point: `ContactsService.create()` → `contact.created`, `ContactsService.update()` → one `contact.field_changed` per changed field, `TagsService.addContact()` → `contact.tag_added`, `ListsService.addContact()` → `contact.list_joined`. `TrackingService`/`SuppressionService`/`SequenceRunnerService` — previously calling `OutboundWebhookDispatchService.emit()` directly (GC-043's original build-order shortcut, noted below) — refactored to emit on `EventEmitter2` instead (`email.opened`, `email.clicked`, `email.bounced`, `email.complained`, `email.unsubscribed`, `sequence.completed`), decoupling them from the outbound-webhook module entirely. `OutboundWebhookEventListener` (new, `src/events/`) now bridges the bus to GC-043's dispatcher with one explicit `@OnEvent()` handler per event type — 10 total, matching the trigger engine's supported list plus the send-lifecycle events triggers don't act on.
+
+Verified live end-to-end: created a subscription (`POST /outbound-webhook-subscriptions`, `eventTypes:['contact.created']`) pointed at a local HTTP receiver, created a real contact via `POST /contacts` — receiver got a real POST within ~2s carrying `X-Event-Type: contact.created` and the HMAC-signed payload, proving the full chain (`ContactsService` → `EventEmitter2` → `OutboundWebhookEventListener` → `OutboundWebhookDispatchService` → BullMQ job → HTTP delivery) works through the new architecture, not just the trigger-engine path. Full Jest suite (37/37) and `tsc --noEmit` clean after the refactor.
 
 ---
 

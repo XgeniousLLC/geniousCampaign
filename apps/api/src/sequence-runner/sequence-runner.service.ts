@@ -12,7 +12,7 @@ import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
-import { OutboundWebhookDispatchService } from '../outbound-webhooks/outbound-webhook-dispatch.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class SequenceRunnerService {
@@ -24,7 +24,7 @@ export class SequenceRunnerService {
     private readonly sesSender: SesSenderProvider,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
-    private readonly outboundWebhooks: OutboundWebhookDispatchService,
+    private readonly events: EventEmitter2,
   ) {}
 
   /**
@@ -66,7 +66,7 @@ export class SequenceRunnerService {
           .update(sequenceEnrollments)
           .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
           .where(eq(sequenceEnrollments.id, enrollmentId));
-        await this.outboundWebhooks.emit('sequence.completed', {
+        this.events.emit('sequence.completed', {
           enrollmentId,
           sequenceId: fresh.sequenceId,
           contactId: fresh.contactId,
@@ -77,8 +77,11 @@ export class SequenceRunnerService {
       if (step.type === 'send_email') {
         await this.executeSendEmail(fresh, step);
       }
-      // 'condition' steps always pass through for now — GC-035 replaces this
-      // with a real evaluator against the trigger engine.
+      // A sequence step of type 'condition' (branch mid-sequence) always
+      // passes through for now — no ticket has specified its real branching
+      // logic yet. Not to be confused with GC-035's trigger engine, which is
+      // a separate concept: auto-enrolling a contact into a sequence from an
+      // external event, not a conditional step inside an already-running one.
 
       await this.advance(fresh.sequenceId, fresh.contactId, enrollmentId, step.order, now);
     } catch (err) {
@@ -213,7 +216,7 @@ export class SequenceRunnerService {
         .update(sequenceEnrollments)
         .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
         .where(eq(sequenceEnrollments.id, enrollmentId));
-      await this.outboundWebhooks.emit('sequence.completed', { enrollmentId, sequenceId, contactId });
+      this.events.emit('sequence.completed', { enrollmentId, sequenceId, contactId });
       return;
     }
 

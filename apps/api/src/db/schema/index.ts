@@ -9,3 +9,4 @@ export * from './enrollments';
 export * from './suppression';
 export * from './sends';
 export * from './outbound-webhooks';
+export * from './triggers';

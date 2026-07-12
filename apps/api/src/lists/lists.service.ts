@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { and, eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { lists, contactLists, contacts } from '../db/schema';
@@ -7,7 +8,10 @@ import { UpdateListDto } from './dto/update-list.dto';
 
 @Injectable()
 export class ListsService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly events: EventEmitter2,
+  ) {}
 
   async create(dto: CreateListDto) {
     const [created] = await this.drizzle.db
@@ -50,7 +54,7 @@ export class ListsService {
   }
 
   async addContact(listId: string, contactId: string) {
-    await this.findOne(listId);
+    const list = await this.findOne(listId);
     const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
@@ -64,6 +68,7 @@ export class ListsService {
     }
 
     await this.drizzle.db.insert(contactLists).values({ listId, contactId });
+    this.events.emit('contact.list_joined', { contactId, listId, listName: list.name });
     return { listId, contactId };
   }
 
