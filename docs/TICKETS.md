@@ -24,9 +24,9 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-017 | AWS SES sending service | 1 | M | Done (code ready; live send needs Sharifur's AWS creds) | GC-013 |
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Done (code ready; live SNS wiring needs Sharifur's AWS setup) | GC-017 |
 | GC-019 | Open + click tracking | 1 | M | Done | GC-017 |
-| GC-020 | One-off campaign send flow | 1 | L | Blocked (needs: GC-017, GC-018, GC-019) | GC-011, GC-016, GC-017, GC-018, GC-019 |
+| GC-020 | One-off campaign send flow | 1 | L | Done | GC-011, GC-016, GC-017, GC-018, GC-019 |
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
-| GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
+| GC-021b | Admin UI: send campaign flow | 1 | M | Done | GC-020, GC-021 |
 | GC-030 | Sequences + steps schema + CRUD API | 2 | M | Done | GC-013 |
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Done | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Done | GC-031, GC-020 |
@@ -56,6 +56,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-058 | Analytics dashboard | 4 | L | Blocked (needs: GC-019, GC-032) | GC-019, GC-032 |
 | GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
 | GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Blocked (needs: GC-019, GC-020) | GC-019, GC-020 |
+| GC-061 | Wrap guarded-write + audit-log calls in a DB transaction | 4 | S | TODO | GC-057 |
 
 ---
 
@@ -235,6 +236,12 @@ Ties GC-011/016/017/018/019 together: pick a template + a list, resolve spintax 
 
 **Blocked 2026-07-11**: depends on GC-017/018/019, all blocked on AWS SES access.
 
+**Unblocked 2026-07-12**: `CampaignsService.send()` enqueues one BullMQ job (`jobId: campaignId`, so a duplicate click is a no-op, not a second send — invariant 10) rather than sending in the request/response cycle. `CampaignSendProcessor` iterates the target list's real membership, checks suppression per recipient, resolves personalization before spintax per invariant 5, builds tracking pixel/click-rewrite/unsubscribe URLs the same way the sequence runner does, and reuses the same `SesSenderProvider`/`EmailSenderProvider` interface (invariant 7) rather than a parallel send path. `campaigns.isDryRun` — a field that already existed on the schema — now does something: a dry-run campaign records a `sends` row per recipient (status `sent`, `isDryRun: true`, `providerMessageId: null`) but never calls the real sender, so a dry-run can never leak a real send. Full send-to-self routing/large-send guardrails are GC-052/053's scope, not this ticket's — noted rather than half-built here.
+
+Found and fixed a real bug via the processor's own integration test: the campaign's final status computation divided failures against total recipients (including suppressed ones) instead of against attempted sends, so a campaign where every real attempt failed but some recipients were suppressed incorrectly reported `status: 'sent'`. Fixed to `attempted > 0 && sentCount === 0 → 'failed'`.
+
+Verified live: sent a real 5-contact campaign using a template with spintax in both subject and body — each of the 5 `sends` rows has an independently-resolved subject (`Hi`/`Hello`/`Hey` variants) and body (`Welcome`/`Greetings` variants), matching this ticket's acceptance criterion exactly. Confirmed a real (non-dry-run) send against unconfigured SES fails cleanly with the same actionable error message GC-017/018 established, recorded per-recipient, campaign status correctly `failed`. Confirmed re-sending an already-sent campaign is rejected (400), never a second send. 3 Jest integration tests (suppressed + real-failed send / dry-run / duplicate-job no-op), full suite 40/40, `tsc --noEmit` clean.
+
 ### GC-021 — Admin UI: contacts, templates
 React screens: contacts list/detail/import, template list/editor (GC-014/016 wired in; GC-015 image upload still pending R2 credentials).
 **Acceptance criteria:**
@@ -248,6 +255,10 @@ React screens: contacts list/detail/import, template list/editor (GC-014/016 wir
 - An admin can go from "no contacts" to "sent campaign" entirely through the UI, no direct API calls needed.
 
 **Blocked 2026-07-11**: depends on GC-020, blocked on AWS SES access.
+
+**Unblocked 2026-07-12**: `CampaignsList`/`CampaignCompose`/`CampaignDetail` screens, new `campaignsApi.ts` client, `createList`/`listContactsForList` added to `contactsApi.ts` (no dedicated list-management screen existed yet, so Compose gets an inline "create a new list" affordance rather than blocking on a separate ticket). Compose scopes audience selection to "pick an existing list" only — the design's list/tags/individual-recipient audience-mode toggle is left as a single mode for now since GC-020's backend only supports `listId` targeting; noted rather than building UI for backend that doesn't exist. Campaign Detail shows real counts and a live per-recipient sends table (polls every 2s while `status` is `draft`/`sending`) rather than the design's engagement funnel/open/click stats, since those depend on GC-058/060 (analytics, email log) which haven't landed yet.
+
+Verified live in Chrome: navigated Campaigns → New campaign, template auto-selected with real resolved subject preview shown inline, list defaulted with a live recipient count pulled from the real API, submitted a dry-run send — landed on Campaign Detail immediately showing `sent`/`dry run` badges and all 5 real recipient rows with per-send status and timestamp, no manual refresh. Caught two real bugs in the process (both fixed, not screenshotted-past): (1) a stale JWT in the browser session (pointing at a `users` row from an earlier DB reset) produced a 500 on campaign create — not a code bug, but surfaced a systemic gap: **every RBAC-guarded write endpoint's audit-log call happens outside a transaction with its main write**, so a failed audit-log insert (e.g. a dangling `actor_id`) leaves the primary row committed while the client sees a 500 and thinks nothing happened — this affects templates/sequences/lists/enrollments/campaigns/triggers identically, not just this ticket; flagged here as a cross-cutting follow-up rather than silently patched in just campaigns. (2) the orphaned draft campaign row that bug produced was cleaned up manually — not a data-loss risk since campaigns are draft-only until a job is enqueued.
 
 ---
 
@@ -498,3 +509,11 @@ All-sends log (not the aggregate dashboard from GC-058 — this is the raw per-s
 
 **Blocked 2026-07-11**: depends on GC-019/GC-020 (blocked) — no `Send` rows exist yet.
 - Filterable by at least status (sent/opened/clicked/bounced) and by campaign/sequence.
+
+### GC-061 — Wrap guarded-write + audit-log calls in a DB transaction
+Found 2026-07-12 while live-testing GC-021b: every RBAC-guarded write endpoint (`templates`, `sequences`, `lists`, `enrollments`, `campaigns`, `triggers`) does its primary write, then calls `AuditLogService.record()` as a separate, un-transacted statement. If the audit-log insert fails for any reason (observed cause: a stale JWT referencing a `users` row that no longer exists, tripping `audit_log_actor_id_users_id_fk`), the client gets a 500 and reasonably assumes nothing happened — but the primary row already committed. Not data-lossy (nothing needed the orphaned row to exist), but it's a real "the API lied about failing" gap.
+**Acceptance criteria:**
+- Every controller that calls both a service write method and `AuditLogService.record()` does both inside one Drizzle transaction (`db.transaction(...)`), so a failed audit-log write rolls back the primary write too.
+- A forced audit-log failure (e.g. a bad `actor_id`) in a test leaves zero trace of the primary write — no orphaned row.
+
+TODO — not started. Low urgency (no data-loss risk observed, just a misleading error response), grouped with GC-057 since it's audit-log's own transactional boundary.

@@ -9,6 +9,9 @@ import { ContactsList } from './routes/ContactsList';
 import { ContactDetail } from './routes/ContactDetail';
 import { SequencesList } from './routes/SequencesList';
 import { SequenceBuilder } from './routes/SequenceBuilder';
+import { CampaignsList } from './routes/CampaignsList';
+import { CampaignCompose } from './routes/CampaignCompose';
+import { CampaignDetail } from './routes/CampaignDetail';
 
 function App() {
   return (
@@ -25,6 +28,9 @@ function App() {
             <Route path="templates/:id" element={<TemplateEditor />} />
             <Route path="sequences" element={<SequencesList />} />
             <Route path="sequences/:id" element={<SequenceBuilder />} />
+            <Route path="campaigns" element={<CampaignsList />} />
+            <Route path="campaigns/new" element={<CampaignCompose />} />
+            <Route path="campaigns/:id" element={<CampaignDetail />} />
           </Route>
         </Route>
       </Routes>

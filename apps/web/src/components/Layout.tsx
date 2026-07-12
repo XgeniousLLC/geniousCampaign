@@ -38,6 +38,11 @@ export function Layout() {
                 Sequences
               </Link>
             </li>
+            <li>
+              <Link to="/campaigns" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Campaigns
+              </Link>
+            </li>
           </ul>
         </nav>
       )}

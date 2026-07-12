@@ -21,6 +21,7 @@ import { SequenceRunnerModule } from './sequence-runner/sequence-runner.module';
 import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.module';
 import { TriggersModule } from './triggers/triggers.module';
 import { EventsModule } from './events/events.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { EventsModule } from './events/events.module';
     OutboundWebhooksModule,
     TriggersModule,
     EventsModule,
+    CampaignsModule,
   ],
 })
 export class AppModule {}

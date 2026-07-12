@@ -63,6 +63,14 @@ export function listLists() {
   return apiGet<List[]>('/lists');
 }
 
+export function createList(input: { name: string }) {
+  return apiPost<List>('/lists', input);
+}
+
+export function listContactsForList(listId: string) {
+  return apiGet<{ contact: Contact; addedAt: string }[]>(`/lists/${listId}/contacts`);
+}
+
 export function addContactTag(tagId: string, contactId: string) {
   return apiPost(`/tags/${tagId}/contacts/${contactId}`, {});
 }
