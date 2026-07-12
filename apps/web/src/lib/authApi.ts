@@ -5,8 +5,8 @@ export interface AuthResponse {
   user: { id: string; email: string; role: 'owner' | 'editor' | 'viewer' };
 }
 
-export function login(email: string, password: string) {
-  return apiPost<AuthResponse>('/auth/login', { email, password });
+export function login(email: string, password: string, rememberMe?: boolean) {
+  return apiPost<AuthResponse>('/auth/login', { email, password, rememberMe });
 }
 
 export function register(email: string, password: string) {

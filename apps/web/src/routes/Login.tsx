@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login, register } from '../lib/authApi';
+import { login } from '../lib/authApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { getPublicSummary, type PublicSummary } from '../lib/analyticsApi';
 
@@ -11,9 +11,9 @@ function formatCount(n: number): string {
 export function Login() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
-  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<PublicSummary | null>(null);
@@ -33,7 +33,7 @@ export function Login() {
     setError(null);
     setLoading(true);
     try {
-      const resp = mode === 'login' ? await login(email, password) : await register(email, password);
+      const resp = await login(email, password, rememberMe);
       setSession(resp.accessToken, resp.user);
       navigate('/');
     } catch (err) {
@@ -61,9 +61,7 @@ export function Login() {
             </div>
           </div>
 
-          <h1 className="mb-1.5 text-[22px] font-semibold tracking-tight text-text-heading">
-            {mode === 'login' ? 'Sign in' : 'Create account'}
-          </h1>
+          <h1 className="mb-1.5 text-[22px] font-semibold tracking-tight text-text-heading">Sign in</h1>
           <p className="mb-[26px] text-[13px] text-text-muted">Team access only. Use your workspace credentials.</p>
 
           <form onSubmit={submit}>
@@ -84,11 +82,9 @@ export function Login() {
 
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-xs font-semibold text-text-secondary">Password</label>
-              {mode === 'login' && (
-                <Link to="/forgot-password" className="text-[11.5px] font-medium text-accent-light hover:text-accent-lighter">
-                  Forgot?
-                </Link>
-              )}
+              <Link to="/forgot-password" className="text-[11.5px] font-medium text-accent-light hover:text-accent-lighter">
+                Forgot?
+              </Link>
             </div>
             <div className="mb-2 flex h-10 items-center gap-2 rounded-[9px] border border-border-subtle bg-surface px-3">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6270" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -105,6 +101,16 @@ export function Login() {
               />
             </div>
 
+            <label className="mb-3 flex items-center gap-2 text-[12.5px] text-text-tertiary">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-3.5 w-3.5 accent-accent"
+              />
+              Remember me for 14 days
+            </label>
+
             {error && <div className="mb-2.5 text-xs text-danger">{error}</div>}
 
             <button
@@ -112,17 +118,18 @@ export function Login() {
               disabled={loading}
               className="mt-2 h-10 w-full rounded-[9px] bg-accent text-[13.5px] font-semibold text-white shadow-sm hover:bg-accent-hover disabled:opacity-50"
             >
-              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+              {loading ? 'Please wait…' : 'Sign in'}
             </button>
           </form>
 
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-            className="mt-5 w-full text-center text-[11.5px] text-text-muted hover:text-text-primary"
-          >
-            {mode === 'login' ? 'First time? Create an account' : 'Already have an account? Sign in'}
-          </button>
+          {import.meta.env.DEV && (
+            <div className="mt-5 rounded-[9px] border border-info/25 bg-info/10 p-3 text-[11.5px] leading-relaxed text-text-tertiary">
+              <span className="font-semibold text-info">Local dev only</span> — demo credentials:
+              <br />
+              <span className="font-mono text-text-secondary">trigger-test@example.com</span> /{' '}
+              <span className="font-mono text-text-secondary">Test1234!</span>
+            </div>
+          )}
         </div>
       </div>
 
