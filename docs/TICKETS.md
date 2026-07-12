@@ -54,7 +54,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-056 | Lightweight RBAC | 4 | M | Done | GC-005 |
 | GC-057 | Audit log | 4 | M | Done | GC-056 |
 | GC-058 | Analytics dashboard | 4 | L | Done | GC-019, GC-032 |
-| GC-059 | AI-assisted template copy | 4 | M | Blocked (needs decision) | GC-014 |
+| GC-059 | AI-assisted template copy | 4 | M | Code done, needs Sharifur's real OpenAI/DeepSeek API key | GC-014 |
 | GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Done | GC-019, GC-020 |
 | GC-061 | Wrap guarded-write + audit-log calls in a DB transaction | 4 | S | TODO | GC-057 |
 | GC-062 | Verification dashboard UI (bulk verify, stats, credits) | 4 | M | TODO | GC-049 |
@@ -558,6 +558,14 @@ Surfaced by the design's `AI ASSIST MODAL` — a prompt-to-copy tool inside the 
 - Generated copy is inserted into the editor as plain resolvable content — it doesn't bypass the spintax/personalization-token system from GC-016.
 - API key is read from env (never hardcoded), and the modal clearly labels output as AI-generated per the design's footer copy ("AI-generated · review before sending").
 - A missing/invalid API key produces a clear in-modal error, not a silent failure or a crash.
+
+**Decision made 2026-07-11 (Sharifur, via AskUserQuestion)**: multi-provider — `LLM_PROVIDER` env var selects `openai` | `deepseek`, not a single hardcoded provider.
+
+**Unblocked 2026-07-12**: `OpenAiCompatibleProvider` — one shared implementation for both, since DeepSeek's API is a drop-in-compatible superset of OpenAI's chat completions endpoint (same request/response shape, different base URL/model/key). `AiAssistService.getProvider()` reads `LLM_PROVIDER` and instantiates the right one; an unrecognized value throws rather than silently falling back to a default. Neither provider fakes a response when its key is missing — same "throw a clear, actionable error" pattern as every other unconfigured integration this session (SES, R2, Gmail, Reoon/NeverBounce, Slack).
+
+Confirmed the "doesn't bypass the spintax/personalization-token system" criterion is satisfied by the existing architecture, not new code: `resolvePersonalization()`/`resolveSpintax()` both operate via regex/parsing on the *rendered text string* (`template.subject`/`bodyHtml`/`bodyText`), not on TipTap's structured node tree — so AI-generated plain text inserted via `editor.chain().insertContent(text)` resolves at send time exactly the same as if a human had typed `{{contact.firstName}}` or `{option A|option B}` by hand. No special-casing needed.
+
+Verified live: the modal renders pixel-for-pixel matching the design (prompt textarea, quick-action chips correctly disabled until a result exists, "AI-generated · review before sending" footer). Attempting to generate with no API key configured surfaces the exact clean "OpenAI is not configured — no API key set" error inline in the modal — not a crash, not a silent failure, directly satisfying the ticket's third acceptance criterion. 5 Jest tests cover: clean error when unconfigured, rejects an unrecognized `LLM_PROVIDER` value rather than silently defaulting, calls the real OpenAI endpoint with the exact prompt when configured, routes to the real DeepSeek endpoint (different base URL/model) when `LLM_PROVIDER=deepseek`, and a quick action correctly wraps the *previous result* (not the original prompt) with a refinement instruction. **Sharifur: once a real `OPENAI_API_KEY` or `DEEPSEEK_API_KEY` is in `.env`, this should generate real copy as-is — worth a live pass to sanity-check output quality/tone, which obviously couldn't be evaluated without a real key.**
 
 ### GC-060 — Email log UI
 All-sends log (not the aggregate dashboard from GC-058 — this is the raw per-send list): status, recipient, template, timestamp, filterable, with a detail drawer showing the specific resolved subject/body and event history for one send. Design: `EMAIL LOG`, `EMAIL LOG DETAIL DRAWER`.

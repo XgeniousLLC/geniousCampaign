@@ -27,6 +27,7 @@ import { CircuitBreakerModule } from './circuit-breaker/circuit-breaker.module';
 import { SlackModule } from './slack/slack.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { EmailLogModule } from './email-log/email-log.module';
+import { AiAssistModule } from './ai-assist/ai-assist.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { EmailLogModule } from './email-log/email-log.module';
     SlackModule,
     AnalyticsModule,
     EmailLogModule,
+    AiAssistModule,
   ],
 })
 export class AppModule {}
