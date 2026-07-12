@@ -31,7 +31,7 @@ export function Triggers() {
 
   return (
     <div>
-      <div className="mb-4.5 flex items-start justify-between gap-4">
+      <div className="mb-[18px] flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-text-heading">Triggers</h1>
           <p className="mt-1 text-xs text-text-muted">Automatically enroll contacts into sequences on conditions or schedules.</p>

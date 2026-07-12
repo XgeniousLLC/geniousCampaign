@@ -54,12 +54,12 @@ export function Webhooks() {
 
   return (
     <div>
-      <div className="mb-4.5">
+      <div className="mb-[18px]">
         <h1 className="text-lg font-semibold text-text-heading">Webhooks</h1>
         <p className="mt-1 text-xs text-text-muted">Inbound endpoints receive events; outbound subscriptions push our events to your systems.</p>
       </div>
 
-      <div className="mb-4.5 grid grid-cols-2 gap-4.5">
+      <div className="mb-[18px] grid grid-cols-2 gap-[18px]">
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
           <div className="border-b border-border-default px-3.5 py-3 text-sm font-semibold text-text-primary">Inbound endpoints</div>
           <div className="p-1.5">

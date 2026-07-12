@@ -40,12 +40,12 @@ export function Settings() {
 
   return (
     <div>
-      <div className="mb-4.5">
+      <div className="mb-[18px]">
         <h1 className="text-lg font-semibold text-text-heading">Settings</h1>
         <p className="mt-1 text-xs text-text-muted">Team access, activity audit, and the global suppression list.</p>
       </div>
 
-      <div className="mb-4.5 flex gap-5 border-b border-border-default">
+      <div className="mb-[18px] flex gap-5 border-b border-border-default">
         {TABS.map((t) => (
           <button
             key={t}
@@ -74,7 +74,7 @@ export function Settings() {
                 <select
                   value={u.role}
                   onChange={(e) => handleRoleChange(u.id, e.target.value as User['role'])}
-                  className={`h-6.5 rounded-full border px-2 text-[11px] font-semibold ${ROLE_STYLES[u.role]}`}
+                  className={`h-[26px] rounded-full border px-2 text-[11px] font-semibold ${ROLE_STYLES[u.role]}`}
                 >
                   <option value="owner">owner</option>
                   <option value="editor">editor</option>

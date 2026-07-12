@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gte, sql, desc, inArray } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { sends, emailEvents, campaigns } from '../db/schema';
+import { sends, emailEvents, campaigns, contacts } from '../db/schema';
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -103,6 +103,21 @@ export class AnalyticsService {
         };
       }),
     );
+  }
+
+  /** Real aggregate-only numbers (no PII, no per-record data) for the
+   * pre-auth login screen's stats panel — real counts, never the design's
+   * placeholder "48.9k / 49.6% / 18.2k" hardcoded as if real. */
+  async getPublicSummary() {
+    const overview = await this.getOverview(30);
+    const [{ contactCount }] = await this.drizzle.db
+      .select({ contactCount: sql<number>`count(*)`.mapWith(Number) })
+      .from(contacts);
+    return {
+      sentCount: overview.sentCount,
+      openRatePct: overview.openRatePct,
+      contactCount,
+    };
   }
 
   /** Real recent open/click events joined with the send's campaign name,

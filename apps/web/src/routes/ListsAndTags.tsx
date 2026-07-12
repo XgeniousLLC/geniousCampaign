@@ -51,12 +51,12 @@ export function ListsAndTags() {
 
   return (
     <div>
-      <div className="mb-4.5">
+      <div className="mb-[18px]">
         <h1 className="text-lg font-semibold text-text-heading">Lists &amp; Tags</h1>
         <p className="mt-1 text-xs text-text-muted">Static lists are fixed sets; dynamic lists update automatically from rules.</p>
       </div>
 
-      <div className="grid grid-cols-[1fr_320px] items-start gap-4.5">
+      <div className="grid grid-cols-[1fr_320px] items-start gap-[18px]">
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
           <div className="flex items-center justify-between border-b border-border-default px-3.5 py-3">
             <span className="text-sm font-semibold text-text-primary">Lists</span>

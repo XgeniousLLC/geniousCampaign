@@ -30,9 +30,9 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
       <div className="w-[540px] max-w-full rounded-xl border border-border-modal bg-panel2 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-border-default px-4.5 py-3.5">
+        <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-6.5 w-6.5 items-center justify-center rounded-md bg-gradient-to-br from-accent to-purple-500 text-white">✦</div>
+            <div className="flex h-[26px] w-[26px] items-center justify-center rounded-md bg-gradient-to-br from-accent to-purple-500 text-white">✦</div>
             <h3 className="text-sm font-semibold text-text-heading">AI Assist</h3>
           </div>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary">
@@ -40,7 +40,7 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
           </button>
         </div>
 
-        <div className="p-4.5">
+        <div className="p-[18px]">
           <label className="mb-1.5 block text-xs font-semibold text-text-secondary">What should it say?</label>
           <textarea
             value={prompt}
@@ -71,13 +71,13 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border-default bg-surface px-4.5 py-3.5">
+        <div className="flex items-center justify-between gap-2 border-t border-border-default bg-surface px-[18px] py-3.5">
           <span className="text-[11px] text-text-faint">AI-generated · review before sending</span>
           <div className="flex gap-2">
             {result && (
               <button
                 onClick={() => onInsert(result)}
-                className="h-8.5 rounded-md border border-border-subtle bg-surface px-3.5 text-sm font-medium text-text-secondary hover:bg-raised"
+                className="h-[34px] rounded-md border border-border-subtle bg-surface px-3.5 text-sm font-medium text-text-secondary hover:bg-raised"
               >
                 Insert
               </button>
@@ -85,7 +85,7 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
             <button
               onClick={() => run()}
               disabled={loading || !prompt.trim()}
-              className="h-8.5 flex items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-[34px] flex items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? 'Generating…' : result ? 'Regenerate' : 'Generate'}
             </button>

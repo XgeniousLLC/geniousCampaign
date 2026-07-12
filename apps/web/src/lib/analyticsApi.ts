@@ -39,6 +39,17 @@ export interface RecentActivityItem {
   campaignName: string | null;
 }
 
+export interface PublicSummary {
+  sentCount: number;
+  openRatePct: number;
+  contactCount: number;
+}
+
+/** Unauthenticated — safe to call before login (real aggregate counts only). */
+export function getPublicSummary() {
+  return apiGet<PublicSummary>('/analytics/public/summary');
+}
+
 export function getOverview(days = 30) {
   return apiGet<AnalyticsOverview>(`/analytics/overview?days=${days}`);
 }

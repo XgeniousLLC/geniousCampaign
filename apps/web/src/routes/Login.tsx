@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login, register } from '../lib/authApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import { getPublicSummary, type PublicSummary } from '../lib/analyticsApi';
+
+function formatCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
 
 export function Login() {
   const navigate = useNavigate();
@@ -11,9 +16,20 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<PublicSummary | null>(null);
+
+  useEffect(() => {
+    getPublicSummary()
+      .then(setSummary)
+      .catch(() => setSummary(null));
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!email.trim() || !password) {
+      setError('Enter your email and password to continue.');
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
@@ -28,50 +44,136 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-base">
-      <form onSubmit={submit} className="w-80 rounded-lg border border-border-default bg-panel p-6">
-        <div className="mb-5 text-center text-sm font-semibold text-text-heading">geniusCampaign</div>
-        <h1 className="mb-4 text-center text-base font-semibold text-text-primary">
-          {mode === 'login' ? 'Sign in' : 'Create account'}
-        </h1>
+    <div className="flex h-screen overflow-hidden bg-base text-text-primary">
+      {/* left: form */}
+      <div className="flex min-w-0 flex-1 items-center justify-center p-8">
+        <div className="w-full max-w-[340px]">
+          <div className="mb-8 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-gradient-to-br from-accent to-accent-hover shadow-[0_2px_10px_rgba(79,70,229,.45)]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 2 11 13" />
+                <path d="M22 2 15 22l-4-9-9-4z" />
+              </svg>
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-[15px] font-semibold tracking-tight text-text-heading">geniusCampaign</span>
+              <span className="text-[11px] font-medium text-text-faint">Internal outreach platform</span>
+            </div>
+          </div>
 
-        <label className="mb-1 block text-xs text-text-muted">Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="mb-3 h-9 w-full rounded-md border border-border-strong bg-field px-3 text-sm text-text-primary outline-none"
-        />
+          <h1 className="mb-1.5 text-[22px] font-semibold tracking-tight text-text-heading">
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </h1>
+          <p className="mb-[26px] text-[13px] text-text-muted">Team access only. Use your workspace credentials.</p>
 
-        <label className="mb-1 block text-xs text-text-muted">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={8}
-          className="mb-4 h-9 w-full rounded-md border border-border-strong bg-field px-3 text-sm text-text-primary outline-none"
-        />
+          <form onSubmit={submit}>
+            <label className="mb-1.5 block text-xs font-semibold text-text-secondary">Work email</label>
+            <div className="mb-3.5 flex h-10 items-center gap-2 rounded-[9px] border border-border-subtle bg-surface px-3">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6270" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="m22 6-10 7L2 6" />
+              </svg>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                type="email"
+                className="flex-1 bg-transparent text-[13.5px] text-text-primary outline-none"
+              />
+            </div>
 
-        {error && <div className="mb-3 text-xs text-danger">{error}</div>}
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-semibold text-text-secondary">Password</label>
+            </div>
+            <div className="mb-2 flex h-10 items-center gap-2 rounded-[9px] border border-border-subtle bg-surface px-3">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6270" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                placeholder="••••••••"
+                minLength={8}
+                className="flex-1 bg-transparent font-mono text-[13.5px] text-text-primary outline-none"
+              />
+            </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="h-9 w-full rounded-md bg-accent text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-        >
-          {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-        </button>
+            {error && <div className="mb-2.5 text-xs text-danger">{error}</div>}
 
-        <button
-          type="button"
-          onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-          className="mt-3 w-full text-center text-xs text-text-muted hover:text-text-primary"
-        >
-          {mode === 'login' ? 'First time? Create an account' : 'Already have an account? Sign in'}
-        </button>
-      </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-2 h-10 w-full rounded-[9px] bg-accent text-[13.5px] font-semibold text-white shadow-sm hover:bg-accent-hover disabled:opacity-50"
+            >
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            </button>
+          </form>
+
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border-subtle" />
+            <span className="text-[11px] text-text-faint">OR</span>
+            <div className="h-px flex-1 bg-border-subtle" />
+          </div>
+
+          <button
+            type="button"
+            disabled
+            title="Google Workspace SSO isn't set up for this app — sign in with email/password."
+            className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-[9px] border border-border-subtle bg-surface text-[13px] font-medium text-text-tertiary opacity-50"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EA4335" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <path d="m22 6-10 7L2 6" />
+            </svg>
+            Continue with Google Workspace
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            className="mt-6 w-full text-center text-[11.5px] text-text-muted hover:text-text-primary"
+          >
+            {mode === 'login' ? 'First time? Create an account' : 'Already have an account? Sign in'}
+          </button>
+        </div>
+      </div>
+
+      {/* right: brand panel */}
+      <div
+        className="flex min-w-0 flex-1 flex-col justify-center border-l border-border-subtle p-12"
+        style={{ background: 'radial-gradient(120% 100% at 100% 0%, rgba(99,102,241,.14), transparent 55%), #0D0E12' }}
+      >
+        <div className="max-w-[400px]">
+          <h2 className="mb-3.5 text-[26px] font-semibold leading-[1.25] tracking-tight text-text-heading">
+            Send smarter across SES &amp; every Gmail mailbox.
+          </h2>
+          <p className="mb-[30px] text-sm leading-relaxed text-text-tertiary">
+            Contacts, sequences, templates with spintax, and quota-aware sending — all in one internal console.
+          </p>
+          <div className="flex gap-[26px]">
+            <div>
+              <div className="font-mono text-[22px] font-semibold text-text-heading">
+                {summary ? formatCount(summary.sentCount) : '—'}
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-text-faint">sent / 30d</div>
+            </div>
+            <div>
+              <div className="font-mono text-[22px] font-semibold text-text-heading">
+                {summary ? `${summary.openRatePct.toFixed(1)}%` : '—'}
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-text-faint">open rate</div>
+            </div>
+            <div>
+              <div className="font-mono text-[22px] font-semibold text-text-heading">
+                {summary ? formatCount(summary.contactCount) : '—'}
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-text-faint">contacts</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

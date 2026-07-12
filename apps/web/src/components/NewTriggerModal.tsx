@@ -60,24 +60,24 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
       <div className="flex max-h-[84vh] w-[540px] max-w-full flex-col rounded-xl border border-border-modal bg-panel2 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-border-default px-4.5 py-3.5">
+        <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
           <h3 className="text-sm font-semibold text-text-heading">New trigger</h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary">
             ✕
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4.5">
+        <div className="flex-1 overflow-y-auto p-[18px]">
           <label className="mb-2 block text-xs font-semibold text-text-secondary">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Demo booked → Onboarding"
-            className="mb-4 h-8.5 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
+            className="mb-4 h-[34px] w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
           />
 
           <label className="mb-2 block text-xs font-semibold text-text-secondary">Trigger type</label>
-          <div className="mb-4.5 flex flex-col gap-1.5">
+          <div className="mb-[18px] flex flex-col gap-1.5">
             {(['condition', 'schedule'] as const).map((t) => (
               <button
                 key={t}
@@ -103,7 +103,7 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
               <select
                 value={eventType}
                 onChange={(e) => setEventType(e.target.value)}
-                className="mb-2.5 h-8.5 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
+                className="mb-2.5 h-[34px] w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
               >
                 {EVENT_TYPES.map((et) => (
                   <option key={et} value={et}>
@@ -111,40 +111,40 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
                   </option>
                 ))}
               </select>
-              <div className="mb-4.5 grid grid-cols-3 gap-2">
-                <input value={field} onChange={(e) => setField(e.target.value)} placeholder="field (e.g. tagName)" className="h-8.5 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
-                <select value={op} onChange={(e) => setOp(e.target.value as typeof op)} className="h-8.5 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary">
+              <div className="mb-[18px] grid grid-cols-3 gap-2">
+                <input value={field} onChange={(e) => setField(e.target.value)} placeholder="field (e.g. tagName)" className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
+                <select value={op} onChange={(e) => setOp(e.target.value as typeof op)} className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary">
                   {OPS.map((o) => (
                     <option key={o} value={o}>
                       {o}
                     </option>
                   ))}
                 </select>
-                <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" className="h-8.5 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
+                <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
               </div>
             </>
           ) : (
             <>
               <label className="mb-2 block text-xs font-semibold text-text-secondary">Run</label>
-              <div className="mb-4.5 grid grid-cols-2 gap-2">
+              <div className="mb-[18px] grid grid-cols-2 gap-2">
                 <input
                   value={scheduleCron}
                   onChange={(e) => setScheduleCron(e.target.value)}
                   placeholder="cron, e.g. 0 9 * * 1"
-                  className="h-8.5 rounded-md border border-border-subtle bg-surface px-2.5 font-mono text-xs text-text-primary"
+                  className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 font-mono text-xs text-text-primary"
                 />
                 <input
                   value={scheduleTimezone}
                   onChange={(e) => setScheduleTimezone(e.target.value)}
                   placeholder="timezone, e.g. UTC"
-                  className="h-8.5 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary"
+                  className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary"
                 />
               </div>
             </>
           )}
 
           <label className="mb-2 block text-xs font-semibold text-text-secondary">Enroll into sequence</label>
-          <select value={sequenceId} onChange={(e) => setSequenceId(e.target.value)} className="h-8.5 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary">
+          <select value={sequenceId} onChange={(e) => setSequenceId(e.target.value)} className="h-[34px] w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary">
             {sequences.length === 0 && <option value="">No sequences yet</option>}
             {sequences.map((s) => (
               <option key={s.id} value={s.id}>
@@ -156,14 +156,14 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
           {error && <div className="mt-3 text-xs text-danger">{error}</div>}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border-default bg-surface px-4.5 py-3.5">
-          <button onClick={onClose} className="h-8.5 rounded-md border border-border-subtle px-3.5 text-sm font-medium text-text-secondary hover:bg-raised">
+        <div className="flex items-center justify-end gap-2 border-t border-border-default bg-surface px-[18px] py-3.5">
+          <button onClick={onClose} className="h-[34px] rounded-md border border-border-subtle px-3.5 text-sm font-medium text-text-secondary hover:bg-raised">
             Cancel
           </button>
           <button
             onClick={handleCreate}
             disabled={saving}
-            className="h-8.5 rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            className="h-[34px] rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
           >
             {saving ? 'Creating…' : 'Create trigger'}
           </button>
