@@ -33,7 +33,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
 | GC-034 | Admin UI: contact enrollment panel | 2 | S | Done | GC-031, GC-021 |
 | GC-035 | Condition-based trigger engine | 2 | L | Done | GC-031 |
-| GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
+| GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Split: recurring trigger Done, one-off campaign scheduling folded into GC-020/021b | GC-032 |
 | GC-037 | Internal event bus wiring | 2 | M | Done | GC-035 |
 | GC-040 | Inbound webhook framework (HMAC) | 3 | M | Done | GC-010 |
 | GC-041 | Sequence webhook controller | 3 | S | Done | GC-040, GC-031 |
@@ -312,6 +312,16 @@ Recurring trigger evaluation (cron-style) plus one-off scheduled campaign sends,
 - A one-off scheduled campaign set for a specific future timestamp in a specific timezone sends at the correct wall-clock time in that timezone.
 
 **Blocked 2026-07-11**: depends on GC-032 (blocked).
+
+**Split 2026-07-12**: this ticket bundles two independent capabilities — split rather than silently narrowing scope (per CLAUDE.md's ticket-splitting rule).
+
+*Recurring cron-style trigger — Done.* Added `scheduleCron`/`scheduleTimezone` columns to `triggers` (set only when `eventType: 'schedule'`). `ScheduleTriggerSchedulerService` upserts/removes one BullMQ repeatable job per active schedule trigger, keyed by the trigger's own id, using BullMQ's native cron+tz repeatable-job support directly (no hand-rolled cron matcher — invariant 10) — `TriggersService.create/update/remove` keeps the job in sync, and `onModuleInit` re-registers every active schedule trigger's job on boot so restarts are self-healing. `ScheduleTriggerProcessor` re-checks the trigger's active status at fire time (invariant 3 pattern) and evaluates `evaluateCondition` against every contact's *live* current state (`buildContactContext`: fields + joined tag names) rather than a one-shot event payload, since there's no originating event for a scheduled fire.
+
+Found and fixed a real bug during live verification: naively calling `EnrollmentService.enroll()` for every match on every tick re-enrolls the same contact endlessly once their prior enrollment completes, because `enroll()` only guards against a currently active/paused enrollment (invariant 1), not a completed one. Fixed by having the processor pre-filter against *any* existing enrollment (any status) for that trigger's sequence before evaluating — a schedule trigger enrolls each matching contact at most once ever per target sequence, not once per tick it still matches.
+
+Verified live in two rounds: (1) pre-fix — a `* * * * *` UTC trigger matching a tagged contact fired 3 times across 3 minutes and created 3 separate enrollment rows for the same contact (confirming the bug), with a negative-control untagged contact never enrolled across the same window; (2) post-fix — a fresh identical trigger against the same already-enrolled contact logged `0 matched, 0 newly enrolled` on both of the next 2 ticks, and `sequence_enrollments` still held exactly the 3 pre-fix rows (no growth). Full Jest suite (37/37) and `tsc --noEmit` clean after the fix.
+
+*One-off scheduled campaign send, timezone-aware — folded into GC-020/021b* (task queue #60, not yet started). This half genuinely needs GC-020's campaign send flow to exist first (there's nothing to schedule against yet — `campaigns` table exists but has no service/controller). Building it here would mean building GC-020 prematurely and out of order. When GC-020/021b lands, add `scheduledAt`/`timezone` columns to `campaigns` and a BullMQ delayed job (not a new repeatable-job type) that fires the send at the correct wall-clock instant in the campaign's configured timezone.
 
 ### GC-037 — Internal event bus wiring
 Wire `EventEmitter2` (or chosen equivalent) emissions into contact/list/tag mutation points: `contact.created`, `contact.tag_added`, `contact.field_changed`, `contact.list_joined`, plus the email events from GC-019 (`email.opened`, `email.clicked`, `email.bounced`).

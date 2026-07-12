@@ -1,4 +1,4 @@
-import { IsBoolean, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
 
 export class CreateTriggerDto {
   @IsString()
@@ -16,4 +16,12 @@ export class CreateTriggerDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ValidateIf((dto: CreateTriggerDto) => dto.eventType === 'schedule')
+  @IsString()
+  scheduleCron?: string;
+
+  @ValidateIf((dto: CreateTriggerDto) => dto.eventType === 'schedule')
+  @IsString()
+  scheduleTimezone?: string;
 }

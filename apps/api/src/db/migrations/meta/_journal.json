@@ -85,6 +85,13 @@
       "when": 1783821735411,
       "tag": "0011_striped_exodus",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783822353313,
+      "tag": "0012_kind_kabuki",
+      "breakpoints": true
     }
   ]
 }

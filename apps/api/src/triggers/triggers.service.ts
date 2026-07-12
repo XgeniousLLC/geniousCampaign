@@ -4,10 +4,14 @@ import { DrizzleService } from '../db/drizzle.service';
 import { triggers } from '../db/schema';
 import { CreateTriggerDto } from './dto/create-trigger.dto';
 import { UpdateTriggerDto } from './dto/update-trigger.dto';
+import { ScheduleTriggerSchedulerService } from './schedule-trigger-scheduler.service';
 
 @Injectable()
 export class TriggersService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly scheduler: ScheduleTriggerSchedulerService,
+  ) {}
 
   async create(dto: CreateTriggerDto) {
     const [created] = await this.drizzle.db
@@ -18,8 +22,13 @@ export class TriggersService {
         conditions: dto.conditions,
         sequenceId: dto.sequenceId,
         isActive: dto.isActive ?? true,
+        scheduleCron: dto.scheduleCron,
+        scheduleTimezone: dto.scheduleTimezone,
       })
       .returning();
+    if (created.eventType === 'schedule') {
+      await this.scheduler.syncJob(created);
+    }
     return created;
   }
 
@@ -42,18 +51,24 @@ export class TriggersService {
   }
 
   async update(id: string, dto: UpdateTriggerDto) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     const [updated] = await this.drizzle.db
       .update(triggers)
       .set({ ...dto, updatedAt: new Date() })
       .where(eq(triggers.id, id))
       .returning();
+    if (existing.eventType === 'schedule' || updated.eventType === 'schedule') {
+      await this.scheduler.syncJob(updated);
+    }
     return updated;
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     await this.drizzle.db.delete(triggers).where(eq(triggers.id, id));
+    if (existing.eventType === 'schedule') {
+      await this.scheduler.removeJob(id);
+    }
     return { id };
   }
 }
