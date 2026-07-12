@@ -52,8 +52,23 @@ export function getContact(id: string) {
   return apiGet<Contact>(`/contacts/${id}`);
 }
 
-export function createContact(input: { email: string; firstName?: string; lastName?: string }) {
+export function createContact(input: {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  customFields?: Record<string, unknown>;
+}) {
   return apiPost<Contact>('/contacts', input);
+}
+
+// Same deterministic hash + palette as the design's avatarColor() — every
+// contact gets one stable color derived from its id, not a flat accent tint.
+const AVATAR_PALETTE = ['#6366F1', '#3B82F6', '#8B5CF6', '#0EA5E9', '#F59E0B', '#EC4899', '#10B981', '#EF4444', '#14B8A6', '#A855F7'];
+
+export function avatarColor(id: string): string {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
 }
 
 export function updateContact(id: string, input: Partial<Pick<Contact, 'firstName' | 'lastName' | 'status'>>) {

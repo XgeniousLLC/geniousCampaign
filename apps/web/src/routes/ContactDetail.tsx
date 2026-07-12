@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   addContactList,
   addContactTag,
+  avatarColor,
   contactLists,
   contactTags,
   getContact,
@@ -63,7 +64,10 @@ export function ContactDetail() {
       </Link>
 
       <div className="mb-5 flex items-center gap-3.5">
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent-light">
+        <span
+          className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold text-white"
+          style={{ background: avatarColor(contact.id) }}
+        >
           {initials}
         </span>
         <div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { addContactList, deleteContact, listContacts, listLists, type Contact, type List } from '../lib/contactsApi';
+import { addContactList, avatarColor, deleteContact, listContacts, listLists, type Contact, type List } from '../lib/contactsApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
 import { localCheckEmail } from '../lib/verificationApi';
@@ -249,18 +249,24 @@ export function ContactsList() {
               placeholder="Search by email, name, or tag…"
               className="h-8 w-72 rounded-md border border-border-strong bg-field px-3 text-xs text-text-primary outline-none placeholder:text-text-faint"
             />
-            <div className="flex gap-1">
-              {(['all', 'active', 'unsubscribed', 'bounced', 'suppressed'] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={`h-8 rounded-md px-2.5 text-xs font-medium ${
-                    statusFilter === s ? 'bg-raised2 text-text-primary' : 'text-text-muted hover:bg-raised'
-                  }`}
-                >
-                  {s} <span className="text-text-faint">{counts[s] ?? 0}</span>
-                </button>
-              ))}
+            <div className="flex gap-1.5">
+              {(['all', 'active', 'unsubscribed', 'bounced', 'suppressed'] as const).map((s) => {
+                const on = statusFilter === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${
+                      on
+                        ? 'border-accent/30 bg-accent/10 text-accent-tint'
+                        : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
+                    }`}
+                  >
+                    {s}
+                    <span className={`font-mono text-[11px] ${on ? 'text-accent-light' : 'text-text-meta'}`}>{counts[s] ?? 0}</span>
+                  </button>
+                );
+              })}
             </div>
             <div className="flex-1" />
             {selected.size > 0 && (
@@ -368,7 +374,10 @@ export function ContactsList() {
                     </td>
                     <td className="px-3 py-2">
                       <Link to={`/contacts/${c.id}`} className="flex items-center gap-2.5">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent-light">
+                        <span
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                          style={{ background: avatarColor(c.id) }}
+                        >
                           {initials(c)}
                         </span>
                         <span className="min-w-0">
@@ -469,57 +478,128 @@ export function ContactsList() {
   );
 }
 
+function FormField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-medium text-text-muted">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        type={type}
+        className="h-8 w-full rounded border border-border-default bg-field px-2 text-xs text-text-primary outline-none placeholder:text-text-faint focus:border-border-emphasis"
+      />
+    </label>
+  );
+}
+
 function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () => void; label?: string }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [website, setWebsite] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setEmail('');
+    setFirstName('');
+    setLastName('');
+    setPhone('');
+    setWebsite('');
+    setError(null);
+  }
 
   async function submit() {
     setError(null);
+    if (!email.trim()) {
+      setError('Email is required.');
+      return;
+    }
+    setSaving(true);
     try {
       const { createContact } = await import('../lib/contactsApi');
-      await createContact({ email, firstName: firstName || undefined });
+      const customFields: Record<string, string> = {};
+      if (phone.trim()) customFields.phone = phone.trim();
+      if (website.trim()) customFields.website = website.trim();
+      await createContact({
+        email: email.trim(),
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+        customFields: Object.keys(customFields).length ? customFields : undefined,
+      });
       setOpen(false);
-      setEmail('');
-      setFirstName('');
+      reset();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create contact');
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <div className="relative">
+    <>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
         className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover"
       >
         {label}
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-9 right-0 z-20 w-64 rounded-md border border-border-modal bg-panel2 p-3 shadow-lg">
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
-              className="mb-2 h-8 w-full rounded border border-border-default bg-field px-2 text-xs text-text-primary outline-none"
-            />
-            <input
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              placeholder="First name (optional)"
-              className="mb-2 h-8 w-full rounded border border-border-default bg-field px-2 text-xs text-text-primary outline-none"
-            />
-            {error && <div className="mb-2 text-[11px] text-danger">{error}</div>}
-            <button onClick={submit} className="h-7 w-full rounded bg-accent text-xs font-semibold text-white hover:bg-accent-hover">
-              Create
-            </button>
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}>
+          <div
+            className="w-[420px] rounded-lg border border-border-modal bg-panel2 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-4 text-sm font-semibold text-text-primary">Add contact</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="First name" value={firstName} onChange={setFirstName} placeholder="Amelia" />
+              <FormField label="Last name" value={lastName} onChange={setLastName} placeholder="Chen" />
+            </div>
+            <div className="mt-3">
+              <FormField label="Email" value={email} onChange={setEmail} placeholder="amelia.chen@example.com" type="email" />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <FormField label="Phone" value={phone} onChange={setPhone} placeholder="+1 555 0100" type="tel" />
+              <FormField label="Website" value={website} onChange={setWebsite} placeholder="acme.com" />
+            </div>
+            {error && <div className="mt-3 text-[11px] text-danger">{error}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  reset();
+                }}
+                className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={saving}
+                className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {saving ? 'Creating…' : 'Create'}
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
