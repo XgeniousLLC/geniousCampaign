@@ -60,6 +60,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-062 | Verification dashboard UI (bulk verify, stats, credits) | 4 | M | TODO | GC-049 |
 | GC-063 | Add JwtAuthGuard+RolesGuard to TagsController | 4 | S | TODO | GC-056 |
 | GC-064 | Forgot/reset password flow | 4 | M | Code done, needs Sharifur's AWS SES creds for the actual reset email | GC-011 (auth) |
+| GC-065 | App shell: sidebar + top bar rebuild to match design | 4 | M | Done | GC-006 |
 
 ---
 

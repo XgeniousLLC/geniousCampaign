@@ -68,9 +68,18 @@ export function Dashboard() {
 
   return (
     <div>
-      <div className="mb-5">
-        <h1 className="text-lg font-semibold text-text-heading">Dashboard</h1>
-        <p className="mt-1 text-xs text-text-muted">Sending overview across all campaigns and sequences — last 30 days.</p>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold text-text-heading">Dashboard</h1>
+          <p className="mt-1 text-xs text-text-muted">Sending overview across all campaigns and sequences.</p>
+        </div>
+        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border-strong bg-field px-2.5 text-xs font-medium text-text-tertiary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+          Last 30 days
+        </div>
       </div>
 
       <div className="mb-3.5 grid grid-cols-4 gap-3">
