@@ -9,6 +9,11 @@ export interface Contact {
   status: 'active' | 'unsubscribed' | 'bounced' | 'suppressed';
   createdAt: string;
   updatedAt: string;
+  // Present on list responses only (GET /contacts) — joined in server-side.
+  tags?: { id: string; name: string }[];
+  lists?: { id: string; name: string }[];
+  verificationStatus?: 'valid' | 'invalid' | 'risky' | 'unknown' | null;
+  lastActivityAt?: string | null;
 }
 
 export interface Tag {
@@ -53,6 +58,10 @@ export function createContact(input: { email: string; firstName?: string; lastNa
 
 export function updateContact(id: string, input: Partial<Pick<Contact, 'firstName' | 'lastName' | 'status'>>) {
   return apiPatch<Contact>(`/contacts/${id}`, input);
+}
+
+export function deleteContact(id: string) {
+  return apiDelete(`/contacts/${id}`);
 }
 
 export function listTags() {

@@ -1,8 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts } from '../db/schema';
+import { contacts, contactTags, tags, contactLists, lists, verificationResults, sends, emailEvents } from '../db/schema';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 
@@ -35,8 +35,69 @@ export class ContactsService {
     return created;
   }
 
-  findAll() {
-    return this.drizzle.db.query.contacts.findMany({ orderBy: (c, { desc }) => desc(c.createdAt) });
+  async findAll() {
+    const all = await this.drizzle.db.query.contacts.findMany({ orderBy: (c, { desc }) => desc(c.createdAt) });
+    if (all.length === 0) return [];
+
+    const ids = all.map((c) => c.id);
+    const emails = all.map((c) => c.email);
+
+    const [tagRows, listRows, verifications, lastActivityRows] = await Promise.all([
+      this.drizzle.db
+        .select({ contactId: contactTags.contactId, id: tags.id, name: tags.name })
+        .from(contactTags)
+        .innerJoin(tags, eq(contactTags.tagId, tags.id))
+        .where(inArray(contactTags.contactId, ids)),
+      this.drizzle.db
+        .select({ contactId: contactLists.contactId, id: lists.id, name: lists.name })
+        .from(contactLists)
+        .innerJoin(lists, eq(contactLists.listId, lists.id))
+        .where(inArray(contactLists.contactId, ids)),
+      this.drizzle.db
+        .select({ email: verificationResults.email, status: verificationResults.status })
+        .from(verificationResults)
+        .where(inArray(verificationResults.email, emails)),
+      this.drizzle.db
+        .select({
+          contactId: sends.contactId,
+          lastSentAt: sql<string | null>`max(${sends.sentAt})`,
+          lastEventAt: sql<string | null>`max(${emailEvents.createdAt})`,
+        })
+        .from(sends)
+        .leftJoin(emailEvents, eq(emailEvents.sendId, sends.id))
+        .where(inArray(sends.contactId, ids))
+        .groupBy(sends.contactId),
+    ]);
+
+    const tagsByContact = new Map<string, { id: string; name: string }[]>();
+    for (const row of tagRows) {
+      const list = tagsByContact.get(row.contactId) ?? [];
+      list.push({ id: row.id, name: row.name });
+      tagsByContact.set(row.contactId, list);
+    }
+
+    const listsByContact = new Map<string, { id: string; name: string }[]>();
+    for (const row of listRows) {
+      const list = listsByContact.get(row.contactId) ?? [];
+      list.push({ id: row.id, name: row.name });
+      listsByContact.set(row.contactId, list);
+    }
+
+    const verificationByEmail = new Map(verifications.map((v) => [v.email, v.status]));
+
+    const lastActivityByContact = new Map<string, string | null>();
+    for (const row of lastActivityRows) {
+      const latest = [row.lastSentAt, row.lastEventAt].filter(Boolean).sort().pop() ?? null;
+      lastActivityByContact.set(row.contactId, latest);
+    }
+
+    return all.map((c) => ({
+      ...c,
+      tags: tagsByContact.get(c.id) ?? [],
+      lists: listsByContact.get(c.id) ?? [],
+      verificationStatus: verificationByEmail.get(c.email) ?? null,
+      lastActivityAt: lastActivityByContact.get(c.id) ?? null,
+    }));
   }
 
   async findOne(id: string) {
