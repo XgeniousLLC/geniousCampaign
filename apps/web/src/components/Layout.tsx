@@ -44,13 +44,33 @@ export function Layout() {
               </Link>
             </li>
             <li>
+              <Link to="/lists" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Lists &amp; Tags
+              </Link>
+            </li>
+            <li>
+              <Link to="/triggers" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Triggers
+              </Link>
+            </li>
+            <li>
               <Link to="/settings/sender-accounts" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
                 Sender Accounts
               </Link>
             </li>
             <li>
+              <Link to="/webhooks" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Webhooks
+              </Link>
+            </li>
+            <li>
               <Link to="/email-log" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
                 Email Log
+              </Link>
+            </li>
+            <li>
+              <Link to="/settings" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Settings
               </Link>
             </li>
           </ul>

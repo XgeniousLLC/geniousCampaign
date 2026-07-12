@@ -14,6 +14,10 @@ import { CampaignCompose } from './routes/CampaignCompose';
 import { CampaignDetail } from './routes/CampaignDetail';
 import { SenderAccountsSettings } from './routes/SenderAccountsSettings';
 import { EmailLog } from './routes/EmailLog';
+import { ListsAndTags } from './routes/ListsAndTags';
+import { Triggers } from './routes/Triggers';
+import { Webhooks } from './routes/Webhooks';
+import { Settings } from './routes/Settings';
 
 function App() {
   return (
@@ -35,6 +39,10 @@ function App() {
             <Route path="campaigns/:id" element={<CampaignDetail />} />
             <Route path="settings/sender-accounts" element={<SenderAccountsSettings />} />
             <Route path="email-log" element={<EmailLog />} />
+            <Route path="lists" element={<ListsAndTags />} />
+            <Route path="triggers" element={<Triggers />} />
+            <Route path="webhooks" element={<Webhooks />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Route>
       </Routes>

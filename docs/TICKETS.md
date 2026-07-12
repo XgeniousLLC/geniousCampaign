@@ -58,6 +58,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-060 | Email log UI (all sends, filterable, detail drawer) | 4 | M | Done | GC-019, GC-020 |
 | GC-061 | Wrap guarded-write + audit-log calls in a DB transaction | 4 | S | TODO | GC-057 |
 | GC-062 | Verification dashboard UI (bulk verify, stats, credits) | 4 | M | TODO | GC-049 |
+| GC-063 | Add JwtAuthGuard+RolesGuard to TagsController | 4 | S | TODO | GC-056 |
 
 ---
 
@@ -157,6 +158,8 @@ Full `Contact` model: `email` (unique), `firstName`, `lastName`, `customFields` 
 **Acceptance criteria:**
 - A contact can belong to multiple lists and have multiple tags.
 - Dynamic list type stores a filter definition (JSONB) but membership computation can be a stub for now (real evaluation lands with GC-035's condition engine).
+
+**UI added 2026-07-12** (see the full cross-check pass note near the end of this file): `ListsAndTags.tsx` at `/lists` — real lists/tags tables with real member counts, create-list/create-tag forms. Dynamic list membership is still the stub this ticket always allowed — not evaluated anywhere, `memberCount` for a dynamic list will always read 0 until that lands.
 
 ### GC-012 — CSV contact import (queued)
 Upload endpoint accepts a CSV, enqueues a BullMQ job rather than processing inline. Job dedupes on email (update-if-exists vs create), collects per-row errors, and exposes an import status endpoint.
@@ -323,6 +326,8 @@ Verified live in Chrome: enrolled a contact into a real sequence via the UI (car
 
 Verified live: created a trigger (`contact.tag_added`, condition `{field:'tagName', op:'equals', value:'TriggerTag'}` → linked sequence with one `exit` step), added an unrelated tag to a real contact first — confirmed no enrollment (`GET /admin/sequences/contacts/:id` → `[]`). Then added the matching tag — confirmed real enrollment row created (`status: active`, `currentStepId` = the sequence's step) within ~1s of the real HTTP call, no polling/manual trigger needed.
 
+**UI added 2026-07-12** (see the full cross-check pass note near the end of this file): `Triggers.tsx` + `NewTriggerModal.tsx` at `/triggers` — real trigger list (pause/resume/delete), create flow supporting both condition-based and schedule-based types with a real sequence picker. Deliberately simplified vs the design's nested AND/OR condition-group builder: the modal only builds a single leaf condition (`{field, op, value}`), even though the backend's `evaluateCondition()` fully supports nested groups — a multi-row/multi-group visual builder is a much bigger UI investment the ticket text never asked for. Existing triggers also can't have their conditions edited after creation (only paused/resumed/deleted) — same reasoning. Also omitted the design's third "webhook" trigger type entirely, since that would duplicate GC-041's existing per-sequence webhook enroll endpoints as a second, overlapping mechanism with no ticket backing it.
+
 ### GC-036 — Schedule-based trigger (BullMQ repeatable)
 Recurring trigger evaluation (cron-style) plus one-off scheduled campaign sends, timezone-aware.
 **Acceptance criteria:**
@@ -390,6 +395,8 @@ Let external systems subscribe to internal events (open/click/bounce/sequence-co
 **Unblocked 2026-07-12**: didn't wait on GC-037's full event bus — `OutboundWebhookDispatchService.emit(eventType, payload)` is called directly from the three services that actually produce these events (`SequenceRunnerService` on `sequence.completed`, `TrackingService` on `email.opened`/`email.clicked`, `SuppressionService` on `email.bounced`/`email.complained`/`email.unsubscribed`), each fan-out delivery a separate BullMQ job (`attempts: 5`, exponential backoff) — invariant 10. `outbound_webhook_subscriptions` stores per-subscription HMAC secrets; deliveries carry `X-Signature`/`X-Event-Type` headers.
 
 Verified live against a real local HTTP receiver (not a mock): registered a subscription, enrolled a contact into a completes-immediately sequence, and watched 3 real delivery attempts land — the receiver deliberately 500'd the first two and 200'd the third, confirmed via BullMQ's own attempt counter and the receiver's own request log, each attempt carrying a valid `X-Signature`. Not hammered (real ~2s/4s exponential spacing between attempts) and not silently dropped (all 3 attempts logged).
+
+**UI added 2026-07-12** (see the full cross-check pass note near the end of this file): `Webhooks.tsx` at `/webhooks` — real inbound endpoints + outbound subscriptions lists, create forms for both (the design doesn't show create affordances here, but without one the feature would only be reachable via raw API calls, inconsistent with every other screen this session). Delivery log shows real `webhook_deliveries` rows for the most-recently-created inbound endpoint only — the design implies one merged inbound+outbound delivery log, but outbound delivery attempts are BullMQ job history, not a durable queryable table, so they can't be shown; noted as a real data-model gap rather than faked.
 
 ### GC-044 — Gmail OAuth connect flow
 Import the reference implementation: Google Cloud OAuth client setup (Internal user type), `/sender-accounts/gmail/connect` + `/callback`, encrypted refresh token storage.
@@ -539,6 +546,8 @@ Record who changed a template, paused a sequence, exported a list, etc.
 
 **Unblocked 2026-07-11**: `audit_log` table + `AuditLogService`, called from every write endpoint on templates/sequences/lists (create/update/delete, plus sequence step add/update/remove/reorder and list contact add/remove). `GET /audit-log` is owner-only. Verified live: an owner's template creation produced a matching audit_log row with actorEmail/action/entityType/entityId; a viewer got 403 on the audit-log endpoint.
 
+**UI added 2026-07-12** (see the full cross-check pass note near the end of this file): `Settings.tsx` at `/settings` — three real, working tabs (Members: real user list + owner-only inline role change via `PATCH /users/:id/role`; Audit log: real `audit_log` rows; Suppression list: real `suppression_list` rows). Design's fourth tab, "Compliance" (default unsubscribe method picker, reply stop-word auto-suppression), has no backend anywhere in the codebase — reply-based auto-suppression was never specced or built as a feature — so it's omitted rather than shipped as dead UI. "Invite" button also omitted: invariant 11 explicitly documents there's no invite-by-email flow, only self-registration + an owner promoting via role change, which the Members tab already does.
+
 ### GC-058 — Analytics dashboard
 Open/click/bounce rates per campaign and sequence, basic trend view. Design: `DASHBOARD` section.
 **Acceptance criteria:**
@@ -595,3 +604,29 @@ Found 2026-07-12 while building GC-049: the design's `VERIFICATION` screen (bulk
 - Credits-remaining display can be a static "not tracked yet" state if neither Reoon nor NeverBounce exposes a balance-check endpoint cheaply — don't fake a number.
 
 TODO — not started. Depends on GC-049 (done) for the underlying verification calls; needs real Reoon/NeverBounce keys for the bulk-verify button to do anything beyond a clean "not configured" state.
+
+### GC-063 — Add JwtAuthGuard+RolesGuard to TagsController
+Found 2026-07-12 while building the Lists & Tags UI: `TagsController` (`/tags` — create/update/delete/add-contact/remove-contact) has no `@UseGuards()` at all, unlike every other write-capable controller in the app (`ListsController`, `TemplatesController`, `SequencesController`, `CampaignsController`, `TriggersController`, etc. all have `JwtAuthGuard`+`RolesGuard`). Anyone who can reach the API can create/delete tags and tag/untag any contact with no authentication — a real gap, not a stylistic inconsistency. Not fixed inline while building the UI, since invariant 11 is explicit that guard-coverage changes should be their own deliberate, ticketed decision, not a silent side effect of an unrelated UI ticket.
+**Acceptance criteria:**
+- `TagsController` requires authentication for every route (matches `ListsController`'s exact guard/role pattern: reads need any authenticated role, writes need `owner`/`editor`).
+- A viewer-role token gets 403 on tag create/delete/add-contact/remove-contact; an unauthenticated request gets 401 on everything.
+
+TODO — not started. Low effort, clear fix; flagged rather than silently patched per invariant 11.
+
+---
+
+## Full UI-vs-design cross-check pass (2026-07-12)
+
+Requested explicitly by Sharifur mid-session: "ensure all the ui is properly implemented as per given design, by cross checking it." Did a systematic screen-by-screen comparison — every `<!-- ==== SCREEN ==== -->` marker in `docs/design/geniusCampaign.dc.html` against every route actually built in `apps/web/src/routes/`.
+
+**Already covered correctly** (verified against the design earlier in their own tickets, no changes needed): Dashboard, Contacts, Contact Detail, Templates, Template Editor, Sequences List, Sequence Builder, Email Log + detail drawer, Campaigns List, Campaign Compose, Campaign Detail, Sender Accounts, CSV Import modal, Spintax Edit modal, AI Assist modal, Enroll modal.
+
+**Real gaps found and fixed this pass** — four screens the design specifies that had real, ready backends but zero frontend, making those features only reachable via raw API calls (inconsistent with the "no direct API calls needed" standard every other screen this session was held to):
+- **Lists & Tags** (`/lists`) — folded into GC-011's entry above.
+- **Triggers + New Trigger modal** (`/triggers`) — folded into GC-035's entry above.
+- **Webhooks** (`/webhooks`) — folded into GC-043's entry above.
+- **Settings** (`/settings`, Members/Audit log/Suppression list tabs) — folded into GC-057's entry above.
+
+**One real backend gap found while building these** — filed as GC-063 above (`TagsController` missing auth guards entirely).
+
+**Known, previously-documented scope trims that remain as-is** (not re-litigated this pass, already flagged in their own ticket entries): GC-047's hourly-cap/signature UI, GC-058's "sending health" composite score, GC-060's Suppress/Resend drawer buttons, GC-062's verification dashboard (still fully TODO). All Chrome-based UI verification this session (including every screen touched in this pass) used the Playwright fallback per `CLAUDE.md`'s stated fallback path — the Chrome browser-automation extension was disconnected for the entire session; a human pass with real Chrome is still worth doing per that same fallback note.
