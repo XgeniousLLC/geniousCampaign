@@ -31,7 +31,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-031 | EnrollmentService (enroll/pause/resume/stop) | 2 | M | Done | GC-030, GC-010 |
 | GC-032 | Sequence runner (BullMQ processor) | 2 | L | Done | GC-031, GC-020 |
 | GC-033 | Admin UI: sequence builder | 2 | M | Done | GC-030, GC-021 |
-| GC-034 | Admin UI: contact enrollment panel | 2 | S | Blocked (needs: GC-031) | GC-031, GC-021 |
+| GC-034 | Admin UI: contact enrollment panel | 2 | S | Done | GC-031, GC-021 |
 | GC-035 | Condition-based trigger engine | 2 | L | Blocked (needs: GC-031) | GC-031 |
 | GC-036 | Schedule-based trigger (BullMQ repeatable) | 2 | M | Blocked (needs: GC-032) | GC-032 |
 | GC-037 | Internal event bus wiring | 2 | M | Blocked (needs: GC-035) | GC-035 |
@@ -289,7 +289,9 @@ Import `ContactEnrollments.tsx` reference implementation onto the contact detail
 **Acceptance criteria:**
 - Pause/resume/stop buttons work against a real enrollment and reflect status changes without a manual page refresh.
 
-**Blocked 2026-07-11**: depends on GC-031 (blocked, needs reference implementation).
+**Unblocked 2026-07-12**: reference implementation never arrived, so built fresh — `ContactEnrollments.tsx` calling GC-042's admin endpoints, dropdown to enroll into any not-currently-enrolled sequence, per-enrollment status badge + Pause/Resume/Stop (hidden for viewer role).
+
+Verified live in Chrome: enrolled a contact into a real sequence via the UI (card appeared instantly, no reload), clicked Pause (badge flipped active→paused, buttons swapped to Resume/Stop, no reload), clicked Resume (flipped back to active), all against the real backend with real DB state changes each time.
 
 ### GC-035 — Condition-based trigger engine
 `Trigger` + `TriggerCondition` schema, JSON-logic-style evaluator (`equals/contains/gt/lt/in/exists`, AND/OR groups), evaluation worker triggered off internal events.

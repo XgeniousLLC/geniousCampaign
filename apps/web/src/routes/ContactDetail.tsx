@@ -15,6 +15,7 @@ import {
   type Tag,
 } from '../lib/contactsApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import { ContactEnrollments } from '../components/ContactEnrollments';
 
 export function ContactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -121,8 +122,11 @@ export function ContactDetail() {
           </div>
         </div>
 
-        <div className="rounded-md border border-border-default bg-panel p-4 text-xs text-text-muted">
-          Activity, sequence enrollments, and send history land with Sprint 2/1's remaining tickets.
+        <div className="flex flex-col gap-4">
+          <ContactEnrollments contactId={contact.id} />
+          <div className="rounded-md border border-border-default bg-panel p-4 text-xs text-text-muted">
+            Activity feed and send history land with later Sprint 1/4 tickets.
+          </div>
         </div>
       </div>
     </div>
