@@ -28,6 +28,7 @@ import { SlackModule } from './slack/slack.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { EmailLogModule } from './email-log/email-log.module';
 import { AiAssistModule } from './ai-assist/ai-assist.module';
+import { PasswordResetModule } from './password-reset/password-reset.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AiAssistModule } from './ai-assist/ai-assist.module';
     AnalyticsModule,
     EmailLogModule,
     AiAssistModule,
+    PasswordResetModule,
   ],
 })
 export class AppModule {}

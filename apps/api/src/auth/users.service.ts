@@ -59,4 +59,13 @@ export class UsersService {
       .returning({ id: users.id, email: users.email, role: users.role, createdAt: users.createdAt });
     return updated;
   }
+
+  findByEmail(email: string) {
+    return this.drizzle.db.query.users.findFirst({ where: eq(users.email, email) });
+  }
+
+  async setPassword(userId: string, newPassword: string) {
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.drizzle.db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  }
 }

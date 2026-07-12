@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { login, register } from '../lib/authApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { getPublicSummary, type PublicSummary } from '../lib/analyticsApi';
@@ -84,6 +84,11 @@ export function Login() {
 
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-xs font-semibold text-text-secondary">Password</label>
+              {mode === 'login' && (
+                <Link to="/forgot-password" className="text-[11.5px] font-medium text-accent-light hover:text-accent-lighter">
+                  Forgot?
+                </Link>
+              )}
             </div>
             <div className="mb-2 flex h-10 items-center gap-2 rounded-[9px] border border-border-subtle bg-surface px-3">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B6270" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -111,29 +116,10 @@ export function Login() {
             </button>
           </form>
 
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border-subtle" />
-            <span className="text-[11px] text-text-faint">OR</span>
-            <div className="h-px flex-1 bg-border-subtle" />
-          </div>
-
-          <button
-            type="button"
-            disabled
-            title="Google Workspace SSO isn't set up for this app — sign in with email/password."
-            className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-[9px] border border-border-subtle bg-surface text-[13px] font-medium text-text-tertiary opacity-50"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EA4335" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="m22 6-10 7L2 6" />
-            </svg>
-            Continue with Google Workspace
-          </button>
-
           <button
             type="button"
             onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-            className="mt-6 w-full text-center text-[11.5px] text-text-muted hover:text-text-primary"
+            className="mt-5 w-full text-center text-[11.5px] text-text-muted hover:text-text-primary"
           >
             {mode === 'login' ? 'First time? Create an account' : 'Already have an account? Sign in'}
           </button>
