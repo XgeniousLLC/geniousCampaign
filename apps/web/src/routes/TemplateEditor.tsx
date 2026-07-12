@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
+import { R2Image } from '../lib/tiptap/r2-image';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
@@ -25,7 +26,7 @@ export function TemplateEditor() {
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken, SpintaxBlock],
+    extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken, SpintaxBlock, R2Image],
     content: EMPTY_DOC,
     editable: canWrite,
   });

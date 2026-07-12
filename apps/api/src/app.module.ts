@@ -22,6 +22,7 @@ import { OutboundWebhooksModule } from './outbound-webhooks/outbound-webhooks.mo
 import { TriggersModule } from './triggers/triggers.module';
 import { EventsModule } from './events/events.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     TriggersModule,
     EventsModule,
     CampaignsModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}

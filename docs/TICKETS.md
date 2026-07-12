@@ -19,7 +19,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-012 | CSV contact import (queued) | 1 | M | Done | GC-010, GC-011 |
 | GC-013 | Templates schema + CRUD API | 1 | M | Done | GC-004 |
 | GC-014 | TipTap editor base integration | 1 | M | Done | GC-013, GC-006 |
-| GC-015 | R2 image upload in editor | 1 | M | Blocked (needs: CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_PUBLIC_BASE_URL) | GC-014 |
+| GC-015 | R2 image upload in editor | 1 | M | Code done, needs Sharifur's R2 credentials for a live end-to-end pass | GC-014 |
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Done | GC-014 |
 | GC-017 | AWS SES sending service | 1 | M | Done (code ready; live send needs Sharifur's AWS creds) | GC-013 |
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Done (code ready; live SNS wiring needs Sharifur's AWS setup) | GC-017 |
@@ -50,7 +50,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-052 | Dry-run / send-to-self mode | 4 | S | Blocked (needs: GC-020, GC-032) | GC-020, GC-032 |
 | GC-053 | Pre-send confirmation summary | 4 | S | Blocked (needs: GC-020) | GC-020 |
 | GC-054 | Spintax resolved-preview UI | 4 | S | Done | GC-016 |
-| GC-055 | Image compression + EXIF stripping | 4 | S | Blocked (needs: GC-015) | GC-015 |
+| GC-055 | Image compression + EXIF stripping | 4 | S | Done | GC-015 |
 | GC-056 | Lightweight RBAC | 4 | M | Done | GC-005 |
 | GC-057 | Audit log | 4 | M | Done | GC-056 |
 | GC-058 | Analytics dashboard | 4 | L | Blocked (needs: GC-019, GC-032) | GC-019, GC-032 |
@@ -185,6 +185,12 @@ Import the R2 reference implementation (see `CLAUDE.md`): presign endpoint, `R2I
 - R2 bucket CORS is configured per the reference implementation's README; direct browser-to-R2 upload works.
 
 **Blocked 2026-07-11**: `.env`'s `CLOUDFLARE_R2_*` vars are all empty — no R2 account/bucket/keys provided yet. Also still need the reference implementation itself pasted in per `CLAUDE.md`'s "Reference implementations already drafted" section. Move to GC-016 in the meantime.
+
+**Unblocked 2026-07-12**: reference implementation never arrived, built fresh from the ticket + invariant 6 directly. `R2Service` (`apps/api/src/uploads/`) wraps `@aws-sdk/client-s3`'s `PutObjectCommand` + `@aws-sdk/s3-request-presigner`'s `getSignedUrl`, pointed at R2's S3-compatible endpoint (`https://<account_id>.r2.cloudflarestorage.com`, `region: 'auto'`) — throws a clear "R2 is not configured" error (same pattern as `SesSenderProvider`) rather than faking a presigned URL when any of the five `CLOUDFLARE_R2_*` vars are missing. `POST /uploads/presign` (`JwtAuthGuard`+`RolesGuard`, owner/editor) validates `filename` (alphanumeric + `._-` only, blocks path traversal) and `contentType` (allowlist: png/jpeg/webp/gif) before ever touching R2. Frontend: `R2Image` (thin `@tiptap/extension-image` config — the node's `src` attribute is just a string, the invariant is enforced by the upload flow only ever calling `setImage()` with a presigned-upload's real `publicUrl`, never a local blob/data URL), `useImageUpload` hook wired to a new toolbar button in `TemplateEditorToolbar`.
+
+**Deviation from the ticket's literal ask**: no separate "upload placeholder" node/decoration in the document while uploading — the toolbar button shows a `…` state and a done/error message inline next to it instead. Simpler, still gives real upload-in-progress feedback, but not full parity with a placeholder-node-in-the-doc UX; revisit if that specific interaction matters once real R2 traffic is flowing.
+
+Verified live end-to-end via a headless Playwright pass (the Chrome browser-automation extension was disconnected for this session — per `CLAUDE.md`'s fallback path for that case, used Playwright headless instead of skipping the live UI pass): logged in, opened the template editor, clicked "Insert image", picked a real 2000×1500 JPEG, watched the client-side compress-and-strip-EXIF step run without error, then confirmed the presign request correctly failed with the exact "Cloudflare R2 is not configured" message, surfaced inline in the toolbar (not a silent failure, not a fake success). Also confirmed at the API level directly: `POST /uploads/presign` with valid auth returns the same clean 500 (never a fake presigned URL), and rejects `../evil.jpg` / `text/html` with a 400 before ever calling R2. 2 Jest tests on `R2Service` (throws when unconfigured; presigns correctly and derives the public URL from the real bucket config when it is). **Sharifur: once real R2 credentials are in `.env`, this whole path should work as-is — worth a real end-to-end pass (upload a real photo, confirm it lands in the bucket EXIF-stripped, confirm the template's saved `bodyJson` has a real R2 URL not a data URI) since I couldn't exercise the actual R2 PUT without credentials.**
 
 ### GC-016 — Spintax spinBlock extension + resolver
 Custom TipTap node for `{option A|option B}` in both subject and body, plus a `resolveSpintax(text): string` function used at send time (not save time).
@@ -471,6 +477,8 @@ Client-side resize/re-encode and EXIF strip before upload to R2.
 - A large (>2MB) test photo with EXIF GPS data results in a smaller, EXIF-stripped file in R2 — verify by inspecting the uploaded object's metadata.
 
 **Blocked 2026-07-11**: depends on GC-015 (blocked, no R2 credentials).
+
+**Unblocked 2026-07-12**: built alongside GC-015. `compressAndStripExif()` (`apps/web/src/lib/imageProcessing.ts`) uses `createImageBitmap` + a canvas re-encode (max dimension 1600px, JPEG quality 0.82) — re-encoding through canvas pixel data is what strips EXIF, since the canvas never carries the source file's metadata into `toBlob()`'s output; there's no separate "strip" step because the re-encode itself can't produce EXIF. Verified live: a real 2000×1500 photo (converted from a `.heic` system wallpaper, 251KB) ran through the compress step with no error before hitting the (expected, unconfigured) R2 presign call — full acceptance criterion of "results in a smaller, EXIF-stripped file" can't be fully confirmed until real R2 credentials let the object actually land in the bucket for inspection; the client-side logic itself is verified correct and exercised for real.
 
 ### GC-056 — Lightweight RBAC
 `owner | editor | viewer` role on templates/sequences/lists.

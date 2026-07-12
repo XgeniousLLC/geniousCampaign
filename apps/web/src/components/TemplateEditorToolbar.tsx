@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Editor } from '@tiptap/react';
+import { useImageUpload } from '../lib/useImageUpload';
 
 const PERSONALIZATION_TOKENS = [
   { field: 'contact.firstName', label: 'First name' },
@@ -34,6 +35,7 @@ function ToolbarButton({
 
 export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [tokenOpen, setTokenOpen] = useState(false);
+  const { inputRef, uploading, error, openFilePicker, handleFileChange } = useImageUpload(editor);
 
   if (!editor) return null;
 
@@ -56,6 +58,15 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       >
         🔗
       </ToolbarButton>
+      <ToolbarButton title="Insert image" onClick={openFilePicker}>
+        {uploading ? '…' : '🖼'}
+      </ToolbarButton>
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleFileChange} />
+      {error && (
+        <span className="ml-1 max-w-xs truncate text-[11px] text-danger" title={error}>
+          {error}
+        </span>
+      )}
       <div className="mx-1 h-4 w-px bg-border-strong" />
       <button
         type="button"
