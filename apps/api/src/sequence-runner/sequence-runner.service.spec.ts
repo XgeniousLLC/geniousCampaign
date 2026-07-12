@@ -9,6 +9,7 @@ import { SesSenderProvider } from '../sending/ses-sender.provider';
 import { GmailSenderProvider } from '../sending/gmail-sender.provider';
 import { SenderAccountService } from '../sending/sender-account.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
+import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { DrizzleService } from '../db/drizzle.service';
@@ -39,6 +40,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
         GmailSenderProvider,
         SenderAccountService,
         SendDispatcherService,
+        CircuitBreakerService,
         SuppressionService,
         TrackingService,
         DrizzleService,

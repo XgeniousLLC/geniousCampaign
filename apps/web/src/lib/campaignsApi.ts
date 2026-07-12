@@ -13,6 +13,7 @@ export interface Campaign {
   failedCount: number;
   suppressedCount: number;
   isDryRun: boolean;
+  sendToEmail: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +28,13 @@ export interface CampaignSend {
   createdAt: string;
 }
 
+export interface SendCampaignResult {
+  id: string;
+  status: 'queued' | 'confirmation_required';
+  recipientCount?: number;
+  threshold?: number;
+}
+
 export function listCampaigns() {
   return apiGet<Campaign[]>('/campaigns');
 }
@@ -39,10 +47,10 @@ export function getCampaignSends(id: string) {
   return apiGet<CampaignSend[]>(`/campaigns/${id}/sends`);
 }
 
-export function createCampaign(input: { name: string; templateId: string; listId: string; isDryRun?: boolean }) {
+export function createCampaign(input: { name: string; templateId: string; listId: string; isDryRun?: boolean; sendToEmail?: string }) {
   return apiPost<Campaign>('/campaigns', input);
 }
 
-export function sendCampaign(id: string) {
-  return apiPost<{ id: string; status: string }>(`/campaigns/${id}/send`, {});
+export function sendCampaign(id: string, confirmed?: boolean) {
+  return apiPost<SendCampaignResult>(`/campaigns/${id}/send`, { confirmed });
 }

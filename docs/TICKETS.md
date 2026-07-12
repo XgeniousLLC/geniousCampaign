@@ -45,10 +45,10 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-047 | Admin UI: sender accounts | 3 | S | Done | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
 | GC-049 | Reoon + NeverBounce verification integration | 3 | M | Done | GC-048 |
-| GC-050 | Bounce-rate circuit breaker | 4 | M | Blocked (needs: GC-018, GC-032) | GC-018, GC-032 |
-| GC-051 | Slack notifications | 4 | S | Blocked (needs: GC-050) | GC-050 |
-| GC-052 | Dry-run / send-to-self mode | 4 | S | Blocked (needs: GC-020, GC-032) | GC-020, GC-032 |
-| GC-053 | Pre-send confirmation summary | 4 | S | Blocked (needs: GC-020) | GC-020 |
+| GC-050 | Bounce-rate circuit breaker | 4 | M | Done | GC-018, GC-032 |
+| GC-051 | Slack notifications | 4 | S | Done | GC-050 |
+| GC-052 | Dry-run / send-to-self mode | 4 | S | Done | GC-020, GC-032 |
+| GC-053 | Pre-send confirmation summary | 4 | S | Done | GC-020 |
 | GC-054 | Spintax resolved-preview UI | 4 | S | Done | GC-016 |
 | GC-055 | Image compression + EXIF stripping | 4 | S | Done | GC-015 |
 | GC-056 | Lightweight RBAC | 4 | M | Done | GC-005 |
@@ -470,12 +470,22 @@ Rolling-window bounce/complaint rate check (e.g. last 500 sends). Crossing a thr
 
 **Blocked 2026-07-11**: depends on GC-018/GC-032 (blocked).
 
+**Unblocked 2026-07-12**: `breaker_evaluations` (history, one row per evaluation cycle — auditable, not a single mutable flag) + `breaker_resets`. Discovered while designing this that `sends.status` was never actually updated to `bounced`/`complained` after the initial send — the SES SNS handler only ever touched the suppression list, so "rolling bounce rate over the last N sends" had no real data source. Fixed at the root: `SesSnsController` now correlates the SNS notification's `mail.messageId` back to the matching `sends` row via `providerMessageId` and updates its status — this also means the email log (GC-060, not yet built) will have accurate historical statuses, not just this ticket's rolling window.
+
+`CircuitBreakerService.evaluate()` (BullMQ repeatable, every 5 minutes — invariant 10) reads the last `CIRCUIT_BREAKER_WINDOW_SIZE` (default 500, configurable) sends, computes bounced+complained rate, trips if it's ≥ `CIRCUIT_BREAKER_THRESHOLD_PCT` (default 5%, configurable) — both via env, not hardcoded, satisfying the ticket's second criterion directly. A trip pauses every active sequence enrollment through the one shared `EnrollmentService.pause()` (invariant 2) — never a direct bulk DB update, even from a safety-net feature. Critically, `SendDispatcherService.send()` also calls `assertNotTripped()` on every single send, so a trip blocks in real time rather than only at the next 5-minute cycle. Never auto-heals — `POST /circuit-breaker/reset` (owner-only) is the only way to clear it, matching "flags for review."
+
+Verified live end-to-end at the real HTTP layer, not just against the service directly: simulated a tripped state via a direct DB row (equivalent to what a real bounce burst produces), confirmed `/circuit-breaker/status` reflected it, then attempted a real campaign send through the actual `POST /campaigns/:id/send` → `SendDispatcherService` path — the send correctly failed with the exact circuit-breaker message on the `sends` row, proving the real-time gate works through the whole stack, not just in isolation. Reset correctly un-tripped it. Also 2 real-DB Jest tests: a healthy history doesn't trip; a 25%-bounce burst trips it, pauses a real active enrollment (confirmed via `EnrollmentService.findOne()` showing `status: paused`), and a reset un-trips it.
+
 ### GC-051 — Slack notifications
 Webhook-based Slack alerts for: circuit breaker tripped, campaign finished, verification credits low, large-send confirmation (ties to GC-053).
 **Acceptance criteria:**
 - Each event type produces a distinct, readable Slack message, not a generic "something happened."
 
 **Blocked 2026-07-11**: depends on GC-050 (blocked). Would also need a real Slack webhook URL, not yet in `.env`'s tracked var list.
+
+**Unblocked 2026-07-12**: `SLACK_WEBHOOK_URL` added to `.env`/`.env.example` (still empty). `SlackNotificationService.sendBestEffort()` never lets a Slack outage break the event it's reacting to — every listener catches its own failure and logs a warning rather than propagating. `SlackEventListenerService` has one explicit `@OnEvent()` per event type (invariant 12), each producing a genuinely distinct message: circuit breaker trip (rate/threshold/paused count), campaign finished (sent/failed/suppressed counts), large-send confirmed (recipient count vs threshold). Added `campaign.completed` as a new emitted event (`CampaignSendProcessor`) since nothing previously signaled campaign completion on the bus. Skipped "verification credits low" — no credit-balance data exists anywhere yet (GC-062 explicitly punted faking that number), so there's nothing real to alert on; noted as a GC-062 follow-up rather than wiring a fake trigger.
+
+Verified live: triggered real `campaign.completed` events (one per real send test) and confirmed the listener fired, attempted a real Slack POST, hit the clean "not configured" error, logged it as a non-fatal warning — and the campaign itself completed successfully regardless, proving Slack really is best-effort and never load-bearing.
 
 ### GC-052 — Dry-run / send-to-self mode
 Flag on campaign/sequence sends that renders the final resolved email but routes to a fixed internal test list (or just logs it) instead of real contacts.
@@ -484,12 +494,20 @@ Flag on campaign/sequence sends that renders the final resolved email but routes
 
 **Blocked 2026-07-11**: depends on GC-020/GC-032 (blocked) — no real send path to short-circuit yet.
 
+**Unblocked 2026-07-12**: the safety-critical half of this ticket (never touch quota, never really send) was actually already built and tested in GC-020 — `campaign.isDryRun` skips `SendDispatcherService` entirely, so `recordSend()` (which increments `sentToday`) is never even called; already covered by GC-020's `campaign-send.processor.spec.ts`. This pass adds the other half the ticket's own description asks for ("routes to a fixed test list"): a new `campaigns.sendToEmail` field — when set, every recipient's fully-resolved, personalized email is really sent (real quota consumption, real provider call) but redirected to that one address, subject-prefixed `[Test → real@recipient.com]` so a QA reviewer can tell who it was really meant for. Deliberately distinct from `isDryRun`: dry-run means "never send," `sendToEmail` means "really send, just redirected" — useful for actually eyeballing a resolved email in an inbox before a real campaign goes out, which pure dry-run can't give you.
+
+Live-verified `isDryRun` never reaches the sender (unchanged from GC-020's test) and that `sendToEmail` persists correctly on a real campaign end-to-end through the UI. The actual redirect (does the real "to" address get overridden) can't be observed without real SES/Gmail credentials — the send fails at the config-check step before any address is used, same limitation as everywhere else this session credentials are missing. Code path (`campaign-send.processor.ts`'s `sendTarget = campaign.sendToEmail || contact.email` ternary) is small and easy to verify by inspection; flagging rather than claiming a live redirect test that didn't happen.
+
 ### GC-053 — Pre-send confirmation summary
 UI + API check: sends above a configurable recipient threshold require an explicit confirm step showing recipient count, list, and template name.
 **Acceptance criteria:**
 - Attempting to send above the threshold without confirmation is blocked server-side, not just hidden client-side.
 
 **Blocked 2026-07-11**: depends on GC-020 (blocked).
+
+**Unblocked 2026-07-12**: `LARGE_SEND_THRESHOLD` (env, default 5000 — matches the design's "over 5,000" hint). `CampaignsService.send()` counts the real list membership and returns `{status: 'confirmation_required', recipientCount, threshold}` instead of enqueueing when over threshold and `confirmed` wasn't explicitly passed — this is the actual server-side block the acceptance criterion asks for, not a client-side hide; a raw API call without `confirmed: true` is provably rejected regardless of what the UI does. `CampaignCompose.tsx` shows the design's large-send acknowledgment checkbox (recipient count + threshold spelled out) and only re-sends with `confirmed: true` once checked; the "Send campaign" button is disabled while a confirmation is pending, so there's no way to bypass it through the UI either.
+
+Verified live in two ways: (1) 2 real-DB Jest tests with the threshold overridden to 3 — a 5-recipient send is correctly blocked (`confirmation_required`, campaign stays `draft`, nothing enqueued) and correctly proceeds once `confirmed: true` is passed (`largeSendConfirmed` persisted); (2) a full browser pass (Playwright, threshold temporarily set to 1 in local `.env` for the test, reverted after) against a real 5-contact list — the confirmation banner rendered with the exact real recipient count and threshold, "Send campaign" stayed disabled until the checkbox was clicked, and confirming navigated to the campaign detail page as expected.
 
 ### GC-054 — Spintax resolved-preview UI
 "Shuffle" button in the template editor showing a few random resolved variants side by side.

@@ -1,8 +1,16 @@
 import { Body, Controller, Logger, Post } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { SuppressionService } from './suppression.service';
+import { DrizzleService } from '../db/drizzle.service';
+import { sends } from '../db/schema';
+
+interface SesMailObject {
+  messageId?: string;
+}
 
 interface SesBounceNotification {
   notificationType: 'Bounce';
+  mail?: SesMailObject;
   bounce: {
     bounceType: 'Permanent' | 'Transient' | 'Undetermined';
     bouncedRecipients: { emailAddress: string }[];
@@ -11,6 +19,7 @@ interface SesBounceNotification {
 
 interface SesComplaintNotification {
   notificationType: 'Complaint';
+  mail?: SesMailObject;
   complaint: {
     complainedRecipients: { emailAddress: string }[];
   };
@@ -34,7 +43,10 @@ interface SnsEnvelope {
 export class SesSnsController {
   private readonly logger = new Logger(SesSnsController.name);
 
-  constructor(private readonly suppression: SuppressionService) {}
+  constructor(
+    private readonly suppression: SuppressionService,
+    private readonly drizzle: DrizzleService,
+  ) {}
 
   @Post()
   async handle(@Body() rawBody: string) {
@@ -64,7 +76,7 @@ export class SesSnsController {
 
   private async processNotification(notification: SesNotification) {
     if (notification.notificationType === 'Bounce') {
-      const { bounce } = notification as SesBounceNotification;
+      const { bounce, mail } = notification as SesBounceNotification;
       for (const recipient of bounce.bouncedRecipients) {
         if (bounce.bounceType === 'Permanent') {
           await this.suppression.suppress(recipient.emailAddress, 'hard_bounce', 'ses_sns');
@@ -72,11 +84,22 @@ export class SesSnsController {
           await this.suppression.recordSoftBounce(recipient.emailAddress, 'ses_sns');
         }
       }
+      await this.markSendStatus(mail?.messageId, 'bounced');
     } else if (notification.notificationType === 'Complaint') {
-      const { complaint } = notification as SesComplaintNotification;
+      const { complaint, mail } = notification as SesComplaintNotification;
       for (const recipient of complaint.complainedRecipients) {
         await this.suppression.suppress(recipient.emailAddress, 'complaint', 'ses_sns');
       }
+      await this.markSendStatus(mail?.messageId, 'complained');
     }
+  }
+
+  /** Correlates the notification back to the specific `sends` row via
+   * providerMessageId, so sends.status becomes an accurate historical
+   * record (not just the suppression list) — this is what GC-050's
+   * circuit breaker reads its rolling bounce rate from. */
+  private async markSendStatus(messageId: string | undefined, status: 'bounced' | 'complained') {
+    if (!messageId) return;
+    await this.drizzle.db.update(sends).set({ status }).where(eq(sends.providerMessageId, messageId));
   }
 }

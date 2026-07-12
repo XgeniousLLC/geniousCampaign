@@ -23,6 +23,8 @@ import { TriggersModule } from './triggers/triggers.module';
 import { EventsModule } from './events/events.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { CircuitBreakerModule } from './circuit-breaker/circuit-breaker.module';
+import { SlackModule } from './slack/slack.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { UploadsModule } from './uploads/uploads.module';
     EventsModule,
     CampaignsModule,
     UploadsModule,
+    CircuitBreakerModule,
+    SlackModule,
   ],
 })
 export class AppModule {}

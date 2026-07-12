@@ -10,11 +10,12 @@ import { SenderAccountsController } from './sender-accounts.controller';
 import { GmailBounceScannerProcessor } from './gmail-bounce-scanner.processor';
 import { AuthModule } from '../auth/auth.module';
 import { SuppressionModule } from '../suppression/suppression.module';
+import { CircuitBreakerModule } from '../circuit-breaker/circuit-breaker.module';
 
 const BOUNCE_SCAN_INTERVAL_MS = 15 * 60_000;
 
 @Module({
-  imports: [AuthModule, SuppressionModule, BullModule.registerQueue({ name: 'gmail-bounce-scanner' })],
+  imports: [AuthModule, SuppressionModule, CircuitBreakerModule, BullModule.registerQueue({ name: 'gmail-bounce-scanner' })],
   controllers: [SenderAccountsController],
   providers: [
     SesSenderProvider,

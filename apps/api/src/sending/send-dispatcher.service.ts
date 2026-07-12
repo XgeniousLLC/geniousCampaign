@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SenderAccountService } from './sender-account.service';
 import { SesSenderProvider } from './ses-sender.provider';
 import { GmailSenderProvider } from './gmail-sender.provider';
+import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import type { SendEmailParams, SendEmailResult } from './email-sender-provider.interface';
 
 /**
@@ -18,9 +19,14 @@ export class SendDispatcherService {
     private readonly senderAccounts: SenderAccountService,
     private readonly sesSender: SesSenderProvider,
     private readonly gmailSender: GmailSenderProvider,
+    private readonly breaker: CircuitBreakerService,
   ) {}
 
   async send(params: Omit<SendEmailParams, 'from' | 'senderAccountId'>): Promise<SendEmailResult> {
+    // GC-050 — blocks in real time, not just at the next 5-minute
+    // evaluation cycle.
+    await this.breaker.assertNotTripped();
+
     const account = await this.senderAccounts.pickAccountForSend();
     const provider = account.provider === 'gmail' ? this.gmailSender : this.sesSender;
 

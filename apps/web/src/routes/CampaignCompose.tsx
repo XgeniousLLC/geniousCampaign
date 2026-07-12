@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createCampaign, sendCampaign } from '../lib/campaignsApi';
+import { createCampaign, sendCampaign, type Campaign } from '../lib/campaignsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, listContactsForList, createList, type List } from '../lib/contactsApi';
 
@@ -13,9 +13,11 @@ export function CampaignCompose() {
   const [listId, setListId] = useState('');
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [isDryRun, setIsDryRun] = useState(true);
+  const [sendToEmail, setSendToEmail] = useState('');
   const [newListName, setNewListName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{ campaign: Campaign; recipientCount: number; threshold: number } | null>(null);
 
   useEffect(() => {
     listTemplates().then((t) => {
@@ -54,9 +56,32 @@ export function CampaignCompose() {
     setError(null);
     setSending(true);
     try {
-      const campaign = await createCampaign({ name: name.trim(), templateId, listId, isDryRun });
-      await sendCampaign(campaign.id);
+      const campaign = await createCampaign({
+        name: name.trim(),
+        templateId,
+        listId,
+        isDryRun,
+        sendToEmail: sendToEmail.trim() || undefined,
+      });
+      const result = await sendCampaign(campaign.id);
+      if (result.status === 'confirmation_required') {
+        setPendingConfirmation({ campaign, recipientCount: result.recipientCount!, threshold: result.threshold! });
+        setSending(false);
+        return;
+      }
       navigate(`/campaigns/${campaign.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSending(false);
+    }
+  }
+
+  async function handleConfirmLargeSend() {
+    if (!pendingConfirmation) return;
+    setSending(true);
+    try {
+      await sendCampaign(pendingConfirmation.campaign.id, true);
+      navigate(`/campaigns/${pendingConfirmation.campaign.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSending(false);
@@ -139,6 +164,19 @@ export function CampaignCompose() {
               <span className="text-xs font-semibold text-success">✓</span>
             </div>
           </div>
+
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <label className="mb-2 block text-xs font-semibold text-text-secondary">Send-to-self (optional)</label>
+            <input
+              value={sendToEmail}
+              onChange={(e) => setSendToEmail(e.target.value)}
+              placeholder="you@company.com — redirect every send here for QA"
+              className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
+            />
+            <div className="mt-1.5 text-[11px] text-text-faint">
+              A real send, redirected to this address for every recipient — useful for QA before a real campaign.
+            </div>
+          </div>
         </div>
 
         <div className="sticky top-0 rounded-md border border-border-default bg-panel p-4">
@@ -161,10 +199,19 @@ export function CampaignCompose() {
               />
             </button>
           </div>
+
+          {pendingConfirmation && (
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 p-2.5 text-[11.5px] leading-snug text-text-secondary">
+              <input type="checkbox" className="mt-0.5" onChange={handleConfirmLargeSend} />
+              This is a large send ({pendingConfirmation.recipientCount} recipients, over the {pendingConfirmation.threshold}-recipient
+              threshold). I've reviewed the template and list — send anyway.
+            </label>
+          )}
+
           {error && <div className="mt-2 text-xs text-danger">{error}</div>}
           <button
             onClick={handleSend}
-            disabled={sending || !templateId || !listId}
+            disabled={sending || !templateId || !listId || !!pendingConfirmation}
             className="mt-3 h-9 w-full rounded-md bg-accent text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {sending ? 'Sending…' : isDryRun ? 'Send dry run' : 'Send campaign'}

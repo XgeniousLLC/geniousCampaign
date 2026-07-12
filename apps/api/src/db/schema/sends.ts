@@ -21,6 +21,14 @@ export const campaigns = pgTable('campaigns', {
   failedCount: integer('failed_count').notNull().default(0),
   suppressedCount: integer('suppressed_count').notNull().default(0),
   isDryRun: boolean('is_dry_run').notNull().default(false),
+  // When set, every recipient's resolved email is sent to this address
+  // instead of their real one (GC-052 send-to-self) — a real send (quota
+  // still consumed), just redirected, distinct from isDryRun which never
+  // sends at all.
+  sendToEmail: text('send_to_email'),
+  // GC-053 — a send above the configurable large-send threshold requires
+  // this to be explicitly set before CampaignsService.send() will enqueue it.
+  largeSendConfirmed: boolean('large_send_confirmed').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

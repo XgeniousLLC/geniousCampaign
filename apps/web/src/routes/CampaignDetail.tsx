@@ -79,6 +79,11 @@ export function CampaignDetail() {
             dry run
           </span>
         )}
+        {campaign.sendToEmail && (
+          <span className="inline-flex items-center rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[11px] font-semibold text-info">
+            send-to-self: {campaign.sendToEmail}
+          </span>
+        )}
       </div>
       <p className="mb-5 text-xs text-text-muted">
         {template?.name ?? '—'} · {list?.name ?? '—'} · {new Date(campaign.createdAt).toLocaleString()}

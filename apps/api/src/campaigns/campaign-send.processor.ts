@@ -1,6 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Job } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -26,6 +27,7 @@ export class CampaignSendProcessor extends WorkerHost {
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
     private readonly sendDispatcher: SendDispatcherService,
+    private readonly events: EventEmitter2,
   ) {
     super();
   }
@@ -87,9 +89,9 @@ export class CampaignSendProcessor extends WorkerHost {
         : '#';
 
       if (campaign.isDryRun) {
-        // Dry-run stops here — never calls the real sender. Full
-        // send-to-self routing is GC-052's scope; this ticket only
-        // guarantees a dry-run campaign never reaches SES.
+        // Dry-run stops here — never calls the real sender at all. Distinct
+        // from sendToEmail below (GC-052's other half): dry-run means "never
+        // send", sendToEmail means "really send, just redirected".
         await this.drizzle.db.insert(sends).values({
           id: sendId,
           contactId: contact.id,
@@ -120,9 +122,14 @@ export class CampaignSendProcessor extends WorkerHost {
       });
 
       try {
+        // GC-052 send-to-self: a real send, quota still consumed, just
+        // redirected to a fixed test address rather than the real
+        // recipient — the subject marks who it was really meant for.
+        const sendTarget = campaign.sendToEmail || contact.email;
+        const sendSubject = campaign.sendToEmail ? `[Test → ${contact.email}] ${resolvedSubject}` : resolvedSubject;
         const result = await this.sendDispatcher.send({
-          to: contact.email,
-          subject: resolvedSubject,
+          to: sendTarget,
+          subject: sendSubject,
           html: resolvedBodyHtml,
           text: resolvedBodyText,
           unsubscribeUrl,
@@ -152,6 +159,7 @@ export class CampaignSendProcessor extends WorkerHost {
     this.logger.log(
       `Campaign "${campaign.name}" (${campaign.id}) finished: ${sentCount} sent, ${failedCount} failed, ${suppressedCount} suppressed`,
     );
+    this.events.emit('campaign.completed', { campaignId: campaign.id, name: campaign.name, sentCount, failedCount, suppressedCount });
     return { sentCount, failedCount, suppressedCount };
   }
 }

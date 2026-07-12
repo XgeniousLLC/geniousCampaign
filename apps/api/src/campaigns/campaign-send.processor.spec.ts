@@ -12,6 +12,8 @@ import { SesSenderProvider } from '../sending/ses-sender.provider';
 import { GmailSenderProvider } from '../sending/gmail-sender.provider';
 import { SenderAccountService } from '../sending/sender-account.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
+import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
+import { EnrollmentService } from '../enrollments/enrollment.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts, templates, lists, campaigns, contactLists, sends, suppressionList } from '../db/schema';
 
@@ -42,6 +44,8 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
         GmailSenderProvider,
         SenderAccountService,
         SendDispatcherService,
+        CircuitBreakerService,
+        EnrollmentService,
         DrizzleService,
       ],
     }).compile();

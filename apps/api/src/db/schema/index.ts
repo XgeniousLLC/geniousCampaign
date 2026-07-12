@@ -12,3 +12,4 @@ export * from './outbound-webhooks';
 export * from './triggers';
 export * from './sender-accounts';
 export * from './verification';
+export * from './circuit-breaker';

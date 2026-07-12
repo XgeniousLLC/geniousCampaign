@@ -6,6 +6,7 @@ import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decora
 import { AuditLogService } from '../auth/audit-log.service';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { SendCampaignDto } from './dto/send-campaign.dto';
 
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -40,9 +41,9 @@ export class CampaignsController {
 
   @Post(':id/send')
   @Roles('owner', 'editor')
-  async send(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.campaigns.send(id);
-    await this.auditLog.record(user, 'campaign.send', 'campaign', id, {});
+  async send(@Param('id') id: string, @Body() dto: SendCampaignDto, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.campaigns.send(id, dto.confirmed);
+    await this.auditLog.record(user, 'campaign.send', 'campaign', id, { confirmed: dto.confirmed ?? false });
     return result;
   }
 }

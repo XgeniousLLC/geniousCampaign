@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateCampaignDto {
   @IsString()
@@ -13,4 +13,8 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsBoolean()
   isDryRun?: boolean;
+
+  @IsOptional()
+  @IsEmail()
+  sendToEmail?: string;
 }
