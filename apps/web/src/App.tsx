@@ -12,6 +12,7 @@ import { SequenceBuilder } from './routes/SequenceBuilder';
 import { CampaignsList } from './routes/CampaignsList';
 import { CampaignCompose } from './routes/CampaignCompose';
 import { CampaignDetail } from './routes/CampaignDetail';
+import { SenderAccountsSettings } from './routes/SenderAccountsSettings';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
             <Route path="campaigns" element={<CampaignsList />} />
             <Route path="campaigns/new" element={<CampaignCompose />} />
             <Route path="campaigns/:id" element={<CampaignDetail />} />
+            <Route path="settings/sender-accounts" element={<SenderAccountsSettings />} />
           </Route>
         </Route>
       </Routes>

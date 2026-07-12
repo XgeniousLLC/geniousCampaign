@@ -10,7 +10,7 @@ import { campaigns, templates, sends } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
-import { SesSenderProvider } from '../sending/ses-sender.provider';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { resolvePersonalization } from '../sequence-runner/personalize.util';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
@@ -25,7 +25,7 @@ export class CampaignSendProcessor extends WorkerHost {
     private readonly lists: ListsService,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
-    private readonly sesSender: SesSenderProvider,
+    private readonly sendDispatcher: SendDispatcherService,
   ) {
     super();
   }
@@ -120,10 +120,8 @@ export class CampaignSendProcessor extends WorkerHost {
       });
 
       try {
-        const fromEmail = this.config.get<string>('SES_FROM_EMAIL') || 'noreply@example.com';
-        const result = await this.sesSender.send({
+        const result = await this.sendDispatcher.send({
           to: contact.email,
-          from: fromEmail,
           subject: resolvedSubject,
           html: resolvedBodyHtml,
           text: resolvedBodyText,
@@ -132,7 +130,7 @@ export class CampaignSendProcessor extends WorkerHost {
         });
         await this.drizzle.db
           .update(sends)
-          .set({ status: 'sent', providerMessageId: result.providerMessageId, sentAt: new Date() })
+          .set({ status: 'sent', provider: result.provider, providerMessageId: result.providerMessageId, sentAt: new Date() })
           .where(eq(sends.id, sendId));
         sentCount++;
       } catch (err) {

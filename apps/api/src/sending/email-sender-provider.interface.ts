@@ -6,6 +6,10 @@ export interface SendEmailParams {
   text: string;
   unsubscribeUrl: string;
   messageTags?: Record<string, string>;
+  /** Which SenderAccount row to send as — required by GmailSenderProvider
+   * (each Gmail mailbox has its own OAuth credentials); ignored by
+   * SesSenderProvider (single identity for now, per GC-017). */
+  senderAccountId?: string;
 }
 
 export interface SendEmailResult {

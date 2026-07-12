@@ -6,6 +6,9 @@ import { eq } from 'drizzle-orm';
 import { SequenceRunnerService } from './sequence-runner.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { SesSenderProvider } from '../sending/ses-sender.provider';
+import { GmailSenderProvider } from '../sending/gmail-sender.provider';
+import { SenderAccountService } from '../sending/sender-account.service';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { DrizzleService } from '../db/drizzle.service';
@@ -33,6 +36,9 @@ describe('SequenceRunnerService (integration, real DB)', () => {
         SequenceRunnerService,
         EnrollmentService,
         SesSenderProvider,
+        GmailSenderProvider,
+        SenderAccountService,
+        SendDispatcherService,
         SuppressionService,
         TrackingService,
         DrizzleService,

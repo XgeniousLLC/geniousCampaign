@@ -39,10 +39,10 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-041 | Sequence webhook controller | 3 | S | Done | GC-040, GC-031 |
 | GC-042 | Admin enrollment controller | 3 | S | Done | GC-031, GC-034 |
 | GC-043 | Outbound webhook dispatcher | 3 | M | Done | GC-037 |
-| GC-044 | Gmail OAuth connect flow | 3 | M | Blocked (needs: Google OAuth credentials + reference implementation) | GC-005 |
-| GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Blocked (needs: GC-044, GC-017) | GC-044, GC-017 |
-| GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Blocked (needs: GC-044, GC-018) | GC-044, GC-018 |
-| GC-047 | Admin UI: sender accounts | 3 | S | Blocked (needs: GC-044) | GC-044, GC-021 |
+| GC-044 | Gmail OAuth connect flow | 3 | M | Code done, needs Sharifur's Google Cloud OAuth client for a live connect | GC-005 |
+| GC-045 | SendDispatcherService (SES + Gmail rotation) | 3 | M | Done | GC-044, GC-017 |
+| GC-046 | Gmail bounce scanner (DSN polling) | 3 | M | Code done, needs GC-044's live connect to fully exercise | GC-044, GC-018 |
+| GC-047 | Admin UI: sender accounts | 3 | S | Done | GC-044, GC-021 |
 | GC-048 | Local verification pre-filter | 3 | S | Done | GC-010 |
 | GC-049 | Reoon + NeverBounce verification integration | 3 | M | Blocked (needs: REOON_API_KEY, NEVERBOUNCE_API_KEY) | GC-048 |
 | GC-050 | Bounce-rate circuit breaker | 4 | M | Blocked (needs: GC-018, GC-032) | GC-018, GC-032 |
@@ -398,6 +398,10 @@ Import the reference implementation: Google Cloud OAuth client setup (Internal u
 
 **Blocked 2026-07-11**: `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET` are empty in `.env`, and the Gmail Workspace reference implementation named in `CLAUDE.md` isn't in this repo — needs both a real Google Cloud OAuth client and the reference implementation pasted in.
 
+**Unblocked 2026-07-12**: reference implementation never arrived, built fresh (GC-044 through GC-047 together, since they're one coherent feature). `sender_accounts` table (provider `ses|gmail`, email, dailySendLimit, sentToday, sentTodayDate, isActive, `gmailRefreshTokenEncrypted`). `GmailOAuthService.getConnectUrl()`/`handleCallback()` uses `googleapis`' `google.auth.OAuth2`, scoped to `gmail.send`+`gmail.readonly`+`userinfo.email`, `access_type: offline`+`prompt: consent` to guarantee a refresh token every time. Refresh tokens are AES-256-GCM encrypted at rest (`token-encryption.util.ts`, keyed by `TOKEN_ENCRYPTION_KEY`) — 3 Jest tests confirm the round-trip and that a wrong key fails to decrypt. `GET /sender-accounts/gmail/callback` is intentionally public (Google's redirect can't carry our JWT) but CSRF-protected by a signed, 10-minute-expiring `state` param (`oauth-state.util.ts`, same HMAC-sign/verify shape as GC-019's unsubscribe token) generated at `/connect` time. `SenderAccountService.upsertGmailAccount()` matches by email, so reconnecting updates the existing row rather than duplicating it (ticket's second acceptance criterion, verifiable by code inspection — needs a real OAuth round-trip to exercise live).
+
+**Deviation**: `.env`'s `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`/`REDIRECT_URI`/`TOKEN_ENCRYPTION_KEY` are all still empty, so the actual 3-legged OAuth consent flow (the part that requires a real Google Cloud project + browser-based user consent) could not be exercised live — verified instead that `/sender-accounts/gmail/connect` throws the exact clean "not configured" error rather than a fake URL, both via curl and a full browser pass. **Sharifur: once a real Google Cloud OAuth client (Internal user type) and `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`) are in `.env`, connect a real Gmail Workspace test mailbox and confirm the full round-trip — code path is ready, this exact flow is what needs a human with real Google credentials.**
+
 ### GC-045 — SendDispatcherService (SES + Gmail rotation)
 Import the reference implementation: `SenderAccountService.pickAccountForSend()`, `EmailSenderProvider` interface, `SendDispatcherService`. Wire GC-032's runner and GC-020's campaign flow to go through this instead of calling SES directly.
 **Acceptance criteria:**
@@ -406,6 +410,10 @@ Import the reference implementation: `SenderAccountService.pickAccountForSend()`
 
 **Blocked 2026-07-11**: depends on GC-044 (blocked) and GC-017 (blocked, no AWS SES).
 
+**Unblocked 2026-07-12**: `SenderAccountService.pickAccountForSend()` sorts all active accounts by remaining headroom (`dailySendLimit - sentToday`, reset when `sentTodayDate` rolls to a new day) and returns the one with the most — SES's account row is materialized lazily (`ensureSesAccount()`) the first time anything needs to pick a sender, since SES has no OAuth connect step of its own but still needs to participate in the same rotation table (invariant 7). `SendDispatcherService.send()` is now the *only* thing `SequenceRunnerService`/`CampaignSendProcessor` call — both were refactored off calling `SesSenderProvider` directly. Quota is recorded (`recordSend()`, an atomic `sentToday + 1`) only on a successful send, so a failed attempt never eats into the account's daily limit.
+
+Verified live: sent a real campaign through the new dispatcher path with no sender accounts existing yet — confirmed a `sender_accounts` row for SES was created automatically (`dailySendLimit: 50000`, `sentToday: 0`), the send correctly failed with the same clean SES-not-configured error as before (proving the refactor didn't change failure behavior), and `sentToday` correctly stayed at 0 (a failed send must not consume quota). Rotation across an active Gmail + SES pair, and the "exhausted Gmail falls through to SES" criterion specifically, can't be demonstrated without a real connected Gmail account (GC-044) — the selection logic itself (sort by headroom, skip exhausted/inactive) has no external dependency and is straightforward to inspect; flagging rather than claiming a live multi-account test that didn't happen.
+
 ### GC-046 — Gmail bounce scanner (DSN polling)
 Import the reference implementation: 15-minute inbox-poll job, DSN parsing.
 **Acceptance criteria:**
@@ -413,12 +421,20 @@ Import the reference implementation: 15-minute inbox-poll job, DSN parsing.
 
 **Blocked 2026-07-11**: depends on GC-044/GC-018 (blocked).
 
+**Unblocked 2026-07-12**: `GmailBounceScannerProcessor` — BullMQ repeatable job every 15 minutes (`SendingModule.onModuleInit`, same `upsertJobScheduler` pattern as the sequence runner and schedule triggers, invariant 10), one per active connected Gmail account. Searches `from:mailer-daemon OR subject:"Delivery Status Notification" OR subject:"Undelivered Mail"` since the account's `gmailLastBounceScanAt`, parses the DSN's `Final-Recipient: rfc822; ...` field to get the bounced address, and calls `SuppressionService.recordSoftBounce()` — never an immediate hard suppress — matching invariant 9's explicit note that a single Gmail-detected bounce is a softer signal than SES's structured SNS events. Quietly returns `{accountsScanned: 0, bouncesFound: 0}` rather than logging an error every 15 minutes when Gmail isn't configured at all — this is an unconnected-feature no-op, not a failure.
+
+`extractBouncedRecipient()` (the one genuinely pure, unit-testable piece of this) has 3 Jest tests: parses a real DSN field, is case-insensitive, returns null on a non-bounce body. The actual Gmail-inbox-polling half needs a real connected account (GC-044) to exercise for real — noted rather than claimed.
+
 ### GC-047 — Admin UI: sender accounts
 Import the reference implementation: `SenderAccountsSettings.tsx`, quota bars, connect button.
 **Acceptance criteria:**
 - Shows live `sentToday`/`dailySendLimit` for every connected account, matching the DB state.
 
 **Blocked 2026-07-11**: depends on GC-044 (blocked).
+
+**Unblocked 2026-07-12**: `SenderAccountsSettings.tsx` at `/settings/sender-accounts`, `senderAccountsApi.ts` client. Quota bar color follows the exact green/amber/red thresholds `DESIGN_TOKENS.md` specifies for this screen (<70/70–90/>90%). Scoped to what the backend actually supports — daily quota only, no hourly cap or email-signature editor, since neither exists server-side and no ticket asks for them; the design shows both, noted as a design/ticket mismatch rather than built as dead UI.
+
+Verified live (Chrome extension was disconnected this session, used the Playwright fallback again): real SES account card renders with the correct live `sentToday`/`dailySendLimit` (0/50000) after the GC-045 live test above, "Connect Gmail account" button correctly surfaces the clean "TOKEN_ENCRYPTION_KEY is not configured" error inline rather than failing silently or navigating anywhere fake.
 
 ### GC-048 — Local verification pre-filter
 Syntax regex, MX record lookup (`dns.resolveMx`), disposable-domain blocklist check — all before any paid API call.

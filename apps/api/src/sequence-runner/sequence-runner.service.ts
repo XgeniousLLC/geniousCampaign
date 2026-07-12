@@ -7,7 +7,7 @@ import { sequenceEnrollments, sequenceSteps, contacts, templates, sends } from '
 import { resolveNextExecutableStep, type RunnerStep } from './step-resolution.util';
 import { resolvePersonalization } from './personalize.util';
 import { resolveSpintax } from '@genius-campaign/shared';
-import { SesSenderProvider } from '../sending/ses-sender.provider';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
@@ -21,7 +21,7 @@ export class SequenceRunnerService {
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly config: ConfigService,
-    private readonly sesSender: SesSenderProvider,
+    private readonly sendDispatcher: SendDispatcherService,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
     private readonly events: EventEmitter2,
@@ -160,10 +160,8 @@ export class SequenceRunnerService {
     });
 
     try {
-      const fromEmail = this.config.get<string>('SES_FROM_EMAIL') || 'noreply@example.com';
-      const result = await this.sesSender.send({
+      const result = await this.sendDispatcher.send({
         to: contact.email,
-        from: fromEmail,
         subject: resolvedSubject,
         html: resolvedBodyHtml,
         text: resolvedBodyText,
@@ -172,7 +170,7 @@ export class SequenceRunnerService {
       });
       await this.drizzle.db
         .update(sends)
-        .set({ status: 'sent', providerMessageId: result.providerMessageId, sentAt: new Date() })
+        .set({ status: 'sent', provider: result.provider, providerMessageId: result.providerMessageId, sentAt: new Date() })
         .where(eq(sends.id, sendId));
     } catch (err) {
       await this.drizzle.db

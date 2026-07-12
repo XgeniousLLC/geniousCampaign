@@ -43,6 +43,11 @@ export function Layout() {
                 Campaigns
               </Link>
             </li>
+            <li>
+              <Link to="/settings/sender-accounts" className="block rounded px-2 py-1.5 hover:bg-raised hover:text-text-primary">
+                Sender Accounts
+              </Link>
+            </li>
           </ul>
         </nav>
       )}

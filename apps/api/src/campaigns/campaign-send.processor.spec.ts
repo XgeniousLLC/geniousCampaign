@@ -9,6 +9,9 @@ import { ListsService } from '../lists/lists.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { SesSenderProvider } from '../sending/ses-sender.provider';
+import { GmailSenderProvider } from '../sending/gmail-sender.provider';
+import { SenderAccountService } from '../sending/sender-account.service';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts, templates, lists, campaigns, contactLists, sends, suppressionList } from '../db/schema';
 
@@ -30,7 +33,17 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
         }),
         EventEmitterModule.forRoot(),
       ],
-      providers: [CampaignSendProcessor, ListsService, SuppressionService, TrackingService, SesSenderProvider, DrizzleService],
+      providers: [
+        CampaignSendProcessor,
+        ListsService,
+        SuppressionService,
+        TrackingService,
+        SesSenderProvider,
+        GmailSenderProvider,
+        SenderAccountService,
+        SendDispatcherService,
+        DrizzleService,
+      ],
     }).compile();
 
     processor = moduleRef.get(CampaignSendProcessor);
