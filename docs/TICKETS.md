@@ -23,7 +23,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-016 | Spintax spinBlock extension + resolver | 1 | M | Done | GC-014 |
 | GC-017 | AWS SES sending service | 1 | M | Done (code ready; live send needs Sharifur's AWS creds) | GC-013 |
 | GC-018 | SES bounce/complaint pipeline + suppression list | 1 | M | Done (code ready; live SNS wiring needs Sharifur's AWS setup) | GC-017 |
-| GC-019 | Open + click tracking | 1 | M | Blocked (needs: GC-017) | GC-017 |
+| GC-019 | Open + click tracking | 1 | M | Done | GC-017 |
 | GC-020 | One-off campaign send flow | 1 | L | Blocked (needs: GC-017, GC-018, GC-019) | GC-011, GC-016, GC-017, GC-018, GC-019 |
 | GC-021 | Admin UI: contacts, templates | 1 | L | Done | GC-011, GC-016 |
 | GC-021b | Admin UI: send campaign flow | 1 | M | Blocked (needs: GC-020) | GC-020, GC-021 |
@@ -223,7 +223,9 @@ Tracking subdomain, 1×1 pixel endpoint, link-rewriting + redirect endpoint, `Em
 - Clicking a link in a sent test email records a click event and correctly redirects to the original URL.
 - Tracking pixel/links use signed tokens, not raw sequential send IDs.
 
-**Blocked 2026-07-11**: depends on GC-017 — needs a real sent test email in a real client to open/click. `TRACKING_DOMAIN` is also unset in `.env`.
+**Unblocked 2026-07-12**: `email_events` table, `TrackingService` (`GET /t/o/:token` returns a real 1x1 GIF and records an open; `GET /t/c/:token` records a click then 302-redirects to the original URL), `rewriteLinksForTracking()` util that rewrites every `<a href>` in resolved HTML to a signed click URL. Tokens are HMAC-signed `{sendId}` / `{sendId, url}` payloads (`TRACKING_SIGNING_SECRET`) — never a raw send ID in the URL. `TRACKING_DOMAIN` still needs a real public domain from Sharifur for production; falls back to `localhost:$PORT` for local dev/testing.
+
+Verified live against a real `sends` row: hit the open-pixel URL directly (200, `image/gif`, real event row written), hit the click URL directly (302 to the exact original URL, event row with that URL written), and confirmed a tampered token 400s. `rewriteLinksForTracking` has 2 Jest tests (rewrites real `<a href>` tags, leaves `mailto:`/`#anchor` links untouched). Couldn't test in an actual mail client end-to-end (needs GC-017's live AWS send) — Sharifur can do that manual pass once SES credentials are in.
 
 ### GC-020 — One-off campaign send flow
 Ties GC-011/016/017/018/019 together: pick a template + a list, resolve spintax per recipient, check suppression, send via SES, record the resolved subject/body on the `Send` row per the spintax-resolution invariant in `CLAUDE.md`.
