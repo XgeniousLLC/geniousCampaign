@@ -1,4 +1,4 @@
-import { apiGet } from './api';
+import { apiGet, type Page } from './api';
 import type { SendStatus } from './campaignsApi';
 
 export interface EmailLogRow {
@@ -27,13 +27,14 @@ export interface EmailLogDetail {
   events: EmailLogEvent[];
 }
 
-export function listEmailLog(filter: { status?: SendStatus; campaignId?: string; sequenceId?: string; limit?: number }) {
+export function listEmailLog(filter: { status?: SendStatus; campaignId?: string; sequenceId?: string; page?: number; limit?: number }) {
   const params = new URLSearchParams();
   if (filter.status) params.set('status', filter.status);
   if (filter.campaignId) params.set('campaignId', filter.campaignId);
   if (filter.sequenceId) params.set('sequenceId', filter.sequenceId);
-  params.set('limit', String(filter.limit ?? 100));
-  return apiGet<EmailLogRow[]>(`/email-log?${params.toString()}`);
+  params.set('page', String(filter.page ?? 1));
+  params.set('limit', String(filter.limit ?? 50));
+  return apiGet<Page<EmailLogRow>>(`/email-log?${params.toString()}`);
 }
 
 export function getEmailLogDetail(id: string) {

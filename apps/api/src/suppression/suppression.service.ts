@@ -64,7 +64,12 @@ export class SuppressionService {
     return { count: updated.count, suppressed: false };
   }
 
-  listAll() {
-    return this.drizzle.db.query.suppressionList.findMany({ orderBy: (s, { desc }) => desc(s.createdAt) });
+  async listAll(page = 1, limit = 50) {
+    const offset = (page - 1) * limit;
+    const [data, [{ count }]] = await Promise.all([
+      this.drizzle.db.query.suppressionList.findMany({ orderBy: (s, { desc }) => desc(s.createdAt), limit, offset }),
+      this.drizzle.db.select({ count: sql<number>`count(*)::int` }).from(suppressionList),
+    ]);
+    return { data, total: count, page, limit };
   }
 }

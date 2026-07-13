@@ -1,9 +1,35 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useUiStore } from '../stores/useUiStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { getPublicSummary } from '../lib/analyticsApi';
 import { listSenderAccounts } from '../lib/senderAccountsApi';
+import { Footer } from './Footer';
+import { ChevronDownIcon, UserIcon, LockIcon } from './icons';
+
+const SITE_TITLE = 'geniusCampaign';
+
+const PAGE_TITLES: Array<[string, string]> = [
+  ['/contacts', 'Contacts'],
+  ['/lists', 'Lists & Tags'],
+  ['/verification', 'Verification'],
+  ['/templates', 'Templates'],
+  ['/campaigns', 'Campaigns'],
+  ['/sequences', 'Sequences'],
+  ['/triggers', 'Triggers'],
+  ['/webhooks', 'Webhooks'],
+  ['/email-log', 'Email Log'],
+  ['/settings/sender-accounts', 'Sender Accounts'],
+  ['/settings/change-password', 'Change Password'],
+  ['/settings', 'Settings'],
+  ['/profile', 'Profile'],
+];
+
+function pageTitleFor(pathname: string): string {
+  if (pathname === '/') return 'Dashboard';
+  const match = PAGE_TITLES.find(([prefix]) => pathname.startsWith(prefix));
+  return match ? match[1] : SITE_TITLE;
+}
 
 const ICONS = {
   dashboard: (
@@ -26,6 +52,12 @@ const ICONS = {
     <>
       <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
       <circle cx="7.5" cy="7.5" r="1.5" />
+    </>
+  ),
+  verification: (
+    <>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <path d="m9 11 3 3L22 4" />
     </>
   ),
   templates: (
@@ -132,9 +164,11 @@ export function Layout() {
   const { sidebarOpen, toggleSidebar } = useUiStore();
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [senderWarn, setSenderWarn] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   useEffect(() => {
     getPublicSummary()
@@ -145,12 +179,17 @@ export function Layout() {
       .catch(() => setSenderWarn(false));
   }, []);
 
+  useEffect(() => {
+    document.title = `${pageTitleFor(location.pathname)} · ${SITE_TITLE}`;
+  }, [location.pathname]);
+
   function handleLogout() {
     logout();
     navigate('/login');
   }
 
-  const initials = user ? user.email.slice(0, 2).toUpperCase() : '??';
+  const displayName = user ? user.name || user.email : '';
+  const initials = user ? displayName.slice(0, 2).toUpperCase() : '??';
 
   return (
     <div className="flex h-screen overflow-hidden bg-base text-text-primary">
@@ -165,7 +204,14 @@ export function Layout() {
             </div>
             <div className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-[13.5px] font-semibold tracking-tight text-text-heading">geniusCampaign</span>
-              <span className="truncate text-[10.5px] font-medium text-text-meta">Internal outreach platform</span>
+              <a
+                href="https://xgenious.com"
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-[10.5px] font-medium text-text-meta hover:text-text-tertiary"
+              >
+                by xgenious.com
+              </a>
             </div>
           </div>
 
@@ -184,6 +230,9 @@ export function Layout() {
             </NavItem>
             <NavItem to="/lists" icon={ICONS.lists}>
               Lists &amp; Tags
+            </NavItem>
+            <NavItem to="/verification" icon={ICONS.verification}>
+              Verification
             </NavItem>
 
             <NavGroupLabel>Content</NavGroupLabel>
@@ -222,20 +271,6 @@ export function Layout() {
             <NavItem to="/settings" icon={ICONS.settings}>
               Settings
             </NavItem>
-            {user && (
-              <div className="mt-1 flex items-center gap-2.5 rounded-md px-2 py-1.5">
-                <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-info-alt to-accent text-[11px] font-semibold text-white">
-                  {initials}
-                </div>
-                <div className="min-w-0 flex-1 leading-tight">
-                  <div className="truncate text-xs font-medium text-text-secondary">{user.email}</div>
-                  <div className="text-[10.5px] capitalize text-text-meta">{user.role}</div>
-                </div>
-                <button onClick={handleLogout} title="Sign out" className="shrink-0 rounded p-1 text-text-meta hover:bg-raised2 hover:text-text-primary">
-                  <NavIcon>{ICONS.logout}</NavIcon>
-                </button>
-              </div>
-            )}
           </div>
         </aside>
       )}
@@ -285,6 +320,56 @@ export function Layout() {
               </>
             )}
           </div>
+
+          {user && (
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen((o) => !o)}
+                className="flex h-8 items-center gap-2 rounded-md border border-border-strong pl-1 pr-2 hover:bg-field"
+              >
+                <div className="flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-info-alt to-accent text-[10.5px] font-semibold text-white">
+                  {initials}
+                </div>
+                <span className="max-w-[140px] truncate text-[12px] font-medium text-text-secondary">{displayName}</span>
+                <ChevronDownIcon className="shrink-0 text-text-quaternary" />
+              </button>
+              {userMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setUserMenuOpen(false)} />
+                  <div className="absolute right-0 top-9 z-20 w-52 overflow-hidden rounded-lg border border-border-modal bg-panel2 py-1 shadow-[0_20px_50px_rgba(0,0,0,.55)]">
+                    <div className="border-b border-border-subtle px-3 py-2">
+                      <div className="truncate text-xs font-medium text-text-secondary">{displayName}</div>
+                      {user.name && <div className="truncate text-[10.5px] text-text-faint">{user.email}</div>}
+                      <div className="text-[10.5px] capitalize text-text-meta">{user.role}</div>
+                    </div>
+                    <NavLink
+                      to="/profile"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-raised hover:text-text-primary"
+                    >
+                      <UserIcon className="shrink-0" />
+                      Profile
+                    </NavLink>
+                    <NavLink
+                      to="/settings/change-password"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-raised hover:text-text-primary"
+                    >
+                      <LockIcon className="shrink-0" />
+                      Change password
+                    </NavLink>
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 border-t border-border-subtle px-3 py-2 text-left text-xs text-text-secondary hover:bg-raised hover:text-text-primary"
+                    >
+                      <NavIcon>{ICONS.logout}</NavIcon>
+                      Sign out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto bg-base">
@@ -292,6 +377,7 @@ export function Layout() {
             <Outlet />
           </div>
         </main>
+        <Footer />
       </div>
     </div>
   );

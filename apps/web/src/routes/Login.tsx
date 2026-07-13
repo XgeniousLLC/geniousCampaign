@@ -57,7 +57,9 @@ export function Login() {
             </div>
             <div className="flex flex-col leading-tight">
               <span className="text-[15px] font-semibold tracking-tight text-text-heading">geniusCampaign</span>
-              <span className="text-[11px] font-medium text-text-faint">Internal outreach platform</span>
+              <a href="https://xgenious.com" target="_blank" rel="noreferrer" className="text-[11px] font-medium text-text-faint hover:text-text-tertiary">
+                by xgenious.com
+              </a>
             </div>
           </div>
 

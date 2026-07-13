@@ -66,8 +66,9 @@ describe('EmailLogService (integration, real DB) — GC-060', () => {
 
   it('filters by status', async () => {
     const bouncedOnly = await service.list({ status: 'bounced', limit: 100 });
-    expect(bouncedOnly.some((s) => s.id === sentId)).toBe(false);
-    expect(bouncedOnly.some((s) => s.id === bouncedId)).toBe(true);
+    expect(bouncedOnly.data.some((s) => s.id === sentId)).toBe(false);
+    expect(bouncedOnly.data.some((s) => s.id === bouncedId)).toBe(true);
+    expect(bouncedOnly.total).toBeGreaterThanOrEqual(1);
   });
 
   it('detail drawer shows the real resolved subject/body stored on the send, not the (since-changed) live template, plus real event history', async () => {

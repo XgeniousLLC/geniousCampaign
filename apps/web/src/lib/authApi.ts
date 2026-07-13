@@ -1,8 +1,28 @@
-import { apiPost } from './api';
+import { apiGet, apiPatch, apiPost } from './api';
 
 export interface AuthResponse {
   accessToken: string;
-  user: { id: string; email: string; role: 'owner' | 'editor' | 'viewer' };
+  user: { id: string; email: string; role: 'owner' | 'editor' | 'viewer'; name: string | null };
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'owner' | 'editor' | 'viewer';
+  createdAt: string;
+}
+
+export function getMe() {
+  return apiGet<Me>('/auth/me');
+}
+
+export function updateProfile(input: { name?: string; email?: string }) {
+  return apiPatch<Me>('/auth/me', input);
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiPatch<{ success: boolean }>('/auth/me/password', { currentPassword, newPassword });
 }
 
 export function login(email: string, password: string, rememberMe?: boolean) {

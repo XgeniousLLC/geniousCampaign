@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { addContactList, avatarColor, deleteContact, listContacts, listLists, type Contact, type List } from '../lib/contactsApi';
+import { Link, useParams } from 'react-router-dom';
+import { addContactList, avatarColor, deleteContact, getList, listContacts, listLists, type Contact, type List } from '../lib/contactsApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
-import { localCheckEmail } from '../lib/verificationApi';
+import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
 import { manualSuppress } from '../lib/suppressionApi';
 import { CsvImportModal } from '../components/CsvImportModal';
 
@@ -42,8 +42,9 @@ function relativeTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function ContactsList() {
+export function ContactsList({ listId }: { listId?: string } = {}) {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [scopeList, setScopeList] = useState<List | null>(null);
   const [allLists, setAllLists] = useState<List[]>([]);
   const [allSequences, setAllSequences] = useState<Sequence[]>([]);
   const [search, setSearch] = useState('');
@@ -58,6 +59,7 @@ export function ContactsList() {
   const [pickerOpen, setPickerOpen] = useState<'list' | 'sequence' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
 
   function reload() {
     setLoading(true);
@@ -71,9 +73,21 @@ export function ContactsList() {
     listLists().then(setAllLists);
     listSequences().then(setAllSequences);
   }, []);
+  useEffect(() => {
+    if (!listId) {
+      setScopeList(null);
+      return;
+    }
+    getList(listId).then(setScopeList);
+  }, [listId]);
+
+  const scopedContacts = useMemo(
+    () => (listId ? contacts.filter((c) => (c.lists ?? []).some((l) => l.id === listId)) : contacts),
+    [contacts, listId],
+  );
 
   const filtered = useMemo(() => {
-    const rows = contacts.filter((c) => {
+    const rows = scopedContacts.filter((c) => {
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       if (!search) return true;
       const haystack = `${c.email} ${c.firstName ?? ''} ${c.lastName ?? ''} ${(c.tags ?? []).map((t) => t.name).join(' ')}`.toLowerCase();
@@ -88,20 +102,20 @@ export function ContactsList() {
       const bv = b.lastActivityAt ?? '';
       return av.localeCompare(bv) * dir;
     });
-  }, [contacts, search, statusFilter, sortKey, sortDir]);
+  }, [scopedContacts, search, statusFilter, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => setPage(1), [search, statusFilter]);
+  useEffect(() => setPage(1), [search, statusFilter, listId]);
 
   const counts = useMemo(() => {
-    const byStatus: Record<string, number> = { all: contacts.length };
-    for (const c of contacts) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
+    const byStatus: Record<string, number> = { all: scopedContacts.length };
+    for (const c of scopedContacts) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
     return byStatus;
-  }, [contacts]);
+  }, [scopedContacts]);
 
-  const verifiedCount = contacts.filter((c) => c.verificationStatus === 'valid').length;
+  const verifiedCount = scopedContacts.filter((c) => c.verificationStatus === 'valid').length;
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -186,15 +200,46 @@ export function ContactsList() {
     reload();
   }
 
+  async function handleVerify(c: Contact) {
+    if (verifyingIds.has(c.id)) return;
+    setVerifyingIds((s) => new Set(s).add(c.id));
+    try {
+      const result = await verifyEmail(c.email);
+      setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Verification failed.');
+    } finally {
+      setVerifyingIds((s) => {
+        const next = new Set(s);
+        next.delete(c.id);
+        return next;
+      });
+    }
+  }
+
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((c) => selected.has(c.id));
 
   return (
     <div>
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold text-text-heading">Contacts</h1>
+          {listId && (
+            <Link to="/lists" className="mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-text-faint hover:text-text-secondary">
+              ← Lists &amp; Tags
+            </Link>
+          )}
+          <h1 className="text-lg font-semibold text-text-heading">{listId ? (scopeList?.name ?? 'List') : 'Contacts'}</h1>
           <p className="mt-1 text-xs text-text-muted">
-            {contacts.length} total · {verifiedCount} verified · {counts.suppressed ?? 0} suppressed
+            {listId ? (
+              <>
+                {scopedContacts.length} member{scopedContacts.length === 1 ? '' : 's'}
+                {scopeList && <> · {scopeList.type} list</>}
+              </>
+            ) : (
+              <>
+                {contacts.length} total · {verifiedCount} verified · {counts.suppressed ?? 0} suppressed
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -217,7 +262,7 @@ export function ContactsList() {
         </div>
       )}
 
-      {!loading && contacts.length === 0 ? (
+      {!loading && scopedContacts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -256,7 +301,7 @@ export function ContactsList() {
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s)}
-                    className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${
+                    className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium capitalize ${
                       on
                         ? 'border-accent/30 bg-accent/10 text-accent-tint'
                         : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
@@ -373,23 +418,52 @@ export function ContactsList() {
                       <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-3.5 w-3.5 accent-accent" />
                     </td>
                     <td className="px-3 py-2">
-                      <Link to={`/contacts/${c.id}`} className="flex items-center gap-2.5">
-                        <span
-                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                          style={{ background: avatarColor(c.id) }}
+                      <div className="flex items-center gap-2.5">
+                        <Link to={`/contacts/${c.id}`} className="flex min-w-0 flex-1 items-center gap-2.5">
+                          <span
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                            style={{ background: avatarColor(c.id) }}
+                          >
+                            {initials(c)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-text-secondary">{displayName(c)}</span>
+                            <span className="block truncate font-mono text-[11px] text-text-faint">{c.email}</span>
+                          </span>
+                        </Link>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleVerify(c);
+                          }}
+                          disabled={verifyingIds.has(c.id)}
+                          title={
+                            verifyingIds.has(c.id)
+                              ? 'Verifying…'
+                              : c.verificationStatus === 'valid'
+                                ? 'Verified deliverable'
+                                : 'Not verified — click to verify'
+                          }
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full disabled:opacity-50 ${
+                            c.verificationStatus === 'valid' ? 'text-success' : 'text-text-meta hover:text-text-tertiary'
+                          }`}
                         >
-                          {initials(c)}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium text-text-secondary">{displayName(c)}</span>
-                          <span className="block truncate font-mono text-[11px] text-text-faint">{c.email}</span>
-                        </span>
-                      </Link>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <path d="m9 11 3 3L22 4" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         {(c.tags ?? []).map((t) => (
-                          <span key={t.id} className="rounded-sm border border-border-emphasis bg-raised2 px-1.5 py-0.5 text-[11px] text-text-quaternary">
+                          <span
+                            key={t.id}
+                            className="rounded-sm border px-1.5 py-0.5 text-[11px] font-medium"
+                            style={{ backgroundColor: `${t.color}1F`, borderColor: `${t.color}4D`, color: t.color }}
+                          >
                             {t.name}
                           </span>
                         ))}
@@ -397,7 +471,7 @@ export function ContactsList() {
                     </td>
                     <td className="px-3 py-2 text-text-quaternary">{(c.lists ?? []).map((l) => l.name).join(', ') || '—'}</td>
                     <td className="px-3 py-2">
-                      <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[11px] ${STATUS_STYLES[c.status]}`}>{c.status}</span>
+                      <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[11px] capitalize ${STATUS_STYLES[c.status]}`}>{c.status}</span>
                     </td>
                     <td className="px-3 py-2 text-right text-text-muted">{relativeTime(c.lastActivityAt)}</td>
                     <td className="relative px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
@@ -476,6 +550,12 @@ export function ContactsList() {
       {importOpen && <CsvImportModal onClose={() => setImportOpen(false)} onImported={reload} />}
     </div>
   );
+}
+
+export function ListDetail() {
+  const { id } = useParams<{ id: string }>();
+  if (!id) return null;
+  return <ContactsList listId={id} />;
 }
 
 function FormField({

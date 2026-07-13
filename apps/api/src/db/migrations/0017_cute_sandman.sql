@@ -1,0 +1,1 @@
+ALTER TABLE "tags" ADD COLUMN "color" text DEFAULT '#818CF8' NOT NULL;

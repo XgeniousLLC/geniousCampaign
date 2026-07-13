@@ -29,6 +29,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { EmailLogModule } from './email-log/email-log.module';
 import { AiAssistModule } from './ai-assist/ai-assist.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { PasswordResetModule } from './password-reset/password-reset.module';
     EmailLogModule,
     AiAssistModule,
     PasswordResetModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

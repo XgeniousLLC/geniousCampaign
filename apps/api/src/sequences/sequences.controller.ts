@@ -10,6 +10,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AuditLogService } from '../auth/audit-log.service';
+import { DrizzleService } from '../db/drizzle.service';
 
 @Controller('sequences')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -17,14 +18,17 @@ export class SequencesController {
   constructor(
     private readonly sequencesService: SequencesService,
     private readonly auditLog: AuditLogService,
+    private readonly drizzle: DrizzleService,
   ) {}
 
   @Post()
   @Roles('owner', 'editor')
-  async create(@Body() dto: CreateSequenceDto, @CurrentUser() user: AuthenticatedUser) {
-    const created = await this.sequencesService.create(dto);
-    await this.auditLog.record(user, 'sequence.create', 'sequence', created.id, { name: created.name });
-    return created;
+  create(@Body() dto: CreateSequenceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const created = await this.sequencesService.create(dto, tx);
+      await this.auditLog.record(user, 'sequence.create', 'sequence', created.id, { name: created.name }, tx);
+      return created;
+    });
   }
 
   @Get()
@@ -39,18 +43,22 @@ export class SequencesController {
 
   @Patch(':id')
   @Roles('owner', 'editor')
-  async update(@Param('id') id: string, @Body() dto: UpdateSequenceDto, @CurrentUser() user: AuthenticatedUser) {
-    const updated = await this.sequencesService.update(id, dto);
-    await this.auditLog.record(user, 'sequence.update', 'sequence', id, { fields: Object.keys(dto) });
-    return updated;
+  update(@Param('id') id: string, @Body() dto: UpdateSequenceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.sequencesService.update(id, dto, tx);
+      await this.auditLog.record(user, 'sequence.update', 'sequence', id, { fields: Object.keys(dto) }, tx);
+      return updated;
+    });
   }
 
   @Delete(':id')
   @Roles('owner', 'editor')
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.sequencesService.remove(id);
-    await this.auditLog.record(user, 'sequence.delete', 'sequence', id);
-    return result;
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.sequencesService.remove(id, tx);
+      await this.auditLog.record(user, 'sequence.delete', 'sequence', id, undefined, tx);
+      return result;
+    });
   }
 
   @Get(':id/steps')
@@ -60,38 +68,46 @@ export class SequencesController {
 
   @Post(':id/steps')
   @Roles('owner', 'editor')
-  async addStep(@Param('id') id: string, @Body() dto: CreateStepDto, @CurrentUser() user: AuthenticatedUser) {
-    const step = await this.sequencesService.addStep(id, dto);
-    await this.auditLog.record(user, 'sequence.step.add', 'sequence', id, { stepId: step.id, type: dto.type });
-    return step;
+  addStep(@Param('id') id: string, @Body() dto: CreateStepDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const step = await this.sequencesService.addStep(id, dto, tx);
+      await this.auditLog.record(user, 'sequence.step.add', 'sequence', id, { stepId: step.id, type: dto.type }, tx);
+      return step;
+    });
   }
 
   @Patch(':id/steps/:stepId')
   @Roles('owner', 'editor')
-  async updateStep(
+  updateStep(
     @Param('id') id: string,
     @Param('stepId') stepId: string,
     @Body() dto: UpdateStepDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const step = await this.sequencesService.updateStep(id, stepId, dto);
-    await this.auditLog.record(user, 'sequence.step.update', 'sequence', id, { stepId, fields: Object.keys(dto) });
-    return step;
+    return this.drizzle.db.transaction(async (tx) => {
+      const step = await this.sequencesService.updateStep(id, stepId, dto, tx);
+      await this.auditLog.record(user, 'sequence.step.update', 'sequence', id, { stepId, fields: Object.keys(dto) }, tx);
+      return step;
+    });
   }
 
   @Delete(':id/steps/:stepId')
   @Roles('owner', 'editor')
-  async removeStep(@Param('id') id: string, @Param('stepId') stepId: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.sequencesService.removeStep(id, stepId);
-    await this.auditLog.record(user, 'sequence.step.remove', 'sequence', id, { stepId });
-    return result;
+  removeStep(@Param('id') id: string, @Param('stepId') stepId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.sequencesService.removeStep(id, stepId, tx);
+      await this.auditLog.record(user, 'sequence.step.remove', 'sequence', id, { stepId }, tx);
+      return result;
+    });
   }
 
   @Post(':id/steps/reorder')
   @Roles('owner', 'editor')
-  async reorderSteps(@Param('id') id: string, @Body() dto: ReorderStepsDto, @CurrentUser() user: AuthenticatedUser) {
-    const steps = await this.sequencesService.reorderSteps(id, dto);
-    await this.auditLog.record(user, 'sequence.steps.reorder', 'sequence', id, { stepIds: dto.stepIds });
-    return steps;
+  reorderSteps(@Param('id') id: string, @Body() dto: ReorderStepsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const steps = await this.sequencesService.reorderSteps(id, dto, tx);
+      await this.auditLog.record(user, 'sequence.steps.reorder', 'sequence', id, { stepIds: dto.stepIds }, tx);
+      return steps;
+    });
   }
 }

@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { google } from 'googleapis';
@@ -32,17 +32,17 @@ export class GmailBounceScannerProcessor extends WorkerHost {
 
   constructor(
     private readonly drizzle: DrizzleService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly suppression: SuppressionService,
   ) {
     super();
   }
 
   async process(_job: Job): Promise<{ accountsScanned: number; bouncesFound: number }> {
-    const clientId = this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.config.get<string>('GOOGLE_OAUTH_REDIRECT_URI');
-    const encryptionSecret = this.config.get<string>('TOKEN_ENCRYPTION_KEY');
+    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
+    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
+    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
+    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
     if (!clientId || !clientSecret || !redirectUri || !encryptionSecret) {
       // Not configured yet — nothing to scan, not an error (mirrors every
       // other unconfigured-integration path: skip quietly rather than spam

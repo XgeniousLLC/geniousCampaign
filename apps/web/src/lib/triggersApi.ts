@@ -15,12 +15,44 @@ export interface Trigger {
   isActive: boolean;
   scheduleCron: string | null;
   scheduleTimezone: string | null;
+  webhookEndpointId: string | null;
   createdAt: string;
   updatedAt: string;
+  // Present on list responses only (GET /triggers) — computed server-side.
+  firedCount?: number;
+}
+
+export interface TriggerStats {
+  totalFires: number;
+  enrolledCount: number;
+  skippedCount: number;
+  lastFiredAt: string | null;
+}
+
+export interface TriggerEvaluation {
+  id: string;
+  contactId: string;
+  contactEmail: string;
+  eventType: string;
+  enrolled: boolean;
+  error: string | null;
+  createdAt: string;
 }
 
 export function listTriggers() {
   return apiGet<Trigger[]>('/triggers');
+}
+
+export function getTrigger(id: string) {
+  return apiGet<Trigger>(`/triggers/${id}`);
+}
+
+export function getTriggerStats(id: string) {
+  return apiGet<TriggerStats>(`/triggers/${id}/stats`);
+}
+
+export function listTriggerEvaluations(id: string, limit = 50) {
+  return apiGet<TriggerEvaluation[]>(`/triggers/${id}/evaluations?limit=${limit}`);
 }
 
 export function createTrigger(input: {
@@ -30,6 +62,7 @@ export function createTrigger(input: {
   sequenceId: string;
   scheduleCron?: string;
   scheduleTimezone?: string;
+  webhookEndpointId?: string;
 }) {
   return apiPost<Trigger>('/triggers', input);
 }

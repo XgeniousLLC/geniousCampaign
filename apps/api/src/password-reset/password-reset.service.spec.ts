@@ -12,6 +12,7 @@ import { GmailSenderProvider } from '../sending/gmail-sender.provider';
 import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { users, passwordResetTokens } from '../db/schema';
 
 describe('PasswordResetService (integration, real DB)', () => {
@@ -34,6 +35,7 @@ describe('PasswordResetService (integration, real DB)', () => {
         CircuitBreakerService,
         EnrollmentService,
         DrizzleService,
+        SettingsService,
       ],
     }).compile();
 

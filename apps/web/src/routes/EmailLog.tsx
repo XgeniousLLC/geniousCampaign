@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { listEmailLog, getEmailLogDetail, type EmailLogRow, type EmailLogDetail } from '../lib/emailLogApi';
 import { listContacts, type Contact } from '../lib/contactsApi';
 import type { SendStatus } from '../lib/campaignsApi';
+import { PaginationBar } from '../components/PaginationBar';
+
+const PAGE_SIZE = 50;
 
 const STATUS_FILTERS: { label: string; value: SendStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -22,16 +25,21 @@ const STATUS_STYLES: Record<SendStatus, string> = {
 
 export function EmailLog() {
   const [rows, setRows] = useState<EmailLogRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filter, setFilter] = useState<SendStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<EmailLogDetail | null>(null);
 
   function load() {
-    listEmailLog({ status: filter === 'all' ? undefined : filter, limit: 100 }).then(setRows);
+    listEmailLog({ status: filter === 'all' ? undefined : filter, page, limit: PAGE_SIZE }).then((res) => {
+      setRows(res.data);
+      setTotal(res.total);
+    });
   }
 
-  useEffect(load, [filter]);
+  useEffect(load, [filter, page]);
   useEffect(() => {
     listContacts().then(setContacts);
   }, []);
@@ -68,7 +76,10 @@ export function EmailLog() {
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}
-              onClick={() => setFilter(f.value)}
+              onClick={() => {
+                setFilter(f.value);
+                setPage(1);
+              }}
               className={`h-8 rounded-md border px-2.5 text-xs font-medium ${
                 filter === f.value
                   ? 'border-accent/40 bg-accent/10 text-accent-light'
@@ -115,9 +126,13 @@ export function EmailLog() {
             )}
           </tbody>
         </table>
-        <div className="flex items-center justify-between border-t border-border-subtle px-3.5 py-2 text-[11px] text-text-faint">
-          <span>{filteredRows.length} events</span>
-        </div>
+        {search.trim() ? (
+          <div className="flex items-center justify-between border-t border-border-subtle px-3.5 py-2 text-[11px] text-text-faint">
+            <span>{filteredRows.length} matching this page's {rows.length} loaded rows — clear search to page through all {total}</span>
+          </div>
+        ) : (
+          total > 0 && <PaginationBar page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />
+        )}
       </div>
 
       {detail && (

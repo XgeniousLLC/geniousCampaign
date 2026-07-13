@@ -1,6 +1,7 @@
 import { Controller, Headers, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { WebhookEndpointsService } from './webhook-endpoints.service';
 import { WebhookDeliveriesService } from './webhook-deliveries.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -13,6 +14,7 @@ export class InboundWebhookController {
     private readonly endpoints: WebhookEndpointsService,
     private readonly deliveries: WebhookDeliveriesService,
     private readonly contacts: ContactsService,
+    private readonly events: EventEmitter2,
   ) {}
 
   @Post(':slug')
@@ -50,11 +52,18 @@ export class InboundWebhookController {
 
     const mapped = mapPayloadToContact(payload, endpoint.fieldMapping as Record<string, string>);
     if (mapped.email) {
-      await this.contacts.upsertByEmail(mapped.email, {
+      const contact = await this.contacts.upsertByEmail(mapped.email, {
         firstName: mapped.firstName,
         lastName: mapped.lastName,
         customFields: mapped.customFields,
       });
+
+      // GC-076 — fires any webhook-type trigger scoped to this endpoint.
+      // Raw payload fields are included (not just the mapped contact
+      // fields) so a trigger condition can reference any field the sender
+      // actually included, not only the ones mapped to firstName/lastName.
+      const rawFields = payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+      this.events.emit('webhook.received', { ...rawFields, contactId: contact.id, webhookEndpointId: endpoint.id });
     }
 
     return { received: true };

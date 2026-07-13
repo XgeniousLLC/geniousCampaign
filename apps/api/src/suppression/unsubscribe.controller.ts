@@ -1,14 +1,14 @@
 import { Controller, Get, Param, Post, Res } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { SuppressionService } from './suppression.service';
+import { SettingsService } from '../settings/settings.service';
 import { verifyUnsubscribeToken } from '../sending/unsubscribe-token.util';
 
 @Controller('unsubscribe')
 export class UnsubscribeController {
   constructor(
     private readonly suppression: SuppressionService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   @Get(':token')
@@ -31,7 +31,7 @@ export class UnsubscribeController {
   }
 
   private async doUnsubscribe(token: string): Promise<string | null> {
-    const secret = this.config.get<string>('TRACKING_SIGNING_SECRET');
+    const secret = this.settings.get('TRACKING_SIGNING_SECRET');
     const email = secret ? verifyUnsubscribeToken(secret, token) : null;
     if (!email) return null;
     await this.suppression.suppress(email, 'manual_unsubscribe', 'unsubscribe_link');

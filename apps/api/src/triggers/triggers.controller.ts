@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -37,5 +37,15 @@ export class TriggersController {
   @Roles('owner', 'editor')
   remove(@Param('id') id: string) {
     return this.triggersService.remove(id);
+  }
+
+  @Get(':id/stats')
+  getStats(@Param('id') id: string) {
+    return this.triggersService.getStats(id);
+  }
+
+  @Get(':id/evaluations')
+  listEvaluations(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.triggersService.listEvaluations(id, limit ? parseInt(limit, 10) : undefined);
   }
 }

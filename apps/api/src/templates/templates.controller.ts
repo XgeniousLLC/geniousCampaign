@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AuditLogService } from '../auth/audit-log.service';
+import { DrizzleService } from '../db/drizzle.service';
 
 @Controller('templates')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,19 +15,22 @@ export class TemplatesController {
   constructor(
     private readonly templatesService: TemplatesService,
     private readonly auditLog: AuditLogService,
+    private readonly drizzle: DrizzleService,
   ) {}
 
   @Post()
   @Roles('owner', 'editor')
-  async create(@Body() dto: CreateTemplateDto, @CurrentUser() user: AuthenticatedUser) {
-    const created = await this.templatesService.create(dto);
-    await this.auditLog.record(user, 'template.create', 'template', created.id, { name: created.name });
-    return created;
+  create(@Body() dto: CreateTemplateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const created = await this.templatesService.create(dto, tx);
+      await this.auditLog.record(user, 'template.create', 'template', created.id, { name: created.name }, tx);
+      return created;
+    });
   }
 
   @Get()
-  findAll() {
-    return this.templatesService.findAll();
+  findAll(@Query('includeVariants') includeVariants?: string) {
+    return this.templatesService.findAll(includeVariants === 'true');
   }
 
   @Get(':id')
@@ -36,22 +40,31 @@ export class TemplatesController {
 
   @Patch(':id')
   @Roles('owner', 'editor')
-  async update(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @CurrentUser() user: AuthenticatedUser) {
-    const updated = await this.templatesService.update(id, dto);
-    await this.auditLog.record(user, 'template.update', 'template', id, { fields: Object.keys(dto) });
-    return updated;
+  update(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.templatesService.update(id, dto, tx);
+      await this.auditLog.record(user, 'template.update', 'template', id, { fields: Object.keys(dto) }, tx);
+      return updated;
+    });
   }
 
   @Delete(':id')
   @Roles('owner', 'editor')
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.templatesService.remove(id);
-    await this.auditLog.record(user, 'template.delete', 'template', id);
-    return result;
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.templatesService.remove(id, tx);
+      await this.auditLog.record(user, 'template.delete', 'template', id, undefined, tx);
+      return result;
+    });
   }
 
   @Get(':id/versions')
   listVersions(@Param('id') id: string, @Query('limit') limit?: string) {
     return this.templatesService.listVersions(id, limit ? parseInt(limit, 10) : undefined);
+  }
+
+  @Get(':id/variants')
+  listVariants(@Param('id') id: string) {
+    return this.templatesService.findVariants(id);
   }
 }

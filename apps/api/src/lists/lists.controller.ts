@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AuditLogService } from '../auth/audit-log.service';
+import { DrizzleService } from '../db/drizzle.service';
 
 @Controller('lists')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,14 +15,17 @@ export class ListsController {
   constructor(
     private readonly listsService: ListsService,
     private readonly auditLog: AuditLogService,
+    private readonly drizzle: DrizzleService,
   ) {}
 
   @Post()
   @Roles('owner', 'editor')
-  async create(@Body() dto: CreateListDto, @CurrentUser() user: AuthenticatedUser) {
-    const created = await this.listsService.create(dto);
-    await this.auditLog.record(user, 'list.create', 'list', created.id, { name: created.name });
-    return created;
+  create(@Body() dto: CreateListDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const created = await this.listsService.create(dto, tx);
+      await this.auditLog.record(user, 'list.create', 'list', created.id, { name: created.name }, tx);
+      return created;
+    });
   }
 
   @Get()
@@ -36,18 +40,22 @@ export class ListsController {
 
   @Patch(':id')
   @Roles('owner', 'editor')
-  async update(@Param('id') id: string, @Body() dto: UpdateListDto, @CurrentUser() user: AuthenticatedUser) {
-    const updated = await this.listsService.update(id, dto);
-    await this.auditLog.record(user, 'list.update', 'list', id, { fields: Object.keys(dto) });
-    return updated;
+  update(@Param('id') id: string, @Body() dto: UpdateListDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.listsService.update(id, dto, tx);
+      await this.auditLog.record(user, 'list.update', 'list', id, { fields: Object.keys(dto) }, tx);
+      return updated;
+    });
   }
 
   @Delete(':id')
   @Roles('owner', 'editor')
-  async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.listsService.remove(id);
-    await this.auditLog.record(user, 'list.delete', 'list', id);
-    return result;
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.listsService.remove(id, tx);
+      await this.auditLog.record(user, 'list.delete', 'list', id, undefined, tx);
+      return result;
+    });
   }
 
   @Get(':id/contacts')
@@ -57,21 +65,21 @@ export class ListsController {
 
   @Post(':id/contacts/:contactId')
   @Roles('owner', 'editor')
-  async addContact(@Param('id') id: string, @Param('contactId') contactId: string, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.listsService.addContact(id, contactId);
-    await this.auditLog.record(user, 'list.contact.add', 'list', id, { contactId });
-    return result;
+  addContact(@Param('id') id: string, @Param('contactId') contactId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.listsService.addContact(id, contactId, tx);
+      await this.auditLog.record(user, 'list.contact.add', 'list', id, { contactId }, tx);
+      return result;
+    });
   }
 
   @Delete(':id/contacts/:contactId')
   @Roles('owner', 'editor')
-  async removeContact(
-    @Param('id') id: string,
-    @Param('contactId') contactId: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    const result = await this.listsService.removeContact(id, contactId);
-    await this.auditLog.record(user, 'list.contact.remove', 'list', id, { contactId });
-    return result;
+  removeContact(@Param('id') id: string, @Param('contactId') contactId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.listsService.removeContact(id, contactId, tx);
+      await this.auditLog.record(user, 'list.contact.remove', 'list', id, { contactId }, tx);
+      return result;
+    });
   }
 }

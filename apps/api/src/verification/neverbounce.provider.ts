@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import type { EmailVerificationProvider, VerificationProviderResult } from './verification-provider.interface';
 
 interface NeverBounceResponse {
@@ -26,10 +26,10 @@ function mapNeverBounceResult(result: NeverBounceResponse['result']): Verificati
 
 @Injectable()
 export class NeverBounceProvider implements EmailVerificationProvider {
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly settings: SettingsService) {}
 
   async verify(email: string): Promise<VerificationProviderResult> {
-    const apiKey = this.config.get<string>('NEVERBOUNCE_API_KEY');
+    const apiKey = this.settings.get('NEVERBOUNCE_API_KEY');
     if (!apiKey) {
       throw new InternalServerErrorException('NEVERBOUNCE_API_KEY is not configured — cannot call NeverBounce for real.');
     }

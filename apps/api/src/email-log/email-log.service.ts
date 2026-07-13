@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { sends, emailEvents, type sendStatusEnum } from '../db/schema';
 
@@ -7,8 +7,8 @@ export interface EmailLogFilter {
   status?: (typeof sendStatusEnum.enumValues)[number];
   campaignId?: string;
   sequenceId?: string;
+  page?: number;
   limit?: number;
-  offset?: number;
 }
 
 @Injectable()
@@ -21,14 +21,17 @@ export class EmailLogService {
       filter.campaignId ? eq(sends.campaignId, filter.campaignId) : undefined,
       filter.sequenceId ? eq(sends.sequenceId, filter.sequenceId) : undefined,
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-    return this.drizzle.db
-      .select()
-      .from(sends)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(sends.createdAt))
-      .limit(filter.limit ?? 50)
-      .offset(filter.offset ?? 0);
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const [data, [{ count }]] = await Promise.all([
+      this.drizzle.db.select().from(sends).where(where).orderBy(desc(sends.createdAt)).limit(limit).offset(offset),
+      this.drizzle.db.select({ count: sql<number>`count(*)::int` }).from(sends).where(where),
+    ]);
+    return { data, total: count, page, limit };
   }
 
   /** The detail drawer's data: the send row itself (real resolved

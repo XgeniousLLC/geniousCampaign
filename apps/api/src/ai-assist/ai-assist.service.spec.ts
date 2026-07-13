@@ -1,4 +1,4 @@
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { AiAssistService } from './ai-assist.service';
 
 describe('AiAssistService', () => {
@@ -7,14 +7,14 @@ describe('AiAssistService', () => {
   afterEach(() => fetchSpy?.mockRestore());
 
   it('throws instead of faking output when the selected provider has no API key', async () => {
-    const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'openai' : undefined) } as unknown as ConfigService;
+    const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'openai' : undefined) } as unknown as SettingsService;
     const service = new AiAssistService(config);
 
     await expect(service.generateCopy({ prompt: 'write something' })).rejects.toThrow(/OpenAI is not configured/);
   });
 
   it('rejects an unknown LLM_PROVIDER value rather than silently falling back to one', async () => {
-    const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'anthropic' : undefined) } as unknown as ConfigService;
+    const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'anthropic' : undefined) } as unknown as SettingsService;
     const service = new AiAssistService(config);
 
     await expect(service.generateCopy({ prompt: 'write something' })).rejects.toThrow(/Unknown LLM_PROVIDER/);
@@ -27,7 +27,7 @@ describe('AiAssistService', () => {
     } as Response);
 
     const values: Record<string, string> = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key' };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
     const service = new AiAssistService(config);
 
     const result = await service.generateCopy({ prompt: 'Friendly intro, under 90 words' });
@@ -38,7 +38,7 @@ describe('AiAssistService', () => {
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-key' }) }),
     );
     const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.model).toBe('gpt-4o-mini');
+    expect(body.model).toBe('gpt-5.4-mini');
     expect(body.messages[1].content).toBe('Friendly intro, under 90 words');
   });
 
@@ -49,7 +49,7 @@ describe('AiAssistService', () => {
     } as Response);
 
     const values: Record<string, string> = { LLM_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'ds-key' };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
     const service = new AiAssistService(config);
 
     const result = await service.generateCopy({ prompt: 'write something' });
@@ -57,7 +57,7 @@ describe('AiAssistService', () => {
     expect(result).toBe('DeepSeek copy');
     expect(fetchSpy).toHaveBeenCalledWith('https://api.deepseek.com/chat/completions', expect.anything());
     const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.model).toBe('deepseek-chat');
+    expect(body.model).toBe('deepseek-v4-flash');
   });
 
   it('a quick action wraps the previous result with a refinement instruction, not the original prompt', async () => {
@@ -67,7 +67,7 @@ describe('AiAssistService', () => {
     } as Response);
 
     const values: Record<string, string> = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key' };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
     const service = new AiAssistService(config);
 
     await service.generateCopy({ prompt: 'original prompt', quickAction: 'shorter', previousResult: 'the long draft to shrink' });

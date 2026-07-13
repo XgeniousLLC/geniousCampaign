@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, jsonb, integer, timestamp, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const templates = pgTable('templates', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -8,6 +8,11 @@ export const templates = pgTable('templates', {
   bodyHtml: text('body_html').notNull().default(''),
   bodyText: text('body_text').notNull().default(''),
   folder: text('folder'),
+  // Set when this row is a saved shuffle/AI variant of another template
+  // (subject+body copy only, not a real workflow feature) — variants are
+  // excluded from the default GET /templates list but remain real, sendable
+  // template rows (selectable in campaign compose via ?includeVariants=true).
+  parentTemplateId: uuid('parent_template_id').references((): AnyPgColumn => templates.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SuppressionService } from './suppression.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -13,8 +13,8 @@ export class SuppressionController {
   ) {}
 
   @Get()
-  listAll() {
-    return this.suppression.listAll();
+  listAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.suppression.listAll(page ? parseInt(page, 10) : undefined, limit ? parseInt(limit, 10) : undefined);
   }
 
   // Manual suppress from the contacts admin UI — adds to the real

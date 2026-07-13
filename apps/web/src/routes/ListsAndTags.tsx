@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   listLists,
   createList,
@@ -16,6 +17,7 @@ export function ListsAndTags() {
   const [tags, setTags] = useState<(Tag & { memberCount: number })[]>([]);
   const [newListName, setNewListName] = useState('');
   const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#818CF8');
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function loadLists() {
@@ -44,7 +46,7 @@ export function ListsAndTags() {
 
   async function handleCreateTag() {
     if (!newTagName.trim()) return;
-    await createTag({ name: newTagName.trim() });
+    await createTag({ name: newTagName.trim(), color: newTagColor });
     setNewTagName('');
     loadTags();
   }
@@ -85,7 +87,11 @@ export function ListsAndTags() {
             <tbody>
               {lists.map((l) => (
                 <tr key={l.id} className="border-t border-border-subtle hover:bg-raised">
-                  <td className="px-3.5 py-2.5 font-medium text-text-secondary">{l.name}</td>
+                  <td className="px-3.5 py-2.5 font-medium">
+                    <Link to={`/lists/${l.id}`} className="text-text-secondary hover:text-text-primary hover:underline">
+                      {l.name}
+                    </Link>
+                  </td>
                   <td className="px-2.5 py-2.5">
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
@@ -116,6 +122,13 @@ export function ListsAndTags() {
           {canWrite && (
             <div className="flex gap-1.5 p-2 pb-0">
               <input
+                type="color"
+                value={newTagColor}
+                onChange={(e) => setNewTagColor(e.target.value)}
+                title="Tag color"
+                className="h-7 w-8 shrink-0 cursor-pointer rounded-md border border-border-subtle bg-surface p-0.5"
+              />
+              <input
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="New tag…"
@@ -129,7 +142,7 @@ export function ListsAndTags() {
           <div className="p-1.5">
             {tags.map((t) => (
               <div key={t.id} className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-raised">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent-light" />
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
                 <span className="flex-1 text-xs text-text-secondary">{t.name}</span>
                 <span className="font-mono text-[11px] text-text-faint">{t.memberCount}</span>
               </div>

@@ -1,14 +1,14 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class SlackNotificationService {
   private readonly logger = new Logger(SlackNotificationService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly settings: SettingsService) {}
 
   async send(text: string) {
-    const webhookUrl = this.config.get<string>('SLACK_WEBHOOK_URL');
+    const webhookUrl = this.settings.get('SLACK_WEBHOOK_URL');
     if (!webhookUrl) {
       throw new InternalServerErrorException('SLACK_WEBHOOK_URL is not configured — cannot send a real Slack notification.');
     }

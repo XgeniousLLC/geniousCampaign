@@ -6,6 +6,7 @@ import { LocalVerifyService } from './local-verify.service';
 import { ReoonProvider } from './reoon.provider';
 import { NeverBounceProvider } from './neverbounce.provider';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { verificationResults } from '../db/schema';
 
 describe('EmailVerificationService (integration, real DB, mocked HTTP)', () => {
@@ -17,7 +18,7 @@ describe('EmailVerificationService (integration, real DB, mocked HTTP)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] })],
-      providers: [EmailVerificationService, LocalVerifyService, ReoonProvider, NeverBounceProvider, DrizzleService],
+      providers: [EmailVerificationService, LocalVerifyService, ReoonProvider, NeverBounceProvider, DrizzleService, SettingsService],
     }).compile();
 
     // Real ConfigService (so DrizzleService still gets a real DATABASE_URL),

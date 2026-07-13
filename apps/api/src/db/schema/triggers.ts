@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, jsonb, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { sequences } from './sequences';
+import { webhookEndpoints } from './webhooks';
 
 export const triggers = pgTable('triggers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -17,6 +18,12 @@ export const triggers = pgTable('triggers', {
   // cron+tz support (invariant 10 — no custom cron matching/setTimeout loop).
   scheduleCron: text('schedule_cron'),
   scheduleTimezone: text('schedule_timezone'),
+  // Set only when eventType === 'webhook' (GC-076) — reuses the existing
+  // HMAC-signed inbound webhook framework (GC-040, invariant 4) rather than
+  // a parallel unsigned trigger-specific webhook path. 'set null' rather
+  // than cascade: deleting the endpoint shouldn't silently delete a trigger
+  // the user configured, just leave it unable to fire until repointed.
+  webhookEndpointId: uuid('webhook_endpoint_id').references(() => webhookEndpoints.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

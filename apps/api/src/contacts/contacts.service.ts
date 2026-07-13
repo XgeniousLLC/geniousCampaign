@@ -44,7 +44,7 @@ export class ContactsService {
 
     const [tagRows, listRows, verifications, lastActivityRows] = await Promise.all([
       this.drizzle.db
-        .select({ contactId: contactTags.contactId, id: tags.id, name: tags.name })
+        .select({ contactId: contactTags.contactId, id: tags.id, name: tags.name, color: tags.color })
         .from(contactTags)
         .innerJoin(tags, eq(contactTags.tagId, tags.id))
         .where(inArray(contactTags.contactId, ids)),
@@ -69,10 +69,10 @@ export class ContactsService {
         .groupBy(sends.contactId),
     ]);
 
-    const tagsByContact = new Map<string, { id: string; name: string }[]>();
+    const tagsByContact = new Map<string, { id: string; name: string; color: string }[]>();
     for (const row of tagRows) {
       const list = tagsByContact.get(row.contactId) ?? [];
-      list.push({ id: row.id, name: row.name });
+      list.push({ id: row.id, name: row.name, color: row.color });
       tagsByContact.set(row.contactId, list);
     }
 

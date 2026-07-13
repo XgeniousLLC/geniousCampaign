@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listCampaigns, type Campaign, type CampaignStatus } from '../lib/campaignsApi';
-import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists } from '../lib/contactsApi';
 import type { List } from '../lib/contactsApi';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -15,18 +14,15 @@ const STATUS_STYLES: Record<CampaignStatus, string> = {
 
 export function CampaignsList() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
     listCampaigns().then(setCampaigns);
-    listTemplates().then(setTemplates);
     listLists().then(setLists);
   }, []);
 
-  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? '—';
   const listName = (id: string) => lists.find((l) => l.id === id)?.name ?? '—';
 
   return (
@@ -41,6 +37,10 @@ export function CampaignsList() {
             onClick={() => navigate('/campaigns/new')}
             className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover"
           >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
             New campaign
           </button>
         )}
@@ -52,8 +52,8 @@ export function CampaignsList() {
             <tr className="border-b border-border-default bg-surface text-[11px] uppercase tracking-wide text-text-meta">
               <th className="px-3 py-2 text-left font-medium">Campaign</th>
               <th className="px-3 py-2 text-right font-medium">Sent</th>
-              <th className="px-3 py-2 text-right font-medium">Failed</th>
-              <th className="px-3 py-2 text-right font-medium">Suppressed</th>
+              <th className="px-3 py-2 text-right font-medium">Open</th>
+              <th className="px-3 py-2 text-right font-medium">Click</th>
               <th className="px-3 py-2 text-right font-medium">Status</th>
             </tr>
           </thead>
@@ -65,12 +65,12 @@ export function CampaignsList() {
                     {c.name}
                   </Link>
                   <div className="mt-0.5 text-[11px] text-text-faint">
-                    {templateName(c.templateId)} · {listName(c.listId)}
+                    {listName(c.listId)} · {new Date(c.createdAt).toLocaleDateString()}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.sentCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.failedCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.suppressedCount}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.openCount ?? 0}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.clickCount ?? 0}</td>
                 <td className="px-3 py-2.5 text-right">
                   <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[c.status]}`}>
                     <span className="h-1.5 w-1.5 rounded-full bg-current" />

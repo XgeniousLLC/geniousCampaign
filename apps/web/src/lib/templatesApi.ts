@@ -8,8 +8,13 @@ export interface Template {
   bodyHtml: string;
   bodyText: string;
   folder: string | null;
+  // Set when this template is a saved shuffle/AI variant of another template.
+  parentTemplateId: string | null;
   createdAt: string;
   updatedAt: string;
+  // Present on list responses only (GET /templates) — computed server-side.
+  uses?: number;
+  openRatePct?: number;
 }
 
 export interface TemplateVersion {
@@ -28,10 +33,11 @@ export interface SaveTemplateInput {
   name: string;
   subject: string;
   bodyJson: Record<string, unknown>;
+  parentTemplateId?: string;
 }
 
-export function listTemplates() {
-  return apiGet<Template[]>('/templates');
+export function listTemplates(opts?: { includeVariants?: boolean }) {
+  return apiGet<Template[]>(`/templates${opts?.includeVariants ? '?includeVariants=true' : ''}`);
 }
 
 export function getTemplate(id: string) {
@@ -48,4 +54,8 @@ export function updateTemplate(id: string, input: SaveTemplateInput) {
 
 export function listTemplateVersions(id: string) {
   return apiGet<TemplateVersion[]>(`/templates/${id}/versions`);
+}
+
+export function listTemplateVariants(id: string) {
+  return apiGet<Template[]>(`/templates/${id}/variants`);
 }

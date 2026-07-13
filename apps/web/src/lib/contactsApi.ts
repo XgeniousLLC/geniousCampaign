@@ -10,7 +10,7 @@ export interface Contact {
   createdAt: string;
   updatedAt: string;
   // Present on list responses only (GET /contacts) — joined in server-side.
-  tags?: { id: string; name: string }[];
+  tags?: { id: string; name: string; color: string }[];
   lists?: { id: string; name: string }[];
   verificationStatus?: 'valid' | 'invalid' | 'risky' | 'unknown' | null;
   lastActivityAt?: string | null;
@@ -19,6 +19,7 @@ export interface Contact {
 export interface Tag {
   id: string;
   name: string;
+  color: string;
   createdAt: string;
 }
 
@@ -31,15 +32,27 @@ export interface List {
   updatedAt: string;
 }
 
+export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'custom' | 'ignore';
+
+export interface ImportProgress {
+  percent: number;
+  processed: number;
+  total: number;
+  created: number;
+  duplicates: number;
+  invalid: number;
+}
+
 export interface ImportStatus {
   jobId: string;
   state: string;
-  progress: number;
+  progress: ImportProgress | number;
   result?: {
     totalRows: number;
     created: number;
-    updated: number;
-    errors: { row: number; email?: string; error: string }[];
+    duplicates: number;
+    invalid: number;
+    issues: { row: number; email?: string; reason: string; type: 'invalid' | 'error' }[];
   };
   failedReason?: string;
 }
@@ -83,7 +96,7 @@ export function listTags() {
   return apiGet<Tag[]>('/tags');
 }
 
-export function createTag(input: { name: string }) {
+export function createTag(input: { name: string; color?: string }) {
   return apiPost<Tag>('/tags', input);
 }
 
@@ -93,6 +106,10 @@ export function listContactsForTag(tagId: string) {
 
 export function listLists() {
   return apiGet<List[]>('/lists');
+}
+
+export function getList(id: string) {
+  return apiGet<List>(`/lists/${id}`);
 }
 
 export function createList(input: { name: string }) {
@@ -141,15 +158,21 @@ export function removeContactList(listId: string, contactId: string) {
   return apiDelete(`/lists/${listId}/contacts/${contactId}`);
 }
 
-export async function uploadContactsCsv(file: File): Promise<{ jobId: string }> {
+export async function uploadContactsCsv(
+  file: File,
+  opts: { columnMapping: Record<string, ColumnTarget>; listId?: string; tagIds?: string[] },
+): Promise<{ jobId: string }> {
   const form = new FormData();
   form.append('file', file);
+  form.append('columnMapping', JSON.stringify(opts.columnMapping));
+  if (opts.listId) form.append('listId', opts.listId);
+  form.append('tagIds', JSON.stringify(opts.tagIds ?? []));
   const res = await fetch(`${API_BASE_URL}/contacts/import`, {
     method: 'POST',
     headers: { ...authHeadersForUpload() },
     body: form,
   });
-  if (!res.ok) throw new Error(`Import upload failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Import upload failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
 

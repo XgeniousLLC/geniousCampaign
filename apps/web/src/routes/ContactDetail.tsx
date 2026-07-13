@@ -81,7 +81,7 @@ export function ContactDetail() {
           <div className="rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Fields</div>
             <div className="flex flex-col gap-2 text-xs">
-              <Field label="Status" value={contact.status} />
+              <Field label="Status" value={contact.status.charAt(0).toUpperCase() + contact.status.slice(1)} />
               <Field label="Created" value={new Date(contact.createdAt).toLocaleDateString()} />
               {Object.entries(contact.customFields).map(([k, v]) => (
                 <Field key={k} label={k} value={String(v)} />
@@ -96,11 +96,10 @@ export function ContactDetail() {
                 <button
                   key={tag.id}
                   onClick={() => toggleTag(tag.id, has)}
-                  className={`rounded-sm border px-2 py-0.5 text-[11px] ${
-                    has
-                      ? 'border-border-emphasis bg-raised2 text-text-tertiary'
-                      : 'border-dashed border-border-emphasis text-text-faint hover:text-text-muted'
+                  className={`rounded-sm border px-2 py-0.5 text-[11px] font-medium ${
+                    has ? '' : 'border-dashed border-border-emphasis text-text-faint hover:text-text-muted'
                   }`}
+                  style={has ? { backgroundColor: `${tag.color}1F`, borderColor: `${tag.color}4D`, color: tag.color } : undefined}
                 >
                   {tag.name}
                 </button>

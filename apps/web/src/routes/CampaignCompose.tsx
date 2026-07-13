@@ -1,44 +1,80 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createCampaign, sendCampaign, type Campaign } from '../lib/campaignsApi';
+import { createCampaign, sendCampaign, type Campaign, type CampaignAudienceType } from '../lib/campaignsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
-import { listLists, listContactsForList, createList, type List } from '../lib/contactsApi';
+import { listLists, listContactsForList, listContactsForTag, createList, createTag, listTags, listContacts, type List, type Tag, type Contact } from '../lib/contactsApi';
+
+const AUDIENCE_TABS: { value: CampaignAudienceType; label: string }[] = [
+  { value: 'list', label: 'List' },
+  { value: 'tags', label: 'Tags' },
+  { value: 'contacts', label: 'Individual contacts' },
+];
 
 export function CampaignCompose() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [lists, setLists] = useState<List[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
+  const [audienceType, setAudienceType] = useState<CampaignAudienceType>('list');
   const [listId, setListId] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [isDryRun, setIsDryRun] = useState(true);
   const [sendToEmail, setSendToEmail] = useState('');
   const [newListName, setNewListName] = useState('');
+  const [newTagName, setNewTagName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<{ campaign: Campaign; recipientCount: number; threshold: number } | null>(null);
 
   useEffect(() => {
-    listTemplates().then((t) => {
+    listTemplates({ includeVariants: true }).then((t) => {
       setTemplates(t);
-      if (t.length > 0) setTemplateId(t[0].id);
+      const topLevel = t.find((x) => !x.parentTemplateId);
+      if (topLevel) setTemplateId(topLevel.id);
     });
     listLists().then((l) => {
       setLists(l);
       if (l.length > 0) setListId(l[0].id);
     });
+    listTags().then(setTags);
+    listContacts().then(setAllContacts);
   }, []);
 
   useEffect(() => {
-    if (!listId) {
-      setRecipientCount(null);
-      return;
+    if (audienceType === 'list') {
+      if (!listId) {
+        setRecipientCount(null);
+        return;
+      }
+      listContactsForList(listId).then((rows) => setRecipientCount(rows.length));
+    } else if (audienceType === 'tags') {
+      if (selectedTagIds.length === 0) {
+        setRecipientCount(0);
+        return;
+      }
+      Promise.all(selectedTagIds.map((id) => listContactsForTag(id))).then((results) => {
+        const uniqueContactIds = new Set(results.flat().map((r) => r.contact.id));
+        setRecipientCount(uniqueContactIds.size);
+      });
+    } else {
+      setRecipientCount(selectedContactIds.length);
     }
-    listContactsForList(listId).then((rows) => setRecipientCount(rows.length));
-  }, [listId]);
+  }, [audienceType, listId, selectedTagIds, selectedContactIds]);
 
   const selectedTemplate = templates.find((t) => t.id === templateId);
+  const filteredContacts = useMemo(
+    () =>
+      contactSearch.trim()
+        ? allContacts.filter((c) => `${c.email} ${c.firstName ?? ''} ${c.lastName ?? ''}`.toLowerCase().includes(contactSearch.toLowerCase()))
+        : allContacts,
+    [allContacts, contactSearch],
+  );
 
   async function handleCreateList() {
     if (!newListName.trim()) return;
@@ -48,9 +84,31 @@ export function CampaignCompose() {
     setNewListName('');
   }
 
+  async function handleCreateTag() {
+    if (!newTagName.trim()) return;
+    const created = await createTag({ name: newTagName.trim() });
+    setTags((prev) => [...prev, created]);
+    setSelectedTagIds((prev) => [...prev, created.id]);
+    setNewTagName('');
+  }
+
+  function toggleTag(id: string) {
+    setSelectedTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  }
+
+  function toggleContact(id: string) {
+    setSelectedContactIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
+
+  function audienceValid() {
+    if (audienceType === 'list') return !!listId;
+    if (audienceType === 'tags') return selectedTagIds.length > 0;
+    return selectedContactIds.length > 0;
+  }
+
   async function handleSend() {
-    if (!name.trim() || !templateId || !listId) {
-      setError('Name, template, and list are all required.');
+    if (!name.trim() || !templateId || !audienceValid()) {
+      setError('Name, template, and an audience are all required.');
       return;
     }
     setError(null);
@@ -59,7 +117,10 @@ export function CampaignCompose() {
       const campaign = await createCampaign({
         name: name.trim(),
         templateId,
-        listId,
+        audienceType,
+        listId: audienceType === 'list' ? listId : undefined,
+        tagIds: audienceType === 'tags' ? selectedTagIds : undefined,
+        contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
         isDryRun,
         sendToEmail: sendToEmail.trim() || undefined,
       });
@@ -118,11 +179,20 @@ export function CampaignCompose() {
               className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
             >
               {templates.length === 0 && <option value="">No templates yet</option>}
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              {templates
+                .filter((t) => !t.parentTemplateId)
+                .map((t) => (
+                  <optgroup key={t.id} label={t.name}>
+                    <option value={t.id}>{t.name}</option>
+                    {templates
+                      .filter((v) => v.parentTemplateId === t.id)
+                      .map((v) => (
+                        <option key={v.id} value={v.id}>
+                          ↳ {v.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
             </select>
             {selectedTemplate && (
               <div className="mt-2.5 text-xs text-text-muted">
@@ -132,33 +202,120 @@ export function CampaignCompose() {
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-4">
-            <label className="mb-2 block text-xs font-semibold text-text-secondary">Audience (list)</label>
-            <select
-              value={listId}
-              onChange={(e) => setListId(e.target.value)}
-              className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
-            >
-              {lists.length === 0 && <option value="">No lists yet</option>}
-              {lists.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
+            <label className="mb-2 block text-xs font-semibold text-text-secondary">Audience</label>
+            <div className="mb-3 flex gap-1 rounded-md border border-border-default bg-surface p-1">
+              {AUDIENCE_TABS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setAudienceType(t.value)}
+                  className={`flex-1 rounded px-2.5 py-1.5 text-xs font-medium ${
+                    audienceType === t.value ? 'bg-raised text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {t.label}
+                </button>
               ))}
-            </select>
-            <div className="mt-2.5 flex gap-2">
-              <input
-                value={newListName}
-                onChange={(e) => setNewListName(e.target.value)}
-                placeholder="Or create a new list…"
-                className="h-8 flex-1 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
-              />
-              <button
-                onClick={handleCreateList}
-                className="h-8 rounded-md border border-border-subtle px-2.5 text-xs font-medium text-text-secondary hover:bg-raised"
-              >
-                Create
-              </button>
             </div>
+
+            {audienceType === 'list' && (
+              <>
+                <select
+                  value={listId}
+                  onChange={(e) => setListId(e.target.value)}
+                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
+                >
+                  {lists.length === 0 && <option value="">No lists yet</option>}
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2.5 flex gap-2">
+                  <input
+                    value={newListName}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    placeholder="Or create a new list…"
+                    className="h-8 flex-1 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
+                  />
+                  <button
+                    onClick={handleCreateList}
+                    className="h-8 rounded-md border border-border-subtle px-2.5 text-xs font-medium text-text-secondary hover:bg-raised"
+                  >
+                    Create
+                  </button>
+                </div>
+              </>
+            )}
+
+            {audienceType === 'tags' && (
+              <>
+                <div className="mb-2.5 text-[11px] text-text-faint">Sends to any contact with at least one selected tag.</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((t) => {
+                    const selected = selectedTagIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => toggleTag(t.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          selected ? '' : 'border-border-default text-text-tertiary hover:bg-raised'
+                        }`}
+                        style={selected ? { borderColor: t.color, backgroundColor: `${t.color}22`, color: t.color } : undefined}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} />
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                  {tags.length === 0 && <span className="text-[11px] text-text-faint">No tags yet.</span>}
+                </div>
+                <div className="mt-2.5 flex gap-2">
+                  <input
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    placeholder="Or create a new tag…"
+                    className="h-8 flex-1 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
+                  />
+                  <button
+                    onClick={handleCreateTag}
+                    className="h-8 rounded-md border border-border-subtle px-2.5 text-xs font-medium text-text-secondary hover:bg-raised"
+                  >
+                    Create
+                  </button>
+                </div>
+              </>
+            )}
+
+            {audienceType === 'contacts' && (
+              <>
+                <div className="mb-2.5 text-[11px] text-text-faint">
+                  {selectedContactIds.length} contact{selectedContactIds.length === 1 ? '' : 's'} selected — useful for test or VIP sends.
+                </div>
+                <input
+                  value={contactSearch}
+                  onChange={(e) => setContactSearch(e.target.value)}
+                  placeholder="Search by email or name…"
+                  className="mb-2 h-8 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
+                />
+                <div className="max-h-56 overflow-y-auto rounded-md border border-border-subtle">
+                  {filteredContacts.slice(0, 200).map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-2.5 py-1.5 text-xs first:border-t-0 hover:bg-raised"
+                    >
+                      <input type="checkbox" checked={selectedContactIds.includes(c.id)} onChange={() => toggleContact(c.id)} />
+                      <span className="truncate text-text-secondary">
+                        {c.firstName || c.lastName ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.email}
+                      </span>
+                      {(c.firstName || c.lastName) && <span className="truncate font-mono text-[10.5px] text-text-faint">{c.email}</span>}
+                    </label>
+                  ))}
+                  {filteredContacts.length === 0 && <div className="px-2.5 py-4 text-center text-[11px] text-text-faint">No matching contacts.</div>}
+                </div>
+              </>
+            )}
+
             <div className="mt-3 flex items-center justify-between rounded-md border border-border-subtle bg-surface px-2.5 py-2">
               <span className="text-xs text-text-tertiary">Suppressed contacts excluded automatically</span>
               <span className="text-xs font-semibold text-success">✓</span>
@@ -211,7 +368,7 @@ export function CampaignCompose() {
           {error && <div className="mt-2 text-xs text-danger">{error}</div>}
           <button
             onClick={handleSend}
-            disabled={sending || !templateId || !listId || !!pendingConfirmation}
+            disabled={sending || !templateId || !audienceValid() || !!pendingConfirmation}
             className="mt-3 h-9 w-full rounded-md bg-accent text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {sending ? 'Sending…' : isDryRun ? 'Send dry run' : 'Send campaign'}

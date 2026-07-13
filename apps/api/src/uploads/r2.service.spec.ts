@@ -1,4 +1,4 @@
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { R2Service } from './r2.service';
 
@@ -6,7 +6,7 @@ jest.mock('@aws-sdk/s3-request-presigner');
 
 describe('R2Service', () => {
   it('throws instead of faking a presigned URL when R2 credentials are not configured', async () => {
-    const config = { get: () => undefined } as unknown as ConfigService;
+    const config = { get: () => undefined } as unknown as SettingsService;
     const service = new R2Service(config);
 
     await expect(service.presignUpload('photo.png', 'image/png')).rejects.toThrow(/Cloudflare R2 is not configured/);
@@ -22,7 +22,7 @@ describe('R2Service', () => {
       CLOUDFLARE_R2_BUCKET: 'gc-templates',
       CLOUDFLARE_R2_PUBLIC_BASE_URL: 'https://images.example.com',
     };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
+    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
     const service = new R2Service(config);
 
     const result = await service.presignUpload('photo.png', 'image/png');

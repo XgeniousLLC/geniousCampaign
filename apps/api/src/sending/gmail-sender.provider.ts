@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { eq } from 'drizzle-orm';
 import { google } from 'googleapis';
 import { DrizzleService } from '../db/drizzle.service';
@@ -40,7 +40,7 @@ export class GmailSenderProvider implements EmailSenderProvider {
 
   constructor(
     private readonly drizzle: DrizzleService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   async send(params: SendEmailParams): Promise<SendEmailResult> {
@@ -48,10 +48,10 @@ export class GmailSenderProvider implements EmailSenderProvider {
       throw new InternalServerErrorException('GmailSenderProvider.send() requires senderAccountId — which mailbox to send as.');
     }
 
-    const clientId = this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.config.get<string>('GOOGLE_OAUTH_REDIRECT_URI');
-    const encryptionSecret = this.config.get<string>('TOKEN_ENCRYPTION_KEY');
+    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
+    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
+    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
+    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
     if (!clientId || !clientSecret || !redirectUri || !encryptionSecret) {
       throw new InternalServerErrorException(
         'Gmail sending is not configured — set GOOGLE_OAUTH_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI/TOKEN_ENCRYPTION_KEY in .env.',

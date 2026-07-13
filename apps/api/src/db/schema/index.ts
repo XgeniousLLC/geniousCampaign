@@ -14,3 +14,5 @@ export * from './sender-accounts';
 export * from './verification';
 export * from './circuit-breaker';
 export * from './password-resets';
+export * from './app-settings';
+export * from './trigger-evaluations';

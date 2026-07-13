@@ -6,6 +6,11 @@ import { sequences, sequenceSteps } from './sequences';
 import { sequenceEnrollments } from './enrollments';
 
 export const campaignStatusEnum = pgEnum('campaign_status', ['draft', 'sending', 'sent', 'failed']);
+// GC-070 — a campaign targets exactly one of these; which id column(s) are
+// populated depends on this value (enforced in CampaignsService.create(),
+// not a DB constraint, same as other "one of several optional FKs" shapes
+// already in this schema e.g. sends' sequence/campaign columns).
+export const campaignAudienceTypeEnum = pgEnum('campaign_audience_type', ['list', 'tags', 'contacts']);
 
 export const campaigns = pgTable('campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -13,9 +18,11 @@ export const campaigns = pgTable('campaigns', {
   templateId: uuid('template_id')
     .notNull()
     .references(() => templates.id, { onDelete: 'restrict' }),
-  listId: uuid('list_id')
-    .notNull()
-    .references(() => lists.id, { onDelete: 'restrict' }),
+  audienceType: campaignAudienceTypeEnum('audience_type').notNull().default('list'),
+  // Only one of these three is ever set, matching audienceType.
+  listId: uuid('list_id').references(() => lists.id, { onDelete: 'restrict' }),
+  tagIds: uuid('tag_ids').array(),
+  contactIds: uuid('contact_ids').array(),
   status: campaignStatusEnum('status').notNull().default('draft'),
   sentCount: integer('sent_count').notNull().default(0),
   failedCount: integer('failed_count').notNull().default(0),

@@ -7,6 +7,7 @@ import { AuditLogService } from '../auth/audit-log.service';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { SendCampaignDto } from './dto/send-campaign.dto';
+import { DrizzleService } from '../db/drizzle.service';
 
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,14 +15,17 @@ export class CampaignsController {
   constructor(
     private readonly campaigns: CampaignsService,
     private readonly auditLog: AuditLogService,
+    private readonly drizzle: DrizzleService,
   ) {}
 
   @Post()
   @Roles('owner', 'editor')
-  async create(@Body() dto: CreateCampaignDto, @CurrentUser() user: AuthenticatedUser) {
-    const campaign = await this.campaigns.create(dto);
-    await this.auditLog.record(user, 'campaign.create', 'campaign', campaign.id, { name: dto.name });
-    return campaign;
+  create(@Body() dto: CreateCampaignDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const campaign = await this.campaigns.create(dto, tx);
+      await this.auditLog.record(user, 'campaign.create', 'campaign', campaign.id, { name: dto.name }, tx);
+      return campaign;
+    });
   }
 
   @Get()

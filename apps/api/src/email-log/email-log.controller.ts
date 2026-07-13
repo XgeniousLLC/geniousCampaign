@@ -13,15 +13,15 @@ export class EmailLogController {
     @Query('status') status?: EmailLogFilter['status'],
     @Query('campaignId') campaignId?: string,
     @Query('sequenceId') sequenceId?: string,
+    @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
   ) {
     return this.emailLog.list({
       status,
       campaignId,
       sequenceId,
+      page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
     });
   }
 

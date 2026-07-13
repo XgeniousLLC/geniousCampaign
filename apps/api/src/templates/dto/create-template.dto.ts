@@ -1,4 +1,4 @@
-import { IsObject, IsOptional, IsString } from 'class-validator';
+import { IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateTemplateDto {
   @IsString()
@@ -14,4 +14,8 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsString()
   folder?: string;
+
+  @IsOptional()
+  @IsUUID()
+  parentTemplateId?: string;
 }

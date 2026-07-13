@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { emailEvents, sends } from '../db/schema';
 import { signTrackingToken, verifyTrackingToken } from './tracking-token.util';
 
@@ -20,11 +21,12 @@ export class TrackingService {
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly events: EventEmitter2,
   ) {}
 
   private get secret(): string {
-    const secret = this.config.get<string>('TRACKING_SIGNING_SECRET');
+    const secret = this.settings.get('TRACKING_SIGNING_SECRET');
     if (!secret) {
       throw new Error('TRACKING_SIGNING_SECRET is not set — cannot sign tracking tokens');
     }
@@ -32,7 +34,7 @@ export class TrackingService {
   }
 
   get baseUrl(): string {
-    const domain = this.config.get<string>('TRACKING_DOMAIN');
+    const domain = this.settings.get('TRACKING_DOMAIN');
     if (domain && domain !== 'track.yourdomain.com') {
       return `https://${domain}`;
     }

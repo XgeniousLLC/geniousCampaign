@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, lte } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
@@ -20,7 +20,7 @@ export class SequenceRunnerService {
 
   constructor(
     private readonly drizzle: DrizzleService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly sendDispatcher: SendDispatcherService,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
@@ -140,7 +140,7 @@ export class SequenceRunnerService {
     );
     const resolvedBodyHtml = `${htmlWithClickTracking}<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`;
 
-    const trackingSecret = this.config.get<string>('TRACKING_SIGNING_SECRET');
+    const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
     const unsubscribeUrl = trackingSecret
       ? `${this.tracking.baseUrl}/unsubscribe/${signUnsubscribeToken(trackingSecret, contact.email)}`
       : '#';

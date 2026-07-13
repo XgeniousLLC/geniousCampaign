@@ -17,6 +17,7 @@ export const tags = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    color: text('color').notNull().default('#818CF8'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('tags_name_unique_idx').on(table.name)],

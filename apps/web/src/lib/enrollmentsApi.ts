@@ -17,6 +17,10 @@ export function listEnrollmentsForContact(contactId: string) {
   return apiGet<Enrollment[]>(`/admin/sequences/contacts/${contactId}`);
 }
 
+export function listEnrollmentsForSequence(sequenceId: string) {
+  return apiGet<Enrollment[]>(`/admin/sequences/${sequenceId}/enrollments`);
+}
+
 export function enrollContact(sequenceId: string, contactId: string) {
   return apiPost<Enrollment>(`/admin/sequences/${sequenceId}/enroll`, { contactId });
 }

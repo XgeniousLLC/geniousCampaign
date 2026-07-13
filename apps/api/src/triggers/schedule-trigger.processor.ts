@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts, contactTags, tags, triggers, sequenceEnrollments } from '../db/schema';
+import { contacts, contactTags, tags, triggers, sequenceEnrollments, triggerEvaluations } from '../db/schema';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { evaluateCondition, type ConditionNode } from './condition-evaluator';
 import { buildContactContext } from './contact-context.util';
@@ -67,10 +67,19 @@ export class ScheduleTriggerProcessor extends WorkerHost {
       try {
         await this.enrollments.enroll(trigger.sequenceId, contact.id);
         enrolled++;
+        await this.drizzle.db.insert(triggerEvaluations).values({ triggerId: trigger.id, contactId: contact.id, eventType: 'schedule', enrolled: true });
       } catch (err) {
-        if (!(err instanceof Error) || !err.message.includes('already has an')) {
+        const alreadyEnrolled = err instanceof Error && err.message.includes('already has an');
+        if (!alreadyEnrolled) {
           this.logger.error(`Schedule trigger "${trigger.name}" failed to enroll ${contact.id}: ${err instanceof Error ? err.message : err}`);
         }
+        await this.drizzle.db.insert(triggerEvaluations).values({
+          triggerId: trigger.id,
+          contactId: contact.id,
+          eventType: 'schedule',
+          enrolled: false,
+          error: alreadyEnrolled ? undefined : err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

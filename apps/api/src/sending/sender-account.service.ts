@@ -1,8 +1,12 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { senderAccounts } from '../db/schema';
+import { encryptToken, appEncryptionSecret } from './token-encryption.util';
+import type { CreateSesAccountDto } from './dto/create-ses-account.dto';
+import type { UpdateSenderAccountDto } from './dto/update-sender-account.dto';
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -15,10 +19,87 @@ export class SenderAccountService {
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
+  // Explicit column select — never send encrypted secrets (Gmail refresh
+  // token, AWS secret key) or even the plaintext access key id to the
+  // browser, same "never send secrets to the client" principle as
+  // Settings > Integrations.
   listAll() {
-    return this.drizzle.db.query.senderAccounts.findMany({ orderBy: (a, { desc }) => desc(a.createdAt) });
+    return this.drizzle.db
+      .select({
+        id: senderAccounts.id,
+        provider: senderAccounts.provider,
+        email: senderAccounts.email,
+        displayName: senderAccounts.displayName,
+        dailySendLimit: senderAccounts.dailySendLimit,
+        sentToday: senderAccounts.sentToday,
+        isActive: senderAccounts.isActive,
+        awsRegion: senderAccounts.awsRegion,
+        sesConfigurationSet: senderAccounts.sesConfigurationSet,
+        hasCustomAwsCredentials: sql<boolean>`${senderAccounts.awsAccessKeyId} is not null`,
+        createdAt: senderAccounts.createdAt,
+      })
+      .from(senderAccounts)
+      .orderBy(desc(senderAccounts.createdAt));
+  }
+
+  async findOne(id: string) {
+    const account = await this.drizzle.db.query.senderAccounts.findFirst({ where: eq(senderAccounts.id, id) });
+    if (!account) {
+      throw new NotFoundException(`Sender account ${id} not found`);
+    }
+    return account;
+  }
+
+  /** GC-077 — lets an admin add additional named SES accounts (e.g. a
+   * second AWS account/region) with their own credentials, rather than
+   * being limited to the single lazily-materialized account driven by the
+   * global Settings > Integrations AWS_* values. Per-account fields left
+   * blank fall back to those global values at send time (SesSenderProvider),
+   * same DB-overrides-env pattern used everywhere else in this app. */
+  async createSesAccount(dto: CreateSesAccountDto) {
+    const [created] = await this.drizzle.db
+      .insert(senderAccounts)
+      .values({
+        provider: 'ses',
+        email: dto.email,
+        displayName: dto.displayName,
+        dailySendLimit: dto.dailySendLimit ?? DEFAULT_SES_DAILY_LIMIT,
+        sentTodayDate: today(),
+        awsRegion: dto.awsRegion,
+        awsAccessKeyId: dto.awsAccessKeyId,
+        awsSecretAccessKeyEncrypted: dto.awsSecretAccessKey ? encryptToken(dto.awsSecretAccessKey, appEncryptionSecret(this.config)) : undefined,
+        sesConfigurationSet: dto.sesConfigurationSet,
+      })
+      .returning();
+    return created;
+  }
+
+  async update(id: string, dto: UpdateSenderAccountDto) {
+    await this.findOne(id);
+    const [updated] = await this.drizzle.db
+      .update(senderAccounts)
+      .set({
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.displayName !== undefined ? { displayName: dto.displayName } : {}),
+        ...(dto.dailySendLimit !== undefined ? { dailySendLimit: dto.dailySendLimit } : {}),
+        ...(dto.awsRegion !== undefined ? { awsRegion: dto.awsRegion } : {}),
+        ...(dto.awsAccessKeyId !== undefined ? { awsAccessKeyId: dto.awsAccessKeyId } : {}),
+        ...(dto.awsSecretAccessKey ? { awsSecretAccessKeyEncrypted: encryptToken(dto.awsSecretAccessKey, appEncryptionSecret(this.config)) } : {}),
+        ...(dto.sesConfigurationSet !== undefined ? { sesConfigurationSet: dto.sesConfigurationSet } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(senderAccounts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async remove(id: string) {
+    await this.findOne(id);
+    await this.drizzle.db.delete(senderAccounts).where(eq(senderAccounts.id, id));
+    return { id };
   }
 
   /** SES has no per-mailbox OAuth connect step, but still participates in
@@ -31,7 +112,7 @@ export class SenderAccountService {
     });
     if (existing) return existing;
 
-    const fromEmail = this.config.get<string>('SES_FROM_EMAIL') || 'noreply@example.com';
+    const fromEmail = this.settings.get('SES_FROM_EMAIL') || 'noreply@example.com';
     const [created] = await this.drizzle.db
       .insert(senderAccounts)
       .values({

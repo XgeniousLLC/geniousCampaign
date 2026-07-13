@@ -24,4 +24,8 @@ export class CreateTriggerDto {
   @ValidateIf((dto: CreateTriggerDto) => dto.eventType === 'schedule')
   @IsString()
   scheduleTimezone?: string;
+
+  @ValidateIf((dto: CreateTriggerDto) => dto.eventType === 'webhook')
+  @IsUUID()
+  webhookEndpointId?: string;
 }

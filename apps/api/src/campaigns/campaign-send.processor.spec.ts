@@ -5,6 +5,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
 import type { Job } from 'bullmq';
 import { CampaignSendProcessor } from './campaign-send.processor';
+import { CampaignsService } from './campaigns.service';
 import { ListsService } from '../lists/lists.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
@@ -15,6 +16,7 @@ import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { contacts, templates, lists, campaigns, contactLists, sends, suppressionList } from '../db/schema';
 
 describe('CampaignSendProcessor (integration, real DB)', () => {
@@ -33,10 +35,12 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
           inject: [ConfigService],
           useFactory: (config: ConfigService) => ({ connection: { url: config.get<string>('REDIS_URL') } }),
         }),
+        BullModule.registerQueue({ name: 'campaign-send' }),
         EventEmitterModule.forRoot(),
       ],
       providers: [
         CampaignSendProcessor,
+        CampaignsService,
         ListsService,
         SuppressionService,
         TrackingService,
@@ -47,6 +51,7 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
         CircuitBreakerService,
         EnrollmentService,
         DrizzleService,
+        SettingsService,
       ],
     }).compile();
 

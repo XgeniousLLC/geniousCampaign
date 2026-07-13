@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { google } from 'googleapis';
 import { encryptToken } from './token-encryption.util';
 import { signOAuthState, verifyOAuthState } from './oauth-state.util';
@@ -14,14 +14,14 @@ const GMAIL_SCOPES = [
 @Injectable()
 export class GmailOAuthService {
   constructor(
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly senderAccounts: SenderAccountService,
   ) {}
 
   private client() {
-    const clientId = this.config.get<string>('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.config.get<string>('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.config.get<string>('GOOGLE_OAUTH_REDIRECT_URI');
+    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
+    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
+    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
     if (!clientId || !clientSecret || !redirectUri) {
       throw new InternalServerErrorException(
         'Google OAuth is not configured — set GOOGLE_OAUTH_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI in .env.',
@@ -32,7 +32,7 @@ export class GmailOAuthService {
 
   /** Never fakes a working connect URL when unconfigured — throws instead. */
   getConnectUrl(): string {
-    const encryptionSecret = this.config.get<string>('TOKEN_ENCRYPTION_KEY');
+    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
     if (!encryptionSecret) {
       throw new InternalServerErrorException('TOKEN_ENCRYPTION_KEY is not configured — cannot start an OAuth connect flow.');
     }
@@ -50,7 +50,7 @@ export class GmailOAuthService {
    * token at rest, and upserts (never duplicates) the SenderAccount row —
    * reconnecting the same mailbox updates its existing row (GC-044). */
   async handleCallback(code: string, state: string) {
-    const encryptionSecret = this.config.get<string>('TOKEN_ENCRYPTION_KEY');
+    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
     if (!encryptionSecret) {
       throw new InternalServerErrorException('TOKEN_ENCRYPTION_KEY is not configured — cannot complete the OAuth connect flow.');
     }

@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Job } from 'bullmq';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import { resolveSpintax } from '@genius-campaign/shared';
 import { DrizzleService } from '../db/drizzle.service';
 import { campaigns, templates, sends } from '../db/schema';
-import { ListsService } from '../lists/lists.service';
+import { CampaignsService } from './campaigns.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
@@ -22,8 +22,8 @@ export class CampaignSendProcessor extends WorkerHost {
 
   constructor(
     private readonly drizzle: DrizzleService,
-    private readonly config: ConfigService,
-    private readonly lists: ListsService,
+    private readonly settings: SettingsService,
+    private readonly campaignsService: CampaignsService,
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
     private readonly sendDispatcher: SendDispatcherService,
@@ -48,7 +48,7 @@ export class CampaignSendProcessor extends WorkerHost {
 
     await this.drizzle.db.update(campaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
 
-    const recipients = await this.lists.listContacts(campaign.listId);
+    const recipients = await this.campaignsService.resolveRecipients(campaign);
     let sentCount = 0;
     let failedCount = 0;
     let suppressedCount = 0;
@@ -83,7 +83,7 @@ export class CampaignSendProcessor extends WorkerHost {
       );
       const resolvedBodyHtml = `${htmlWithClickTracking}<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`;
 
-      const trackingSecret = this.config.get<string>('TRACKING_SIGNING_SECRET');
+      const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
       const unsubscribeUrl = trackingSecret
         ? `${this.tracking.baseUrl}/unsubscribe/${signUnsubscribeToken(trackingSecret, contact.email)}`
         : '#';

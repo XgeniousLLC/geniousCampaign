@@ -104,7 +104,7 @@ export function TemplateEditor() {
         {savedAt && <div className="px-6 pb-4 text-xs text-text-faint">Saved {savedAt.toLocaleTimeString()}</div>}
       </div>
 
-      <SpintaxShufflePreview editor={editor} />
+      <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} />
     </div>
   );
 }

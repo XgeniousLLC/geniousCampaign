@@ -13,6 +13,7 @@ import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.servic
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { DrizzleService } from '../db/drizzle.service';
+import { SettingsService } from '../settings/settings.service';
 import { contacts, sequences, sequenceSteps, sequenceEnrollments, sends, templates } from '../db/schema';
 
 describe('SequenceRunnerService (integration, real DB)', () => {
@@ -44,6 +45,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
         SuppressionService,
         TrackingService,
         DrizzleService,
+        SettingsService,
       ],
     }).compile();
 

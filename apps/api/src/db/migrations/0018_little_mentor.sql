@@ -1,0 +1,2 @@
+ALTER TABLE "templates" ADD COLUMN "parent_template_id" uuid;--> statement-breakpoint
+ALTER TABLE "templates" ADD CONSTRAINT "templates_parent_template_id_templates_id_fk" FOREIGN KEY ("parent_template_id") REFERENCES "public"."templates"("id") ON DELETE cascade ON UPDATE no action;

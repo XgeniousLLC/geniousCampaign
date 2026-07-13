@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
+import type { DbOrTx } from '../db/types';
 import { sequenceEnrollments, sequenceSteps, sequences, contacts } from '../db/schema';
 import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.util';
 
@@ -14,17 +15,17 @@ import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.u
 export class EnrollmentService {
   constructor(private readonly drizzle: DrizzleService) {}
 
-  async enroll(sequenceId: string, contactId: string) {
-    const sequence = await this.drizzle.db.query.sequences.findFirst({ where: eq(sequences.id, sequenceId) });
+  async enroll(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+    const sequence = await db.query.sequences.findFirst({ where: eq(sequences.id, sequenceId) });
     if (!sequence) {
       throw new NotFoundException(`Sequence ${sequenceId} not found`);
     }
-    const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
+    const contact = await db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
     }
 
-    const existingActive = await this.drizzle.db.query.sequenceEnrollments.findFirst({
+    const existingActive = await db.query.sequenceEnrollments.findFirst({
       where: and(
         eq(sequenceEnrollments.sequenceId, sequenceId),
         eq(sequenceEnrollments.contactId, contactId),
@@ -41,7 +42,7 @@ export class EnrollmentService {
     // gets a fresh row starting at step 1 — no shared sequence-wide clock.
     // A leading "wait" step (unusual but valid) is skipped over just like
     // mid-sequence waits are, landing on the first real executable step.
-    const allSteps = await this.drizzle.db
+    const allSteps = await db
       .select()
       .from(sequenceSteps)
       .where(eq(sequenceSteps.sequenceId, sequenceId))
@@ -49,7 +50,7 @@ export class EnrollmentService {
 
     const resolution = resolveFirstExecutableStep(allSteps, new Date());
 
-    const [created] = await this.drizzle.db
+    const [created] = await db
       .insert(sequenceEnrollments)
       .values({
         sequenceId,
@@ -62,7 +63,7 @@ export class EnrollmentService {
 
     if (resolution.done) {
       // No executable steps (zero-step, or wait-only sequence): nothing to run.
-      const [completed] = await this.drizzle.db
+      const [completed] = await db
         .update(sequenceEnrollments)
         .set({ status: 'completed', updatedAt: new Date() })
         .where(eq(sequenceEnrollments.id, created.id))
@@ -73,28 +74,28 @@ export class EnrollmentService {
     return created;
   }
 
-  async pause(enrollmentId: string) {
-    const enrollment = await this.findOne(enrollmentId);
+  async pause(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
+    const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status !== 'active') {
       throw new ConflictException(`Enrollment ${enrollmentId} is ${enrollment.status}, not active — cannot pause`);
     }
-    return this.setStatus(enrollmentId, 'paused');
+    return this.setStatus(enrollmentId, 'paused', db);
   }
 
-  async resume(enrollmentId: string) {
-    const enrollment = await this.findOne(enrollmentId);
+  async resume(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
+    const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status !== 'paused') {
       throw new ConflictException(`Enrollment ${enrollmentId} is ${enrollment.status}, not paused — cannot resume`);
     }
-    return this.setStatus(enrollmentId, 'active');
+    return this.setStatus(enrollmentId, 'active', db);
   }
 
-  async stop(enrollmentId: string) {
-    const enrollment = await this.findOne(enrollmentId);
+  async stop(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
+    const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status === 'stopped' || enrollment.status === 'completed') {
       throw new ConflictException(`Enrollment ${enrollmentId} is already ${enrollment.status}`);
     }
-    const [updated] = await this.drizzle.db
+    const [updated] = await db
       .update(sequenceEnrollments)
       .set({ status: 'stopped', currentStepId: null, nextRunAt: null, updatedAt: new Date() })
       .where(eq(sequenceEnrollments.id, enrollmentId))
@@ -102,8 +103,8 @@ export class EnrollmentService {
     return updated;
   }
 
-  async findOne(id: string) {
-    const enrollment = await this.drizzle.db.query.sequenceEnrollments.findFirst({
+  async findOne(id: string, db: DbOrTx = this.drizzle.db) {
+    const enrollment = await db.query.sequenceEnrollments.findFirst({
       where: eq(sequenceEnrollments.id, id),
     });
     if (!enrollment) {
@@ -112,8 +113,8 @@ export class EnrollmentService {
     return enrollment;
   }
 
-  async findActiveForContactInSequence(sequenceId: string, contactId: string) {
-    const enrollment = await this.drizzle.db.query.sequenceEnrollments.findFirst({
+  async findActiveForContactInSequence(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+    const enrollment = await db.query.sequenceEnrollments.findFirst({
       where: and(
         eq(sequenceEnrollments.sequenceId, sequenceId),
         eq(sequenceEnrollments.contactId, contactId),
@@ -140,8 +141,8 @@ export class EnrollmentService {
     });
   }
 
-  private async setStatus(id: string, status: 'active' | 'paused') {
-    const [updated] = await this.drizzle.db
+  private async setStatus(id: string, status: 'active' | 'paused', db: DbOrTx = this.drizzle.db) {
+    const [updated] = await db
       .update(sequenceEnrollments)
       .set({ status, updatedAt: new Date() })
       .where(eq(sequenceEnrollments.id, id))

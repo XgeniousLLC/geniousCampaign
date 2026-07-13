@@ -1,4 +1,4 @@
-import { apiGet } from './api';
+import { apiGet, type Page } from './api';
 
 export interface AuditLogEntry {
   id: string;
@@ -10,6 +10,6 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
-export function listAuditLog(limit = 50) {
-  return apiGet<AuditLogEntry[]>(`/audit-log?limit=${limit}`);
+export function listAuditLog(page = 1, limit = 50) {
+  return apiGet<Page<AuditLogEntry>>(`/audit-log?page=${page}&limit=${limit}`);
 }

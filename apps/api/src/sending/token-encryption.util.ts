@@ -1,7 +1,17 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
+
+/** JWT_SECRET already gates the whole app's auth boundary and is guaranteed
+ * to be set for the app to run at all — reused as the encryption secret for
+ * anything stored at rest (settings, per-account AWS credentials) rather
+ * than inventing a second required "encryption key" env var. Same reasoning
+ * as SettingsService's own encryptionSecret(). */
+export function appEncryptionSecret(config: ConfigService): string {
+  return config.get<string>('JWT_SECRET')!;
+}
 
 function deriveKey(secret: string): Buffer {
   return scryptSync(secret, 'genius-campaign-token-encryption', 32);

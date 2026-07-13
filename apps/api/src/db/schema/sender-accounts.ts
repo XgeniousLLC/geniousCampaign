@@ -19,6 +19,16 @@ export const senderAccounts = pgTable(
     // refresh token at rest. Only set for provider: 'gmail'.
     gmailRefreshTokenEncrypted: text('gmail_refresh_token_encrypted'),
     gmailLastBounceScanAt: timestamp('gmail_last_bounce_scan_at', { withTimezone: true }),
+    // Per-account AWS credentials (GC-077) — only set for provider: 'ses'.
+    // All nullable: when absent, SesSenderProvider falls back to the single
+    // global Settings > Integrations AWS_* values, same DB-overrides-env
+    // pattern used everywhere else (SettingsService) — this is what lets a
+    // pre-existing single-account setup keep working unchanged while still
+    // allowing additional named accounts with their own real credentials.
+    awsRegion: text('aws_region'),
+    awsAccessKeyId: text('aws_access_key_id'),
+    awsSecretAccessKeyEncrypted: text('aws_secret_access_key_encrypted'),
+    sesConfigurationSet: text('ses_configuration_set'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

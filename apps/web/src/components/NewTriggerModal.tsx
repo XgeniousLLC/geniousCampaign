@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createTrigger } from '../lib/triggersApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
+import { listWebhookEndpoints, type WebhookEndpoint } from '../lib/webhooksApi';
+import { CloseIcon } from './icons';
 
 const EVENT_TYPES = [
   'contact.created',
@@ -13,8 +15,10 @@ const EVENT_TYPES = [
 
 const OPS = ['equals', 'contains', 'gt', 'lt', 'in', 'exists'] as const;
 
+type TriggerType = 'condition' | 'schedule' | 'webhook';
+
 export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [triggerType, setTriggerType] = useState<'condition' | 'schedule'>('condition');
+  const [triggerType, setTriggerType] = useState<TriggerType>('condition');
   const [name, setName] = useState('');
   const [eventType, setEventType] = useState(EVENT_TYPES[0]);
   const [field, setField] = useState('tagName');
@@ -22,6 +26,8 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
   const [value, setValue] = useState('');
   const [scheduleCron, setScheduleCron] = useState('0 9 * * 1');
   const [scheduleTimezone, setScheduleTimezone] = useState('UTC');
+  const [webhookEndpointId, setWebhookEndpointId] = useState('');
+  const [webhookEndpoints, setWebhookEndpoints] = useState<WebhookEndpoint[]>([]);
   const [sequenceId, setSequenceId] = useState('');
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +38,10 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
       setSequences(s);
       if (s.length > 0) setSequenceId(s[0].id);
     });
+    listWebhookEndpoints().then((eps) => {
+      setWebhookEndpoints(eps);
+      if (eps.length > 0) setWebhookEndpointId(eps[0].id);
+    });
   }, []);
 
   async function handleCreate() {
@@ -39,16 +49,21 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
       setError('Name and target sequence are required.');
       return;
     }
+    if (triggerType === 'webhook' && !webhookEndpointId) {
+      setError('A webhook endpoint is required — create one on the Webhooks page first.');
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
       await createTrigger({
         name: name.trim(),
-        eventType: triggerType === 'schedule' ? 'schedule' : eventType,
+        eventType: triggerType === 'schedule' ? 'schedule' : triggerType === 'webhook' ? 'webhook' : eventType,
         conditions: { field, op, value: op === 'exists' ? undefined : value },
         sequenceId,
         scheduleCron: triggerType === 'schedule' ? scheduleCron : undefined,
         scheduleTimezone: triggerType === 'schedule' ? scheduleTimezone : undefined,
+        webhookEndpointId: triggerType === 'webhook' ? webhookEndpointId : undefined,
       });
       onCreated();
     } catch (err) {
@@ -63,7 +78,7 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
         <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
           <h3 className="text-sm font-semibold text-text-heading">New trigger</h3>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary">
-            ✕
+            <CloseIcon />
           </button>
         </div>
 
@@ -78,7 +93,7 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
 
           <label className="mb-2 block text-xs font-semibold text-text-secondary">Trigger type</label>
           <div className="mb-[18px] flex flex-col gap-1.5">
-            {(['condition', 'schedule'] as const).map((t) => (
+            {(['condition', 'schedule', 'webhook'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTriggerType(t)}
@@ -88,16 +103,22 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
               >
                 <span className={`h-3 w-3 rounded-full border-2 ${triggerType === t ? 'border-accent bg-accent' : 'border-border-strong'}`} />
                 <span>
-                  <div className="text-sm font-semibold text-text-primary">{t === 'condition' ? 'Condition-based' : 'Schedule-based'}</div>
+                  <div className="text-sm font-semibold text-text-primary">
+                    {t === 'condition' ? 'Condition-based' : t === 'schedule' ? 'Schedule-based' : 'Webhook-based'}
+                  </div>
                   <div className="text-[11.5px] text-text-muted">
-                    {t === 'condition' ? 'Fires when a real event matches a condition.' : 'Fires on a recurring cron schedule.'}
+                    {t === 'condition'
+                      ? 'Fires when a real event matches a condition.'
+                      : t === 'schedule'
+                        ? 'Fires on a recurring cron schedule.'
+                        : 'Fires when a signed inbound webhook payload matches a condition.'}
                   </div>
                 </span>
               </button>
             ))}
           </div>
 
-          {triggerType === 'condition' ? (
+          {triggerType === 'condition' && (
             <>
               <label className="mb-2 block text-xs font-semibold text-text-secondary">When</label>
               <select
@@ -123,7 +144,9 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
                 <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
               </div>
             </>
-          ) : (
+          )}
+
+          {triggerType === 'schedule' && (
             <>
               <label className="mb-2 block text-xs font-semibold text-text-secondary">Run</label>
               <div className="mb-[18px] grid grid-cols-2 gap-2">
@@ -139,6 +162,39 @@ export function NewTriggerModal({ onClose, onCreated }: { onClose: () => void; o
                   placeholder="timezone, e.g. UTC"
                   className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary"
                 />
+              </div>
+            </>
+          )}
+
+          {triggerType === 'webhook' && (
+            <>
+              <label className="mb-2 block text-xs font-semibold text-text-secondary">Webhook endpoint</label>
+              <select
+                value={webhookEndpointId}
+                onChange={(e) => setWebhookEndpointId(e.target.value)}
+                className="mb-2.5 h-[34px] w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
+              >
+                {webhookEndpoints.length === 0 && <option value="">No webhook endpoints yet</option>}
+                {webhookEndpoints.map((ep) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.name} (/webhooks/in/{ep.slug})
+                  </option>
+                ))}
+              </select>
+              {webhookEndpoints.length === 0 && (
+                <p className="mb-2.5 text-[11.5px] text-warning">Create a webhook endpoint on the Webhooks page first.</p>
+              )}
+              <label className="mb-2 block text-xs font-semibold text-text-secondary">Condition (matched against the payload)</label>
+              <div className="mb-[18px] grid grid-cols-3 gap-2">
+                <input value={field} onChange={(e) => setField(e.target.value)} placeholder="field (e.g. plan)" className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
+                <select value={op} onChange={(e) => setOp(e.target.value as typeof op)} className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary">
+                  {OPS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+                <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" className="h-[34px] rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary" />
               </div>
             </>
           )}

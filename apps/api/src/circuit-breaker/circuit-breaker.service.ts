@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { desc, eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
+import type { DbOrTx } from '../db/types';
 import { sends, sequenceEnrollments, breakerEvaluations, breakerResets } from '../db/schema';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 
@@ -114,8 +115,8 @@ export class CircuitBreakerService {
     return paused;
   }
 
-  async reset(userId: string | null) {
-    await this.drizzle.db.insert(breakerResets).values({ resetByUserId: userId });
+  async reset(userId: string | null, db: DbOrTx = this.drizzle.db) {
+    await db.insert(breakerResets).values({ resetByUserId: userId });
   }
 
   getConfig() {

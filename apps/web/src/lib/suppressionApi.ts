@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './api';
+import { apiGet, apiPost, type Page } from './api';
 import type { Contact } from './contactsApi';
 
 export interface SuppressionEntry {
@@ -9,8 +9,8 @@ export interface SuppressionEntry {
   createdAt: string;
 }
 
-export function listSuppressionList() {
-  return apiGet<SuppressionEntry[]>('/suppression-list');
+export function listSuppressionList(page = 1, limit = 50) {
+  return apiGet<Page<SuppressionEntry>>(`/suppression-list?page=${page}&limit=${limit}`);
 }
 
 export function manualSuppress(contactId: string) {

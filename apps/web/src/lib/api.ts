@@ -2,6 +2,14 @@ import { useAuthStore } from '../stores/useAuthStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
+// Shared server-pagination envelope — audit log, suppression list, email log.
+export interface Page<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 function authHeaders(): Record<string, string> {
   const token = useAuthStore.getState().token;
   return token ? { Authorization: `Bearer ${token}` } : {};

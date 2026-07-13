@@ -3,9 +3,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { campaigns, sends, templates, lists } from '../db/schema';
+import type { DbOrTx } from '../db/types';
+import { campaigns, sends, templates, lists, contacts, contactTags, emailEvents } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 
@@ -25,18 +26,34 @@ export class CampaignsService {
     return Number(this.config.get<string>('LARGE_SEND_THRESHOLD') ?? DEFAULT_LARGE_SEND_THRESHOLD);
   }
 
-  async create(dto: CreateCampaignDto) {
-    const template = await this.drizzle.db.query.templates.findFirst({ where: eq(templates.id, dto.templateId) });
+  /** GC-070 — a campaign targets a list, a set of tags (any-match), or a
+   * hand-picked set of contacts. Exactly one of listId/tagIds/contactIds is
+   * populated, matching audienceType — validated here rather than as a DB
+   * constraint, so the error is a clear 400 at create time. */
+  async create(dto: CreateCampaignDto, db: DbOrTx = this.drizzle.db) {
+    const template = await db.query.templates.findFirst({ where: eq(templates.id, dto.templateId) });
     if (!template) throw new NotFoundException(`Template ${dto.templateId} not found`);
-    const list = await this.drizzle.db.query.lists.findFirst({ where: eq(lists.id, dto.listId) });
-    if (!list) throw new NotFoundException(`List ${dto.listId} not found`);
 
-    const [created] = await this.drizzle.db
+    const audienceType = dto.audienceType ?? 'list';
+    if (audienceType === 'list') {
+      if (!dto.listId) throw new BadRequestException('listId is required when audienceType is "list"');
+      const list = await db.query.lists.findFirst({ where: eq(lists.id, dto.listId) });
+      if (!list) throw new NotFoundException(`List ${dto.listId} not found`);
+    } else if (audienceType === 'tags') {
+      if (!dto.tagIds?.length) throw new BadRequestException('tagIds is required when audienceType is "tags"');
+    } else if (audienceType === 'contacts') {
+      if (!dto.contactIds?.length) throw new BadRequestException('contactIds is required when audienceType is "contacts"');
+    }
+
+    const [created] = await db
       .insert(campaigns)
       .values({
         name: dto.name,
         templateId: dto.templateId,
-        listId: dto.listId,
+        audienceType,
+        listId: audienceType === 'list' ? dto.listId : undefined,
+        tagIds: audienceType === 'tags' ? dto.tagIds : undefined,
+        contactIds: audienceType === 'contacts' ? dto.contactIds : undefined,
         isDryRun: dto.isDryRun ?? false,
         sendToEmail: dto.sendToEmail,
       })
@@ -44,8 +61,55 @@ export class CampaignsService {
     return created;
   }
 
-  findAll() {
-    return this.drizzle.db.query.campaigns.findMany({ orderBy: (c, { desc }) => desc(c.createdAt) });
+  /** Resolves the real recipient set for any audience type — the one place
+   * both the pre-send recipient-count check and the actual send loop
+   * (`CampaignSendProcessor`) get their contacts from, so "how many
+   * recipients" (GC-050/053) never disagrees with "who actually gets sent
+   * to." Tag audience is any-match (a contact with ANY selected tag
+   * qualifies), matching the design's own copy. */
+  async resolveRecipients(campaign: typeof campaigns.$inferSelect): Promise<{ contact: typeof contacts.$inferSelect }[]> {
+    if (campaign.audienceType === 'tags') {
+      const tagIds = campaign.tagIds ?? [];
+      if (tagIds.length === 0) return [];
+      return this.drizzle.db
+        .selectDistinct({ contact: contacts })
+        .from(contactTags)
+        .innerJoin(contacts, eq(contactTags.contactId, contacts.id))
+        .where(inArray(contactTags.tagId, tagIds));
+    }
+    if (campaign.audienceType === 'contacts') {
+      const contactIds = campaign.contactIds ?? [];
+      if (contactIds.length === 0) return [];
+      const rows = await this.drizzle.db.select().from(contacts).where(inArray(contacts.id, contactIds));
+      return rows.map((contact) => ({ contact }));
+    }
+    if (!campaign.listId) return [];
+    return this.lists.listContacts(campaign.listId);
+  }
+
+  /** Campaigns list screen (design: Sent/Open/Click columns) needs real
+   * per-campaign engagement, not just the send-outcome counters already
+   * stored on the row — computed the same way as templates' uses/open-rate
+   * (GC-062 area), not stored, so it can't drift from the real event data. */
+  async findAll() {
+    const campaignRows = await this.drizzle.db.query.campaigns.findMany({ orderBy: (c, { desc }) => desc(c.createdAt) });
+
+    const eventRows = await this.drizzle.db
+      .select({
+        campaignId: sends.campaignId,
+        opens: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(Number),
+        clicks: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'click')`.mapWith(Number),
+      })
+      .from(emailEvents)
+      .innerJoin(sends, eq(emailEvents.sendId, sends.id))
+      .groupBy(sends.campaignId);
+    const byCampaign = new Map(eventRows.map((r) => [r.campaignId, r]));
+
+    return campaignRows.map((c) => ({
+      ...c,
+      openCount: byCampaign.get(c.id)?.opens ?? 0,
+      clickCount: byCampaign.get(c.id)?.clicks ?? 0,
+    }));
   }
 
   async findOne(id: string) {
@@ -54,12 +118,25 @@ export class CampaignsService {
     return campaign;
   }
 
+  /** Per-send opened/clicked flags for the campaign detail screen's
+   * recipient list + engagement funnel/ratio stats — same event-derived
+   * shape as the campaigns-list aggregation above, just per-send instead
+   * of summed. */
   async getSends(campaignId: string) {
     await this.findOne(campaignId);
-    return this.drizzle.db.query.sends.findMany({
+    const sendRows = await this.drizzle.db.query.sends.findMany({
       where: eq(sends.campaignId, campaignId),
       orderBy: (s, { desc }) => desc(s.createdAt),
     });
+
+    const sendIds = sendRows.map((s) => s.id);
+    const eventRows = sendIds.length
+      ? await this.drizzle.db.select().from(emailEvents).where(inArray(emailEvents.sendId, sendIds))
+      : [];
+    const openedIds = new Set(eventRows.filter((e) => e.type === 'open').map((e) => e.sendId));
+    const clickedIds = new Set(eventRows.filter((e) => e.type === 'click').map((e) => e.sendId));
+
+    return sendRows.map((s) => ({ ...s, opened: openedIds.has(s.id), clicked: clickedIds.has(s.id) }));
   }
 
   /** Enqueues one BullMQ job to actually send — invariant 10, never sends
@@ -77,7 +154,7 @@ export class CampaignsService {
       throw new BadRequestException(`Campaign ${id} is already ${campaign.status} — cannot send again`);
     }
 
-    const recipients = await this.lists.listContacts(campaign.listId);
+    const recipients = await this.resolveRecipients(campaign);
     const threshold = this.largeSendThreshold();
     if (recipients.length > threshold && !confirmed) {
       return {

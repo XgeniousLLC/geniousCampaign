@@ -9,6 +9,11 @@ export interface Sequence {
   description: string | null;
   createdAt: string;
   updatedAt: string;
+  // Present on list responses only (GET /sequences) — computed server-side.
+  stepCount?: number;
+  enrolledCount?: number;
+  openCount?: number;
+  hasActiveEnrollments?: boolean;
 }
 
 export interface SequenceStep {

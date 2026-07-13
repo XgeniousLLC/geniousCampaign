@@ -1,13 +1,20 @@
-import { ConfigService } from '@nestjs/config';
+import { SettingsService } from '../settings/settings.service';
+import type { DrizzleService } from '../db/drizzle.service';
+import type { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { SesSenderProvider } from './ses-sender.provider';
 
 jest.mock('nodemailer');
 
+// Neither test passes a senderAccountId, so buildTransporter() never reads
+// drizzle/config — a bare stub is enough for the constructor.
+const noopDrizzle = {} as unknown as DrizzleService;
+const noopConfig = {} as unknown as ConfigService;
+
 describe('SesSenderProvider', () => {
   it('throws instead of faking a send when AWS_REGION is not configured', async () => {
-    const config = { get: () => undefined } as unknown as ConfigService;
-    const provider = new SesSenderProvider(config);
+    const config = { get: () => undefined } as unknown as SettingsService;
+    const provider = new SesSenderProvider(config, noopDrizzle, noopConfig);
 
     await expect(
       provider.send({
@@ -29,8 +36,8 @@ describe('SesSenderProvider', () => {
       AWS_REGION: 'us-east-1',
       SES_CONFIGURATION_SET: 'gc-config-set',
     };
-    const config = { get: (key: string) => values[key] } as unknown as ConfigService;
-    const provider = new SesSenderProvider(config);
+    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
+    const provider = new SesSenderProvider(config, noopDrizzle, noopConfig);
 
     const result = await provider.send({
       to: 'test@example.com',

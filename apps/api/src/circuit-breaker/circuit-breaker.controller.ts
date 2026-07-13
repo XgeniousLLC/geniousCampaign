@@ -5,6 +5,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AuditLogService } from '../auth/audit-log.service';
 import { CircuitBreakerService } from './circuit-breaker.service';
+import { DrizzleService } from '../db/drizzle.service';
 
 @Controller('circuit-breaker')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -12,6 +13,7 @@ export class CircuitBreakerController {
   constructor(
     private readonly breaker: CircuitBreakerService,
     private readonly auditLog: AuditLogService,
+    private readonly drizzle: DrizzleService,
   ) {}
 
   @Get('status')
@@ -22,9 +24,11 @@ export class CircuitBreakerController {
 
   @Post('reset')
   @Roles('owner')
-  async reset(@CurrentUser() user: AuthenticatedUser) {
-    await this.breaker.reset(user.id);
-    await this.auditLog.record(user, 'circuit_breaker.reset', 'circuit_breaker', 'singleton', {});
-    return { reset: true };
+  reset(@CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      await this.breaker.reset(user.id, tx);
+      await this.auditLog.record(user, 'circuit_breaker.reset', 'circuit_breaker', 'singleton', {}, tx);
+      return { reset: true };
+    });
   }
 }
