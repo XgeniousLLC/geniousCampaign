@@ -155,7 +155,13 @@ export function TemplateEditor() {
       <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} />
 
       {showPreview && (
-        <TemplatePreviewModal subject={subject} bodyHtml={currentBody().bodyHtml} onClose={() => setShowPreview(false)} />
+        <TemplatePreviewModal
+          subject={subject}
+          bodyHtml={currentBody().bodyHtml}
+          bodyText={currentBody().bodyText}
+          defaultTestEmail={currentUserEmail}
+          onClose={() => setShowPreview(false)}
+        />
       )}
       {showSendTest && (
         <SendTestEmailModal

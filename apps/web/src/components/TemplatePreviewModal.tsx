@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { resolvePersonalization, resolveSpintax } from '@genius-campaign/shared';
 import { CloseIcon } from './icons';
+import { SendTestEmailModal } from './SendTestEmailModal';
 
 // Same placeholder shape the backend's send-test resolves against
 // (TemplatesService.SAMPLE_CONTACT) — kept in sync manually since it's a
@@ -67,18 +68,23 @@ function ClientChrome({ client, subject, senderName, senderEmail }: { client: Cl
 export function TemplatePreviewModal({
   subject,
   bodyHtml,
+  bodyText,
+  defaultTestEmail,
   senderName = 'Ryan',
   senderEmail = 'ryan@orbit.example.com',
   onClose,
 }: {
   subject: string;
   bodyHtml: string;
+  bodyText: string;
+  defaultTestEmail: string;
   senderName?: string;
   senderEmail?: string;
   onClose: () => void;
 }) {
   const [client, setClient] = useState<ClientKey>('gmail');
   const [viewport, setViewport] = useState<ViewportKey>('desktop');
+  const [showSendTest, setShowSendTest] = useState(false);
 
   const resolvedSubject = resolveSpintax(resolvePersonalization(subject, SAMPLE_CONTACT));
   const resolvedHtml = resolveSpintax(resolvePersonalization(bodyHtml, SAMPLE_CONTACT));
@@ -92,9 +98,17 @@ export function TemplatePreviewModal({
       >
         <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
           <h3 className="text-sm font-semibold text-text-heading">Preview</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary">
-            <CloseIcon />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSendTest(true)}
+              className="rounded-md border border-border-strong bg-field px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-raised"
+            >
+              Send test
+            </button>
+            <button onClick={onClose} className="text-text-muted hover:text-text-primary">
+              <CloseIcon />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-b border-border-default px-[18px] py-2.5">
@@ -138,6 +152,15 @@ export function TemplatePreviewModal({
           </div>
         </div>
       </div>
+      {showSendTest && (
+        <SendTestEmailModal
+          subject={subject}
+          bodyHtml={bodyHtml}
+          bodyText={bodyText}
+          defaultEmail={defaultTestEmail}
+          onClose={() => setShowSendTest(false)}
+        />
+      )}
     </div>
   );
 }
