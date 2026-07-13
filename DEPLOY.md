@@ -25,6 +25,8 @@ Fill in at minimum:
 
 Everything else in `.env.example` (AWS SES, Cloudflare R2, Gmail OAuth, Reoon/NeverBounce, OpenAI/DeepSeek, Slack) can be left blank and configured later from the running app's **Settings > Integrations** page — those are stored encrypted in the database and override `.env` immediately, no restart needed.
 
+If any of the default host ports (`5432`, `6379`, `3000`, `8080`) are already in use on your machine — common if you also run Postgres/Redis locally for non-Docker development — override them in `.env`: `POSTGRES_PORT`, `REDIS_PORT`, `API_PORT`, `WEB_PORT`. The container-internal ports never change, only which host port they're published on.
+
 ### 2. Build and start
 
 ```bash
