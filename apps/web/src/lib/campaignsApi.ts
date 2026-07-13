@@ -20,6 +20,7 @@ export interface Campaign {
   suppressedCount: number;
   isDryRun: boolean;
   sendToEmail: string | null;
+  scheduledAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Present on list responses only (GET /campaigns) — computed server-side.
@@ -42,9 +43,10 @@ export interface CampaignSend {
 
 export interface SendCampaignResult {
   id: string;
-  status: 'queued' | 'confirmation_required';
+  status: 'queued' | 'scheduled' | 'confirmation_required';
   recipientCount?: number;
   threshold?: number;
+  scheduledAt?: string;
 }
 
 export function listCampaigns() {
@@ -73,6 +75,10 @@ export function createCampaign(input: {
   return apiPost<Campaign>('/campaigns', input);
 }
 
-export function sendCampaign(id: string, confirmed?: boolean) {
-  return apiPost<SendCampaignResult>(`/campaigns/${id}/send`, { confirmed });
+export function sendCampaign(id: string, confirmed?: boolean, scheduledAt?: string) {
+  return apiPost<SendCampaignResult>(`/campaigns/${id}/send`, { confirmed, scheduledAt });
+}
+
+export function cancelCampaignSchedule(id: string) {
+  return apiPost<{ id: string; status: CampaignStatus }>(`/campaigns/${id}/cancel-schedule`, {});
 }

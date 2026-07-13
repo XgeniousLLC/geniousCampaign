@@ -77,10 +77,20 @@ export function CampaignsList() {
                 <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.openCount ?? 0}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.clickCount ?? 0}</td>
                 <td className="px-3 py-2.5 text-right">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[c.status]}`}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    {c.status}
-                  </span>
+                  {c.status === 'draft' && c.scheduledAt ? (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-tint"
+                      title={new Date(c.scheduledAt).toLocaleString()}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      scheduled
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[c.status]}`}>
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      {c.status}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

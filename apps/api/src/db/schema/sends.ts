@@ -40,6 +40,13 @@ export const campaigns = pgTable('campaigns', {
   // GC-053 — a send above the configurable large-send threshold requires
   // this to be explicitly set before CampaignsService.send() will enqueue it.
   largeSendConfirmed: boolean('large_send_confirmed').notNull().default(false),
+  // GC-113 — set when send() is called with a future scheduledAt instead of
+  // sending immediately. status stays 'draft' the whole time it's waiting
+  // (the BullMQ delayed job re-checks status==='draft' at fire time, same
+  // invariant 3 pattern as an immediate send) — scheduledAt is what the UI
+  // uses to tell "not yet sent" apart from "scheduled, waiting to fire".
+  // Cleared by CampaignsService.cancelSchedule() when a schedule is cancelled.
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

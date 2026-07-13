@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getCampaign, getCampaignSends, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
+import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
 import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, type List } from '../lib/contactsApi';
@@ -39,6 +39,9 @@ export function CampaignDetail() {
   const [template, setTemplate] = useState<Template | null>(null);
   const [campaignLists, setCampaignLists] = useState<List[]>([]);
   const [tab, setTab] = useState<RecipientTab>('all');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{ recipientCount: number; threshold: number } | null>(null);
 
   async function load() {
     if (!id) return;
@@ -68,6 +71,40 @@ export function CampaignDetail() {
   }, [id, campaign?.status]);
 
   const contact = (contactId: string) => contacts.find((c) => c.id === contactId);
+
+  async function handleSendNow(confirmed = false) {
+    if (!id) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const result = await sendCampaign(id, confirmed);
+      if (result.status === 'confirmation_required') {
+        setPendingConfirm({ recipientCount: result.recipientCount!, threshold: result.threshold! });
+        setActionBusy(false);
+        return;
+      }
+      setPendingConfirm(null);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleCancelSchedule() {
+    if (!id) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await cancelCampaignSchedule(id);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   const stats = useMemo(() => {
     const total = sends.length;
@@ -127,6 +164,11 @@ export function CampaignDetail() {
           <span className="h-1.5 w-1.5 rounded-full bg-current" />
           {campaign.status}
         </span>
+        {campaign.status === 'draft' && campaign.scheduledAt && (
+          <span className="inline-flex items-center rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-tint">
+            scheduled
+          </span>
+        )}
         {campaign.isDryRun && (
           <span className="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning">
             dry run
@@ -143,6 +185,37 @@ export function CampaignDetail() {
         {dominantProvider && <> · via {dominantProvider.toUpperCase()}</>}
         {campaignLists.length > 0 && <> · {campaignLists.map((l) => l.name).join(', ')}</>}
       </p>
+
+      {campaign.status === 'draft' && (
+        <div className="mb-4 flex max-w-[820px] items-center gap-2.5 rounded-md border border-border-default bg-panel px-3.5 py-2.5">
+          <div className="flex-1 text-xs text-text-secondary">
+            {campaign.scheduledAt ? `Scheduled for ${new Date(campaign.scheduledAt).toLocaleString()}` : 'Draft — not sent yet.'}
+          </div>
+          {actionError && <div className="text-[11px] text-danger">{actionError}</div>}
+          {pendingConfirm && (
+            <label className="flex items-center gap-1.5 text-[11px] text-warning">
+              <input type="checkbox" onChange={() => handleSendNow(true)} />
+              {pendingConfirm.recipientCount} recipients, over {pendingConfirm.threshold} — confirm send
+            </label>
+          )}
+          {campaign.scheduledAt && (
+            <button
+              onClick={handleCancelSchedule}
+              disabled={actionBusy}
+              className="h-8 rounded-md border border-border-subtle px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel schedule
+            </button>
+          )}
+          <button
+            onClick={() => handleSendNow(false)}
+            disabled={actionBusy || !!pendingConfirm}
+            className="h-8 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {actionBusy ? 'Sending…' : 'Send now'}
+          </button>
+        </div>
+      )}
 
       <div className="grid max-w-[820px] grid-cols-4 gap-3">
         <div className="rounded-md border border-border-default bg-panel p-3.5">

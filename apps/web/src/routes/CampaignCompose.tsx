@@ -15,6 +15,15 @@ function defaultCampaignName(): string {
   return `Campaign — ${date}`;
 }
 
+// Earliest selectable value for the schedule <input type="datetime-local">,
+// in the browser's local time — a minute of slack so "now" doesn't
+// immediately fail the future-only validation on submit.
+function scheduleMin(): string {
+  const d = new Date(Date.now() + 60_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 async function uniqueContactCountAcrossLists(listIds: string[]): Promise<Set<string>> {
   const results = await Promise.all(listIds.map((id) => listContactsForList(id)));
   return new Set(results.flat().map((r) => r.contact.id));
@@ -37,12 +46,19 @@ export function CampaignCompose() {
   const [contactFilterTagIds, setContactFilterTagIds] = useState<string[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [isDryRun, setIsDryRun] = useState(true);
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
   const [sendToEmail, setSendToEmail] = useState('');
   const [newListName, setNewListName] = useState('');
   const [newTagName, setNewTagName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState<{ campaign: Campaign; recipientCount: number; threshold: number } | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    campaign: Campaign;
+    recipientCount: number;
+    threshold: number;
+    scheduledAt?: string;
+  } | null>(null);
 
   useEffect(() => {
     listTemplates({ includeVariants: true }).then((t) => {
@@ -145,28 +161,62 @@ export function CampaignCompose() {
     return selectedContactIds.length > 0;
   }
 
-  async function handleSend() {
+  function requireBasics(): boolean {
     if (!name.trim() || !templateId || !audienceValid()) {
       setError('Name, template, and an audience are all required.');
-      return;
+      return false;
     }
     setError(null);
+    return true;
+  }
+
+  function buildCreateInput() {
+    return {
+      name: name.trim(),
+      templateId,
+      audienceType,
+      listIds: audienceType === 'list' ? listIds : undefined,
+      excludeListIds: excludeListIds.length > 0 ? excludeListIds : undefined,
+      tagIds: audienceType === 'tags' ? selectedTagIds : undefined,
+      contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
+      isDryRun,
+      sendToEmail: sendToEmail.trim() || undefined,
+    };
+  }
+
+  async function handleSaveDraft() {
+    if (!requireBasics()) return;
     setSending(true);
     try {
-      const campaign = await createCampaign({
-        name: name.trim(),
-        templateId,
-        audienceType,
-        listIds: audienceType === 'list' ? listIds : undefined,
-        excludeListIds: excludeListIds.length > 0 ? excludeListIds : undefined,
-        tagIds: audienceType === 'tags' ? selectedTagIds : undefined,
-        contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
-        isDryRun,
-        sendToEmail: sendToEmail.trim() || undefined,
-      });
-      const result = await sendCampaign(campaign.id);
+      const campaign = await createCampaign(buildCreateInput());
+      navigate(`/campaigns/${campaign.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSending(false);
+    }
+  }
+
+  async function handleSend() {
+    if (!requireBasics()) return;
+    let scheduledAtIso: string | undefined;
+    if (isScheduled) {
+      if (!scheduleAt) {
+        setError('Pick a date and time to schedule.');
+        return;
+      }
+      const date = new Date(scheduleAt);
+      if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) {
+        setError('Scheduled time must be in the future.');
+        return;
+      }
+      scheduledAtIso = date.toISOString();
+    }
+    setSending(true);
+    try {
+      const campaign = await createCampaign(buildCreateInput());
+      const result = await sendCampaign(campaign.id, undefined, scheduledAtIso);
       if (result.status === 'confirmation_required') {
-        setPendingConfirmation({ campaign, recipientCount: result.recipientCount!, threshold: result.threshold! });
+        setPendingConfirmation({ campaign, recipientCount: result.recipientCount!, threshold: result.threshold!, scheduledAt: scheduledAtIso });
         setSending(false);
         return;
       }
@@ -181,13 +231,15 @@ export function CampaignCompose() {
     if (!pendingConfirmation) return;
     setSending(true);
     try {
-      await sendCampaign(pendingConfirmation.campaign.id, true);
+      await sendCampaign(pendingConfirmation.campaign.id, true, pendingConfirmation.scheduledAt);
       navigate(`/campaigns/${pendingConfirmation.campaign.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSending(false);
     }
   }
+
+  const sendLabel = sending ? (isScheduled ? 'Scheduling…' : 'Sending…') : isScheduled ? 'Schedule send' : isDryRun ? 'Send dry run' : 'Send campaign';
 
   return (
     <div>
@@ -441,22 +493,56 @@ export function CampaignCompose() {
             </button>
           </div>
 
+          <div className="flex items-center justify-between border-t border-border-subtle py-2.5">
+            <div>
+              <div className="text-xs font-medium text-text-secondary">Schedule for later</div>
+              <div className="text-[11px] text-text-faint">Send at a specific date &amp; time</div>
+            </div>
+            <button
+              onClick={() => setIsScheduled((v) => !v)}
+              className={`h-5 w-9 rounded-full transition-colors ${isScheduled ? 'bg-accent' : 'bg-border-subtle'}`}
+            >
+              <span
+                className={`block h-4 w-4 rounded-full bg-white transition-transform ${isScheduled ? 'translate-x-4' : 'translate-x-0.5'}`}
+              />
+            </button>
+          </div>
+          {isScheduled && (
+            <input
+              type="datetime-local"
+              value={scheduleAt}
+              min={scheduleMin()}
+              onChange={(e) => setScheduleAt(e.target.value)}
+              className="mb-1 h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary"
+            />
+          )}
+
           {pendingConfirmation && (
             <label className="mt-3 flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 p-2.5 text-[11.5px] leading-snug text-text-secondary">
               <input type="checkbox" className="mt-0.5" onChange={handleConfirmLargeSend} />
               This is a large send ({pendingConfirmation.recipientCount} recipients, over the {pendingConfirmation.threshold}-recipient
-              threshold). I've reviewed the template and list — send anyway.
+              threshold). I've reviewed the template and list —{' '}
+              {pendingConfirmation.scheduledAt ? 'schedule anyway.' : 'send anyway.'}
             </label>
           )}
 
           {error && <div className="mt-2 text-xs text-danger">{error}</div>}
-          <button
-            onClick={handleSend}
-            disabled={sending || !templateId || !audienceValid() || !!pendingConfirmation}
-            className="mt-3 h-9 w-full rounded-md bg-accent text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {sending ? 'Sending…' : isDryRun ? 'Send dry run' : 'Send campaign'}
-          </button>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleSaveDraft}
+              disabled={sending || !!pendingConfirmation}
+              className="h-9 flex-1 rounded-md border border-border-subtle text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save as draft
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || !templateId || !audienceValid() || !!pendingConfirmation}
+              className="h-9 flex-[2] rounded-md bg-accent text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sendLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>

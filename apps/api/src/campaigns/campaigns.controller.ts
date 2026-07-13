@@ -46,8 +46,16 @@ export class CampaignsController {
   @Post(':id/send')
   @Roles('owner', 'editor')
   async send(@Param('id') id: string, @Body() dto: SendCampaignDto, @CurrentUser() user: AuthenticatedUser) {
-    const result = await this.campaigns.send(id, dto.confirmed);
-    await this.auditLog.record(user, 'campaign.send', 'campaign', id, { confirmed: dto.confirmed ?? false });
+    const result = await this.campaigns.send(id, dto.confirmed, dto.scheduledAt);
+    await this.auditLog.record(user, 'campaign.send', 'campaign', id, { confirmed: dto.confirmed ?? false, scheduledAt: dto.scheduledAt });
+    return result;
+  }
+
+  @Post(':id/cancel-schedule')
+  @Roles('owner', 'editor')
+  async cancelSchedule(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.campaigns.cancelSchedule(id);
+    await this.auditLog.record(user, 'campaign.cancel_schedule', 'campaign', id, {});
     return result;
   }
 }

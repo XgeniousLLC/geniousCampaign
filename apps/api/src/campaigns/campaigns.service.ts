@@ -172,11 +172,26 @@ export class CampaignsService {
    * GC-053: a send above largeSendThreshold() is blocked server-side
    * (not just hidden client-side) unless `confirmed: true` is explicitly
    * passed — the UI shows the same threshold so a real admin sees the
-   * confirmation step, but the block itself doesn't trust the client. */
-  async send(id: string, confirmed = false) {
+   * confirmation step, but the block itself doesn't trust the client.
+   *
+   * GC-113: an optional future `scheduledAt` delays the same job via
+   * BullMQ's `delay` option instead of firing it immediately — status stays
+   * 'draft' the whole time (invariant 3: `CampaignSendProcessor` re-checks
+   * status==='draft' right before it actually sends, so nothing new is
+   * needed there). `scheduledAt` on the row is purely what the UI reads to
+   * show "scheduled for <time>" vs a plain untouched draft. */
+  async send(id: string, confirmed = false, scheduledAt?: string) {
     const campaign = await this.findOne(id);
     if (campaign.status !== 'draft') {
       throw new BadRequestException(`Campaign ${id} is already ${campaign.status} — cannot send again`);
+    }
+
+    let scheduledDate: Date | undefined;
+    if (scheduledAt) {
+      scheduledDate = new Date(scheduledAt);
+      if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
+        throw new BadRequestException('scheduledAt must be a valid future date');
+      }
     }
 
     const recipients = await this.resolveRecipients(campaign);
@@ -200,7 +215,36 @@ export class CampaignsService {
       });
     }
 
-    await this.queue.add('send', { campaignId: id }, { jobId: id, removeOnComplete: true, removeOnFail: 100 });
-    return { id, status: 'queued' as const };
+    await this.drizzle.db
+      .update(campaigns)
+      .set({ scheduledAt: scheduledDate ?? null, updatedAt: new Date() })
+      .where(eq(campaigns.id, id));
+
+    const delay = scheduledDate ? scheduledDate.getTime() - Date.now() : 0;
+    await this.queue.add('send', { campaignId: id }, { jobId: id, delay, removeOnComplete: true, removeOnFail: 100 });
+    return scheduledDate
+      ? { id, status: 'scheduled' as const, scheduledAt: scheduledDate.toISOString() }
+      : { id, status: 'queued' as const };
+  }
+
+  /** Cancels a pending schedule (GC-113) — removes the not-yet-fired delayed
+   * BullMQ job (jobId === campaignId, same id `send()` used) and clears
+   * scheduledAt so the campaign reverts to a plain unsent draft. Only valid
+   * while still 'draft' and actually scheduled — once the processor has
+   * picked it up (status flips to 'sending') there's nothing left to cancel. */
+  async cancelSchedule(id: string) {
+    const campaign = await this.findOne(id);
+    if (campaign.status !== 'draft' || !campaign.scheduledAt) {
+      throw new BadRequestException(`Campaign ${id} has no pending schedule to cancel`);
+    }
+
+    const job = await this.queue.getJob(id);
+    if (job) {
+      const state = await job.getState();
+      if (state === 'delayed' || state === 'waiting') await job.remove();
+    }
+
+    await this.drizzle.db.update(campaigns).set({ scheduledAt: null, updatedAt: new Date() }).where(eq(campaigns.id, id));
+    return { id, status: 'draft' as const };
   }
 }
