@@ -21,8 +21,9 @@ export class BulkVerifyProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job): Promise<BulkVerifyResult> {
-    const targets = await this.stats.listUnverifiedActiveContacts();
+  async process(job: Job<{ limit?: number }>): Promise<BulkVerifyResult> {
+    const all = await this.stats.listUnverifiedActiveContacts();
+    const targets = job.data?.limit ? all.slice(0, job.data.limit) : all;
     const result: BulkVerifyResult = { totalContacts: targets.length, checked: 0, failed: 0 };
 
     for (let i = 0; i < targets.length; i++) {

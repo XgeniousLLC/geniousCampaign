@@ -85,7 +85,18 @@ export function Verification() {
           ) : job.state === 'failed' ? (
             <span className="text-danger">Bulk verify job failed{job.failedReason ? `: ${job.failedReason}` : ''}</span>
           ) : (
-            <span className="text-text-muted">Running… ({job.state})</span>
+            <div>
+              <div className="flex items-center justify-between text-text-muted">
+                <span>Running… ({job.state})</span>
+                <span className="font-mono">{typeof job.progress === 'number' ? job.progress : 0}%</span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-border-subtle">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width]"
+                  style={{ width: `${typeof job.progress === 'number' ? job.progress : 0}%` }}
+                />
+              </div>
+            </div>
           )}
         </div>
       )}

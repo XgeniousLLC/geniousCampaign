@@ -5,6 +5,7 @@ import { LocalVerifyService } from './local-verify.service';
 import { EmailVerificationService } from './email-verification.service';
 import { VerificationStatsService } from './verification-stats.service';
 import { CheckEmailDto } from './dto/check-email.dto';
+import { BulkVerifyDto } from './dto/bulk-verify.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -43,8 +44,8 @@ export class VerificationController {
   @Post('bulk-verify')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'editor')
-  async bulkVerify() {
-    const job = await this.bulkVerifyQueue.add('bulk-verify', {});
+  async bulkVerify(@Body() dto: BulkVerifyDto) {
+    const job = await this.bulkVerifyQueue.add('bulk-verify', { limit: dto.limit });
     return { jobId: job.id };
   }
 
