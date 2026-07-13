@@ -106,6 +106,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-108 | Fix dev-environment port conflict causing Save/AI Assist 404s; add Send-test inside Preview modal | 4 | S | Done | GC-107 |
 | GC-109 | Fix AI Assist to actually rewrite template content (preserving tokens/buttons/spintax); Send-test as localStorage-backed popover | 4 | M | Done | GC-108 |
 | GC-110 | Fix aiTextToDoc parser for spintax-groups-containing-tokens; add real save toast; repair corrupted user template | 4 | S | Done | GC-109 |
+| GC-111 | Show saved AI/shuffle variants after reload; fix "Save as variant" to parse tokens/buttons/spintax correctly | 4 | S | Done | GC-110 |
 
 ---
 
@@ -1090,3 +1091,14 @@ Reported directly with a screenshot showing garbled body content — literal `{H
 **Data repair**: the user's real "Getting started guide" template (the exact one from GC-109's bug report, and the same one this report's screenshot shows) had already been saved with the garbled structure by the time this was reported. Reconstructed the original raw AI text from the corrupted row's own `bodyText` field (which had preserved the literal `{...|...}` text faithfully even though the JSON structure was broken), ran it through the *fixed* parser logic, and `PATCH`ed the real template back to the correct structure via the real API — confirmed live in the browser that both spintax groups (greeting and sign-off) now render as single interactive pills with the token embedded correctly, instead of three fragments each.
 
 Verified live: reloaded the repaired template and confirmed `Hi {{contact.firstName}} [3]` and `Ryan [3]` each render as one spintax pill (previously three broken fragments); clicked Save and confirmed the new green "Template saved." toast appears top-right. Backend: 72/72 Jest passing, `tsc --noEmit` clean on API, `tsc -b` clean on web.
+
+### GC-111 — Saved variants disappear after reload; "Save as variant" content was broken (2026-07-13)
+Reported directly: "generated a variant using AI and saved it, but after reload it's gone." Confirmed via `psql` the variant *was* actually saved (a real template row with `parentTemplateId` set) — this was a UI gap, not data loss: `SpintaxShufflePreview.tsx`'s `variants`/`aiVariant` state is ephemeral, in-memory shuffle/AI results only, and the component never fetched previously-saved variants for the current template on mount. `listTemplateVariants()` already existed in `templatesApi.ts` (used elsewhere, in `SequenceBuilder.tsx`'s picker) but was never called from the template editor page itself.
+
+Added a `useEffect` that fetches `listTemplateVariants(templateId)` on mount and after every successful save, rendering a new "Saved variants" section (name/subject, links to `/templates/:id`) below the ephemeral shuffle/AI cards — so a saved variant is now visibly persistent across reloads, not just present in the database.
+
+**Second bug found while verifying**: opening one of the actually-saved variants revealed the exact same garbled-content problem GC-110 just fixed, but through a different code path. `SpintaxShufflePreview.tsx`'s "Save as variant" used its own `bodyTextToDoc()` — a naive per-line wrapper that puts each line's raw text into a paragraph with **zero** inline parsing (no tokens, no buttons, no spintax at all, not even GC-110's bug-prone version — this one didn't attempt any of it). Replaced it with the already-correct `aiTextToDoc` from GC-110 (same scanner-based parser, now shared by both the AI Assist "Replace content" flow and this "Save as variant" flow) — one parser, one place it can go wrong, not two.
+
+**Data repair**: both of the user's two existing saved variants under "Getting started guide" (created during GC-109/110's live testing, which is what surfaced this) had been saved with the broken structure — reconstructed each from its own `bodyText` field and `PATCH`ed the corrected `bodyJson` back via the real API, same technique as GC-110's repair.
+
+Verified live: reloaded the "Getting started guide" template and confirmed both saved variants now list under a "Saved variants" section in the side panel; clicked one and confirmed it opens the correct template (`/templates/:id`); confirmed both repaired variants render their spintax groups as single interactive pills with tokens embedded correctly (previously garbled) and the CTA button as a real button. Backend: 72/72 Jest passing, `tsc --noEmit` clean on API, `tsc -b` clean on web.

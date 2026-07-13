@@ -1,25 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { renderBodyText, resolveSpintax, type ProseMirrorNode } from '@genius-campaign/shared';
-import { createTemplate } from '../lib/templatesApi';
+import { createTemplate, listTemplateVariants, type Template } from '../lib/templatesApi';
 import { generateAiCopy } from '../lib/aiAssistApi';
+import { aiTextToDoc } from '../lib/aiTextToDoc';
 
 const VARIANT_COUNT = 3;
 
 interface Variant {
   subject: string;
   body: string;
-}
-
-function bodyTextToDoc(bodyText: string): Record<string, unknown> {
-  const lines = bodyText.split('\n');
-  return {
-    type: 'doc',
-    content: lines.map((line) => ({
-      type: 'paragraph',
-      content: line ? [{ type: 'text', text: line }] : [],
-    })),
-  };
 }
 
 // The AI endpoint returns free text — ask it for a fixed SUBJECT:/BODY:
@@ -94,6 +85,20 @@ export function SpintaxShufflePreview({
   const [aiError, setAiError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [savedVariants, setSavedVariants] = useState<Template[]>([]);
+
+  // Variants saved earlier (this session or a prior one) are real template
+  // rows — without this fetch, reloading the page loses them from view
+  // entirely, since `variants`/`aiVariant` above are ephemeral, in-memory
+  // shuffle/AI results only. Refetched after a new save too.
+  function loadSavedVariants() {
+    if (!templateId) return;
+    listTemplateVariants(templateId).then(setSavedVariants);
+  }
+
+  useEffect(() => {
+    loadSavedVariants();
+  }, [templateId]);
 
   function currentBodyText() {
     if (!editor) return '';
@@ -133,10 +138,11 @@ export function SpintaxShufflePreview({
       await createTemplate({
         name: `${templateName} — ${label}`,
         subject: variant.subject,
-        bodyJson: bodyTextToDoc(variant.body),
+        bodyJson: aiTextToDoc(variant.body),
         parentTemplateId: templateId,
       });
       setSavedKeys((s) => new Set(s).add(saveKey));
+      loadSavedVariants();
     } finally {
       setSavingKey(null);
     }
@@ -195,6 +201,27 @@ export function SpintaxShufflePreview({
           />
         ))}
       </div>
+
+      {savedVariants.length > 0 && (
+        <div className="border-t border-border-default p-3">
+          <div className="mb-2 px-1 text-[11px] uppercase tracking-wide text-text-meta">Saved variants</div>
+          <div className="flex flex-col gap-1.5">
+            {savedVariants.map((v) => (
+              <Link
+                key={v.id}
+                to={`/templates/${v.id}`}
+                className="flex items-center justify-between rounded-md border border-border-subtle bg-panel px-3 py-2 hover:bg-raised"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium text-text-secondary">{v.name}</div>
+                  <div className="truncate text-[11px] text-text-faint">{v.subject || '(no subject)'}</div>
+                </div>
+                <span className="shrink-0 text-[10.5px] text-text-faint">Open →</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
