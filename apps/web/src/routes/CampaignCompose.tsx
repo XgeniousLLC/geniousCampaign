@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { createCampaign, sendCampaign, type Campaign, type CampaignAudienceType } from '../lib/campaignsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, listContactsForList, listContactsForTag, createList, createTag, listTags, listContacts, type List, type Tag, type Contact } from '../lib/contactsApi';
+import { DateTimePicker } from '../components/DateTimePicker';
 
 const AUDIENCE_TABS: { value: CampaignAudienceType; label: string }[] = [
   { value: 'list', label: 'List' },
@@ -13,15 +14,6 @@ const AUDIENCE_TABS: { value: CampaignAudienceType; label: string }[] = [
 function defaultCampaignName(): string {
   const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return `Campaign — ${date}`;
-}
-
-// Earliest selectable value for the schedule <input type="datetime-local">,
-// in the browser's local time — a minute of slack so "now" doesn't
-// immediately fail the future-only validation on submit.
-function scheduleMin(): string {
-  const d = new Date(Date.now() + 60_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 async function uniqueContactCountAcrossLists(listIds: string[]): Promise<Set<string>> {
@@ -47,7 +39,7 @@ export function CampaignCompose() {
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [isDryRun, setIsDryRun] = useState(true);
   const [isScheduled, setIsScheduled] = useState(false);
-  const [scheduleAt, setScheduleAt] = useState('');
+  const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [sendToEmail, setSendToEmail] = useState('');
   const [newListName, setNewListName] = useState('');
   const [newTagName, setNewTagName] = useState('');
@@ -200,16 +192,15 @@ export function CampaignCompose() {
     if (!requireBasics()) return;
     let scheduledAtIso: string | undefined;
     if (isScheduled) {
-      if (!scheduleAt) {
+      if (!scheduleDate) {
         setError('Pick a date and time to schedule.');
         return;
       }
-      const date = new Date(scheduleAt);
-      if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) {
+      if (scheduleDate.getTime() <= Date.now()) {
         setError('Scheduled time must be in the future.');
         return;
       }
-      scheduledAtIso = date.toISOString();
+      scheduledAtIso = scheduleDate.toISOString();
     }
     setSending(true);
     try {
@@ -508,13 +499,9 @@ export function CampaignCompose() {
             </button>
           </div>
           {isScheduled && (
-            <input
-              type="datetime-local"
-              value={scheduleAt}
-              min={scheduleMin()}
-              onChange={(e) => setScheduleAt(e.target.value)}
-              className="mb-1 h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary"
-            />
+            <div className="mb-1">
+              <DateTimePicker value={scheduleDate} onChange={setScheduleDate} min={new Date(Date.now() + 60_000)} />
+            </div>
           )}
 
           {pendingConfirmation && (
