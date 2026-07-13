@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Editor } from '@tiptap/react';
 import { useImageUpload } from '../lib/useImageUpload';
 import { AiAssistModal } from './AiAssistModal';
+import { PromptDialog } from './PromptDialog';
 import {
   BoldIcon,
   ItalicIcon,
@@ -69,6 +70,8 @@ function ToolbarDivider() {
 export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [tokenOpen, setTokenOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [buttonDialogOpen, setButtonDialogOpen] = useState(false);
   const { inputRef, uploading, error, openFilePicker, handleFileChange } = useImageUpload(editor);
 
   if (!editor) return null;
@@ -157,30 +160,13 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
 
       <ToolbarDivider />
 
-      <ToolbarButton
-        title="Link"
-        active={editor.isActive('link')}
-        onClick={() => {
-          const url = window.prompt('URL');
-          if (url) editor.chain().focus().setLink({ href: url }).run();
-          else editor.chain().focus().unsetLink().run();
-        }}
-      >
+      <ToolbarButton title="Link" active={editor.isActive('link')} onClick={() => setLinkDialogOpen(true)}>
         <LinkIcon />
       </ToolbarButton>
       <ToolbarButton title="Insert image" onClick={openFilePicker}>
         {uploading ? '…' : <ImageIcon />}
       </ToolbarButton>
-      <ToolbarButton
-        title="Insert button"
-        onClick={() => {
-          const text = window.prompt('Button text', 'Click here');
-          if (text === null) return;
-          const href = window.prompt('Button URL', 'https://');
-          if (href === null) return;
-          editor.chain().focus().insertCtaButton({ text, href }).run();
-        }}
-      >
+      <ToolbarButton title="Insert button" onClick={() => setButtonDialogOpen(true)}>
         <CtaButtonIcon />
       </ToolbarButton>
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleFileChange} />
@@ -239,6 +225,41 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
           onInsert={(text) => {
             editor.chain().focus().insertContent(text).run();
             setAiOpen(false);
+          }}
+        />
+      )}
+      {linkDialogOpen && (
+        <PromptDialog
+          title="Link"
+          submitLabel={editor.isActive('link') ? 'Update' : 'Insert'}
+          fields={[{ key: 'url', label: 'URL', placeholder: 'https://', defaultValue: (editor.getAttributes('link').href as string) ?? '' }]}
+          onClose={() => setLinkDialogOpen(false)}
+          onSubmit={({ url }) => {
+            if (url) editor.chain().focus().setLink({ href: url }).run();
+            setLinkDialogOpen(false);
+          }}
+          onRemove={
+            editor.isActive('link')
+              ? () => {
+                  editor.chain().focus().unsetLink().run();
+                  setLinkDialogOpen(false);
+                }
+              : undefined
+          }
+        />
+      )}
+      {buttonDialogOpen && (
+        <PromptDialog
+          title="Insert button"
+          submitLabel="Insert"
+          fields={[
+            { key: 'text', label: 'Button text', defaultValue: 'Click here' },
+            { key: 'href', label: 'Button URL', placeholder: 'https://' },
+          ]}
+          onClose={() => setButtonDialogOpen(false)}
+          onSubmit={({ text, href }) => {
+            editor.chain().focus().insertCtaButton({ text, href }).run();
+            setButtonDialogOpen(false);
           }}
         />
       )}

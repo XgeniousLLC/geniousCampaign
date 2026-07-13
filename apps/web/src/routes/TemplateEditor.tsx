@@ -10,8 +10,10 @@ import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
+import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
 
 const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] };
 
@@ -25,6 +27,7 @@ export function TemplateEditor() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [loaded, setLoaded] = useState(isNew);
+  const [showLibrary, setShowLibrary] = useState(isNew);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   const editor = useEditor({
@@ -68,12 +71,22 @@ export function TemplateEditor() {
     }
   }
 
+  function applyLibraryTemplate(t: LibraryTemplate) {
+    setName(t.name);
+    setSubject(t.subject);
+    editor?.commands.setContent(t.bodyJson);
+    setShowLibrary(false);
+  }
+
   if (!loaded) {
     return <div className="text-sm text-text-muted">Loading template…</div>;
   }
 
   return (
     <div className="grid grid-cols-[1fr_320px] items-start gap-4">
+      {showLibrary && canWrite && (
+        <TemplateLibraryModal onPick={applyLibraryTemplate} onBlank={() => setShowLibrary(false)} />
+      )}
       <div className="flex flex-col rounded-md border border-border-default bg-panel">
         <div className="flex items-center justify-between gap-4 border-b border-border-default px-5 py-3">
           <input

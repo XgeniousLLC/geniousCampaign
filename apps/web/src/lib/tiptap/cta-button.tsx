@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
+import { PromptDialog } from '../../components/PromptDialog';
 
 export interface CtaButtonOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -20,16 +22,9 @@ const BUTTON_STYLE =
   'display:inline-block;padding:10px 22px;background:#6366F1;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px';
 
 function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
+  const [editing, setEditing] = useState(false);
   const text = (node.attrs.text as string) ?? 'Click here';
   const href = (node.attrs.href as string) ?? '#';
-
-  function edit() {
-    const newText = window.prompt('Button text', text);
-    if (newText === null) return;
-    const newHref = window.prompt('Button URL', href);
-    if (newHref === null) return;
-    updateAttributes({ text: newText, href: newHref });
-  }
 
   return (
     <NodeViewWrapper as="div" contentEditable={false} className="my-1">
@@ -37,7 +32,7 @@ function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
         href={href}
         onClick={(e) => {
           e.preventDefault();
-          edit();
+          setEditing(true);
         }}
         title="Click to edit button text/URL"
         style={{ cursor: 'pointer' }}
@@ -45,6 +40,21 @@ function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
       >
         {text}
       </a>
+      {editing && (
+        <PromptDialog
+          title="Edit button"
+          submitLabel="Save"
+          fields={[
+            { key: 'text', label: 'Button text', defaultValue: text },
+            { key: 'href', label: 'Button URL', defaultValue: href },
+          ]}
+          onClose={() => setEditing(false)}
+          onSubmit={(values) => {
+            updateAttributes({ text: values.text, href: values.href });
+            setEditing(false);
+          }}
+        />
+      )}
     </NodeViewWrapper>
   );
 }
