@@ -94,6 +94,8 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-096 | Prevent a user from changing their own role (self-demotion/lockout guard) | 4 | S | Done | GC-011 (auth) |
 | GC-097 | CSV import rebuild: arbitrary column mapping, real-time progress, invalid/duplicate counts, list/tag pick-or-create | 4 | L | Done | GC-012 |
 | GC-098 | "by xgenious.com" tagline: link to https://xgenious.com, new tab | 4 | S | Done | GC-094 |
+| GC-099 | Settings notice box: fix to green success styling | 4 | S | Done | GC-080 |
+| GC-100 | Debug log: capture unexpected frontend/backend errors, new Settings tab | 4 | M | Done | GC-071 |
 
 ---
 
@@ -955,5 +957,19 @@ Verified live at both small and large scale, not just compiled. **Small scale, t
 
 ### GC-098 — "by xgenious.com" tagline is now a real link (2026-07-13)
 The "by xgenious.com" tagline added in GC-094 (sidebar header, login page, About page) was plain text. Made it a real `<a href="https://xgenious.com" target="_blank" rel="noreferrer">` in all three places, consistent with the existing xgenious.com links already on the About page and in the footer.
+
+### GC-099 — Settings notice box: green success styling (2026-07-13)
+Reported directly with a screenshot: the "Saved {category}." notice shown after saving a Settings > Integrations category used a neutral `border-border-strong`/`bg-panel` style — same visual weight as an error or informational message, no indication it was a success. Changed to the same green success treatment already used elsewhere in this app (e.g. GC-077's "own AWS credentials" badge): `border-success/25 bg-success/10 text-success`, with the "Dismiss" button tinted to match.
+
+Verified live: saved the Cloudflare R2 category and confirmed the notice now renders in green.
+
+### GC-100 — Debug log: catch unexpected errors, new Settings tab (2026-07-13)
+Sharifur asked for a debug log page that catches all errors. Built real error capture end to end rather than just a UI shell — both directions (backend and frontend), landing in one new `error_logs` table, viewable in a new Settings > Debug log tab (owner-only, matching Audit log/Integrations' existing visibility gating).
+
+**Backend**: new `error_logs` table (`source: 'frontend'|'backend'`, `message`, `stack`, `path`, `context` jsonb, `createdAt`) and a `debug-log` module. A global `AllExceptionsFilter` (registered via `APP_FILTER`, catches everything uncaught anywhere in the app) logs to it — but deliberately **only** for genuinely unexpected errors: anything that isn't a NestJS `HttpException`, or an `HttpException` with a 5xx status. Routine `HttpException`s controllers throw on purpose (400 validation, 401/403 auth, 404 not-found, 409 conflict) pass through completely unchanged and are never logged, so the debug log stays a signal of real bugs instead of filling up with ordinary "email already exists" responses. `POST /debug-log` (the ingestion endpoint frontend errors report to) is deliberately ungated — an error can happen on the login page itself, before any token exists — while `GET /debug-log` (the paginated read used by the Settings tab) is owner-only, matching Audit log's existing gating, since stack traces can reveal internals.
+
+**Frontend**: two capture paths feed the same endpoint. `main.tsx` registers `window.addEventListener('error', ...)` and `('unhandledrejection', ...)` for plain runtime errors and rejected promises anywhere in the app; a new `ErrorBoundary` class component (React requires a class-based boundary — `window.onerror` doesn't catch render-time errors) wraps the whole `<App/>` tree and shows a real fallback UI ("Something went wrong" + Reload button) instead of a blank white screen on an uncaught render error. Both paths call a new `reportError()` in `lib/debugLogApi.ts` — deliberately bypasses the normal `apiPost` helper and swallows its own failures, since error-reporting must never itself throw (that would recurse) and must work pre-authentication. New Settings tab lists entries with a source badge (frontend=warning color, backend=danger color, since an uncaught backend exception is a more serious signal than a frontend render glitch), message, path, and timestamp, click-to-expand for the full stack trace — same `PaginationBar`/`Page<T>` envelope pattern as Audit log/Suppression list/Email log (GC-083/084/085).
+
+Verified live end-to-end, not just compiled: triggered a real unexpected backend error (`GET /lists/not-a-real-uuid` — a malformed UUID reaching the DB query layer, genuinely uncaught) and confirmed it landed in `error_logs` with the full real stack trace, while a routine 404 (`GET /lists/<valid-but-nonexistent-uuid>`) correctly did **not** get logged — proving the 5xx-only filter works as designed. In Chrome, opened the real Settings > Debug log tab and saw that backend error rendered with its stack trace expandable on click; then triggered a real uncaught frontend error via a thrown exception in the browser console and confirmed it appeared in the same tab tagged `frontend` with the correct page path, moments after being thrown — proving the `window.onerror` path also works live, not just in code review. Cleaned up the test log rows afterward. Backend: 72/72 Jest passing, `tsc --noEmit` clean on the API, `tsc -b` (the real build-mode check, per the lesson learned last session) clean on the web app.
 
 Verified: `tsc --noEmit` clean on both apps, 72/72 Jest passing (no backend touched by this change).

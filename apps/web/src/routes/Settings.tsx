@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { listUsers, updateUserRole, type User } from '../lib/usersApi';
 import { listAuditLog, type AuditLogEntry } from '../lib/auditLogApi';
 import { listSuppressionList, type SuppressionEntry } from '../lib/suppressionApi';
+import { listDebugLog, type ErrorLogEntry } from '../lib/debugLogApi';
 import { getIntegrationSettings, updateIntegrationSettings, clearIntegrationSetting, type SettingCategory } from '../lib/settingsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon } from '../components/icons';
@@ -10,7 +11,7 @@ import { AddMemberModal } from '../components/AddMemberModal';
 
 const LOG_PAGE_SIZE = 20;
 
-const TABS = ['Members', 'Audit log', 'Suppression list', 'Integrations'] as const;
+const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'Integrations'] as const;
 type Tab = (typeof TABS)[number];
 
 // Selectable models per LLM provider for Settings > Integrations > AI-assisted
@@ -45,6 +46,10 @@ export function Settings() {
   const [suppression, setSuppression] = useState<SuppressionEntry[]>([]);
   const [suppressionPage, setSuppressionPage] = useState(1);
   const [suppressionTotal, setSuppressionTotal] = useState(0);
+  const [debugLog, setDebugLog] = useState<ErrorLogEntry[]>([]);
+  const [debugPage, setDebugPage] = useState(1);
+  const [debugTotal, setDebugTotal] = useState(0);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const isOwner = useAuthStore((s) => s.user?.role === 'owner');
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -71,6 +76,15 @@ export function Settings() {
     }
   }, [tab, suppressionPage]);
 
+  useEffect(() => {
+    if (tab === 'Debug log') {
+      listDebugLog(debugPage, LOG_PAGE_SIZE).then((res) => {
+        setDebugLog(res.data);
+        setDebugTotal(res.total);
+      });
+    }
+  }, [tab, debugPage]);
+
   async function handleRoleChange(userId: string, role: User['role']) {
     await updateUserRole(userId, role);
     listUsers().then(setUsers);
@@ -84,7 +98,7 @@ export function Settings() {
       </div>
 
       <div className="mb-[18px] flex gap-5 border-b border-border-default">
-        {TABS.filter((t) => t !== 'Integrations' || isOwner).map((t) => (
+        {TABS.filter((t) => (t !== 'Integrations' && t !== 'Debug log') || isOwner).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -209,6 +223,42 @@ export function Settings() {
         </div>
       )}
 
+      {tab === 'Debug log' && isOwner && (
+        <div className="max-w-3xl overflow-hidden rounded-md border border-border-default bg-panel">
+          <div className="border-b border-border-default px-4 py-3 text-sm font-semibold text-text-primary">
+            Debug log · {debugTotal} errors
+          </div>
+          {debugLog.map((e) => (
+            <div key={e.id} className="border-t border-border-subtle first:border-t-0">
+              <button
+                onClick={() => setExpandedLogId((id) => (id === e.id ? null : e.id))}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-raised"
+              >
+                <span
+                  className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${
+                    e.source === 'backend' ? 'border-danger/25 bg-danger/10 text-danger' : 'border-warning/25 bg-warning/10 text-warning'
+                  }`}
+                >
+                  {e.source}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs text-text-secondary">{e.message}</div>
+                  {e.path && <div className="truncate font-mono text-[10.5px] text-text-faint">{e.path}</div>}
+                </div>
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-text-faint">{new Date(e.createdAt).toLocaleString()}</span>
+              </button>
+              {expandedLogId === e.id && e.stack && (
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-border-subtle bg-surface px-4 py-3 text-[10.5px] leading-relaxed text-text-faint">
+                  {e.stack}
+                </pre>
+              )}
+            </div>
+          ))}
+          {debugLog.length === 0 && <div className="px-4 py-6 text-center text-xs text-text-muted">No errors logged — good sign.</div>}
+          {debugTotal > 0 && <PaginationBar page={debugPage} limit={LOG_PAGE_SIZE} total={debugTotal} onPageChange={setDebugPage} />}
+        </div>
+      )}
+
       {tab === 'Integrations' && isOwner && <IntegrationsPanel />}
     </div>
   );
@@ -278,9 +328,9 @@ function IntegrationsPanel() {
       </p>
 
       {notice && (
-        <div className="mb-3 flex items-center justify-between rounded-md border border-border-strong bg-panel px-3 py-2 text-xs text-text-secondary">
+        <div className="mb-3 flex items-center justify-between rounded-md border border-success/25 bg-success/10 px-3 py-2 text-xs text-success">
           {notice}
-          <button onClick={() => setNotice(null)} className="text-text-faint hover:text-text-primary">
+          <button onClick={() => setNotice(null)} className="text-success/70 hover:text-success">
             Dismiss
           </button>
         </div>

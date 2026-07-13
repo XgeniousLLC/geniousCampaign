@@ -169,6 +169,13 @@
       "when": 1783914841005,
       "tag": "0023_regular_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783937114493,
+      "tag": "0024_cuddly_absorbing_man",
+      "breakpoints": true
     }
   ]
 }

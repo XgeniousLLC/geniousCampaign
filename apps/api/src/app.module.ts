@@ -30,6 +30,7 @@ import { EmailLogModule } from './email-log/email-log.module';
 import { AiAssistModule } from './ai-assist/ai-assist.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
 import { SettingsModule } from './settings/settings.module';
+import { DebugLogModule } from './debug-log/debug-log.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { SettingsModule } from './settings/settings.module';
     AiAssistModule,
     PasswordResetModule,
     SettingsModule,
+    DebugLogModule,
   ],
 })
 export class AppModule {}
