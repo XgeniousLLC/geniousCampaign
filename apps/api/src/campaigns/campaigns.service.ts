@@ -26,23 +26,30 @@ export class CampaignsService {
     return Number(this.config.get<string>('LARGE_SEND_THRESHOLD') ?? DEFAULT_LARGE_SEND_THRESHOLD);
   }
 
-  /** GC-070 — a campaign targets a list, a set of tags (any-match), or a
-   * hand-picked set of contacts. Exactly one of listId/tagIds/contactIds is
-   * populated, matching audienceType — validated here rather than as a DB
-   * constraint, so the error is a clear 400 at create time. */
+  /** GC-070 — a campaign targets a list (or several, unioned), a set of tags
+   * (any-match), or a hand-picked set of contacts. Exactly one of
+   * listIds/tagIds/contactIds is populated, matching audienceType —
+   * validated here rather than as a DB constraint, so the error is a clear
+   * 400 at create time. excludeListIds (GC-112) is independent of
+   * audienceType — it's a subtraction applied in resolveRecipients()
+   * regardless of how the base recipient set was built. */
   async create(dto: CreateCampaignDto, db: DbOrTx = this.drizzle.db) {
     const template = await db.query.templates.findFirst({ where: eq(templates.id, dto.templateId) });
     if (!template) throw new NotFoundException(`Template ${dto.templateId} not found`);
 
     const audienceType = dto.audienceType ?? 'list';
     if (audienceType === 'list') {
-      if (!dto.listId) throw new BadRequestException('listId is required when audienceType is "list"');
-      const list = await db.query.lists.findFirst({ where: eq(lists.id, dto.listId) });
-      if (!list) throw new NotFoundException(`List ${dto.listId} not found`);
+      if (!dto.listIds?.length) throw new BadRequestException('listIds is required when audienceType is "list"');
+      const found = await db.query.lists.findMany({ where: inArray(lists.id, dto.listIds) });
+      if (found.length !== dto.listIds.length) throw new NotFoundException('One or more selected lists were not found');
     } else if (audienceType === 'tags') {
       if (!dto.tagIds?.length) throw new BadRequestException('tagIds is required when audienceType is "tags"');
     } else if (audienceType === 'contacts') {
       if (!dto.contactIds?.length) throw new BadRequestException('contactIds is required when audienceType is "contacts"');
+    }
+    if (dto.excludeListIds?.length) {
+      const found = await db.query.lists.findMany({ where: inArray(lists.id, dto.excludeListIds) });
+      if (found.length !== dto.excludeListIds.length) throw new NotFoundException('One or more excluded lists were not found');
     }
 
     const [created] = await db
@@ -51,9 +58,10 @@ export class CampaignsService {
         name: dto.name,
         templateId: dto.templateId,
         audienceType,
-        listId: audienceType === 'list' ? dto.listId : undefined,
+        listIds: audienceType === 'list' ? dto.listIds : undefined,
         tagIds: audienceType === 'tags' ? dto.tagIds : undefined,
         contactIds: audienceType === 'contacts' ? dto.contactIds : undefined,
+        excludeListIds: dto.excludeListIds?.length ? dto.excludeListIds : undefined,
         isDryRun: dto.isDryRun ?? false,
         sendToEmail: dto.sendToEmail,
       })
@@ -66,25 +74,42 @@ export class CampaignsService {
    * (`CampaignSendProcessor`) get their contacts from, so "how many
    * recipients" (GC-050/053) never disagrees with "who actually gets sent
    * to." Tag audience is any-match (a contact with ANY selected tag
-   * qualifies), matching the design's own copy. */
+   * qualifies), matching the design's own copy. List audience unions
+   * multiple lists (GC-112) — a contact in more than one selected list is
+   * still counted once. excludeListIds (GC-112) is then subtracted from
+   * whatever the base set was, regardless of audienceType. */
   async resolveRecipients(campaign: typeof campaigns.$inferSelect): Promise<{ contact: typeof contacts.$inferSelect }[]> {
+    let recipients: { contact: typeof contacts.$inferSelect }[];
+
     if (campaign.audienceType === 'tags') {
       const tagIds = campaign.tagIds ?? [];
-      if (tagIds.length === 0) return [];
-      return this.drizzle.db
-        .selectDistinct({ contact: contacts })
-        .from(contactTags)
-        .innerJoin(contacts, eq(contactTags.contactId, contacts.id))
-        .where(inArray(contactTags.tagId, tagIds));
-    }
-    if (campaign.audienceType === 'contacts') {
+      recipients = tagIds.length
+        ? await this.drizzle.db
+            .selectDistinct({ contact: contacts })
+            .from(contactTags)
+            .innerJoin(contacts, eq(contactTags.contactId, contacts.id))
+            .where(inArray(contactTags.tagId, tagIds))
+        : [];
+    } else if (campaign.audienceType === 'contacts') {
       const contactIds = campaign.contactIds ?? [];
-      if (contactIds.length === 0) return [];
-      const rows = await this.drizzle.db.select().from(contacts).where(inArray(contacts.id, contactIds));
-      return rows.map((contact) => ({ contact }));
+      const rows = contactIds.length ? await this.drizzle.db.select().from(contacts).where(inArray(contacts.id, contactIds)) : [];
+      recipients = rows.map((contact) => ({ contact }));
+    } else {
+      const listIds = campaign.listIds ?? [];
+      const byContactId = new Map<string, { contact: typeof contacts.$inferSelect }>();
+      for (const rows of await Promise.all(listIds.map((id) => this.lists.listContacts(id)))) {
+        for (const row of rows) byContactId.set(row.contact.id, row);
+      }
+      recipients = [...byContactId.values()];
     }
-    if (!campaign.listId) return [];
-    return this.lists.listContacts(campaign.listId);
+
+    const excludeListIds = campaign.excludeListIds ?? [];
+    if (excludeListIds.length === 0) return recipients;
+    const excludedIds = new Set<string>();
+    for (const rows of await Promise.all(excludeListIds.map((id) => this.lists.listContacts(id)))) {
+      for (const row of rows) excludedIds.add(row.contact.id);
+    }
+    return recipients.filter((r) => !excludedIds.has(r.contact.id));
   }
 
   /** Campaigns list screen (design: Sent/Open/Click columns) needs real

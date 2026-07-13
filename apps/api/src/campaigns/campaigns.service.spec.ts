@@ -54,7 +54,7 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
   });
 
   afterAll(async () => {
-    await drizzle.db.delete(campaigns).where(eq(campaigns.listId, listId));
+    await drizzle.db.delete(campaigns).where(eq(campaigns.templateId, templateId));
     await drizzle.db.delete(contactLists).where(eq(contactLists.listId, listId));
     await drizzle.db.delete(lists).where(eq(lists.id, listId));
     await drizzle.db.delete(templates).where(eq(templates.id, templateId));
@@ -62,7 +62,7 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
   });
 
   it('blocks a send above the threshold server-side without confirmed:true, and never enqueues a job', async () => {
-    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Unconfirmed large send', templateId, listId }).returning();
+    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Unconfirmed large send', templateId, listIds: [listId] }).returning();
 
     const result = await service.send(campaign.id);
     expect(result).toEqual({ id: campaign.id, status: 'confirmation_required', recipientCount: 5, threshold: 3 });
@@ -72,7 +72,7 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
   });
 
   it('proceeds once confirmed:true is explicitly passed', async () => {
-    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Confirmed large send', templateId, listId }).returning();
+    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Confirmed large send', templateId, listIds: [listId] }).returning();
 
     const result = await service.send(campaign.id, true);
     expect(result).toEqual({ id: campaign.id, status: 'queued' });

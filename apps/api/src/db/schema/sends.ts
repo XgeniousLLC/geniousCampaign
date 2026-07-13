@@ -1,7 +1,6 @@
 import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { contacts } from './contacts';
 import { templates } from './templates';
-import { lists } from './lists';
 import { sequences, sequenceSteps } from './sequences';
 import { sequenceEnrollments } from './enrollments';
 
@@ -19,8 +18,13 @@ export const campaigns = pgTable('campaigns', {
     .notNull()
     .references(() => templates.id, { onDelete: 'restrict' }),
   audienceType: campaignAudienceTypeEnum('audience_type').notNull().default('list'),
-  // Only one of these three is ever set, matching audienceType.
-  listId: uuid('list_id').references(() => lists.id, { onDelete: 'restrict' }),
+  // Only one of listIds/tagIds/contactIds is ever set, matching audienceType.
+  // GC-112 — listIds is an array (was a single listId) so "list" audience
+  // can target several lists at once (union). excludeListIds applies
+  // independent of audienceType — contacts in any excluded list are removed
+  // from the resolved recipient set regardless of how it was built.
+  listIds: uuid('list_ids').array(),
+  excludeListIds: uuid('exclude_list_ids').array(),
   tagIds: uuid('tag_ids').array(),
   contactIds: uuid('contact_ids').array(),
   status: campaignStatusEnum('status').notNull().default('draft'),

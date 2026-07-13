@@ -10,7 +10,8 @@ export interface Campaign {
   name: string;
   templateId: string;
   audienceType: CampaignAudienceType;
-  listId: string | null;
+  listIds: string[] | null;
+  excludeListIds: string[] | null;
   tagIds: string[] | null;
   contactIds: string[] | null;
   status: CampaignStatus;
@@ -62,7 +63,8 @@ export function createCampaign(input: {
   name: string;
   templateId: string;
   audienceType?: CampaignAudienceType;
-  listId?: string;
+  listIds?: string[];
+  excludeListIds?: string[];
   tagIds?: string[];
   contactIds?: string[];
   isDryRun?: boolean;

@@ -10,19 +10,31 @@ const AUDIENCE_TABS: { value: CampaignAudienceType; label: string }[] = [
   { value: 'contacts', label: 'Individual contacts' },
 ];
 
+function defaultCampaignName(): string {
+  const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `Campaign — ${date}`;
+}
+
+async function uniqueContactCountAcrossLists(listIds: string[]): Promise<Set<string>> {
+  const results = await Promise.all(listIds.map((id) => listContactsForList(id)));
+  return new Set(results.flat().map((r) => r.contact.id));
+}
+
 export function CampaignCompose() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(defaultCampaignName);
   const [templateId, setTemplateId] = useState('');
   const [audienceType, setAudienceType] = useState<CampaignAudienceType>('list');
-  const [listId, setListId] = useState('');
+  const [listIds, setListIds] = useState<string[]>([]);
+  const [excludeListIds, setExcludeListIds] = useState<string[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [contactSearch, setContactSearch] = useState('');
+  const [contactFilterTagIds, setContactFilterTagIds] = useState<string[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [isDryRun, setIsDryRun] = useState(true);
   const [sendToEmail, setSendToEmail] = useState('');
@@ -40,47 +52,62 @@ export function CampaignCompose() {
     });
     listLists().then((l) => {
       setLists(l);
-      if (l.length > 0) setListId(l[0].id);
+      if (l.length > 0) setListIds([l[0].id]);
     });
     listTags().then(setTags);
     listContacts().then(setAllContacts);
   }, []);
 
   useEffect(() => {
-    if (audienceType === 'list') {
-      if (!listId) {
-        setRecipientCount(null);
-        return;
+    let cancelled = false;
+    async function compute() {
+      let ids: Set<string>;
+      if (audienceType === 'list') {
+        if (listIds.length === 0) {
+          if (!cancelled) setRecipientCount(null);
+          return;
+        }
+        ids = await uniqueContactCountAcrossLists(listIds);
+      } else if (audienceType === 'tags') {
+        if (selectedTagIds.length === 0) {
+          if (!cancelled) setRecipientCount(0);
+          return;
+        }
+        const results = await Promise.all(selectedTagIds.map((id) => listContactsForTag(id)));
+        ids = new Set(results.flat().map((r) => r.contact.id));
+      } else {
+        ids = new Set(selectedContactIds);
       }
-      listContactsForList(listId).then((rows) => setRecipientCount(rows.length));
-    } else if (audienceType === 'tags') {
-      if (selectedTagIds.length === 0) {
-        setRecipientCount(0);
-        return;
+      if (excludeListIds.length > 0) {
+        const excluded = await uniqueContactCountAcrossLists(excludeListIds);
+        for (const id of excluded) ids.delete(id);
       }
-      Promise.all(selectedTagIds.map((id) => listContactsForTag(id))).then((results) => {
-        const uniqueContactIds = new Set(results.flat().map((r) => r.contact.id));
-        setRecipientCount(uniqueContactIds.size);
-      });
-    } else {
-      setRecipientCount(selectedContactIds.length);
+      if (!cancelled) setRecipientCount(ids.size);
     }
-  }, [audienceType, listId, selectedTagIds, selectedContactIds]);
+    compute();
+    return () => {
+      cancelled = true;
+    };
+  }, [audienceType, listIds, excludeListIds, selectedTagIds, selectedContactIds]);
 
   const selectedTemplate = templates.find((t) => t.id === templateId);
-  const filteredContacts = useMemo(
-    () =>
-      contactSearch.trim()
-        ? allContacts.filter((c) => `${c.email} ${c.firstName ?? ''} ${c.lastName ?? ''}`.toLowerCase().includes(contactSearch.toLowerCase()))
-        : allContacts,
-    [allContacts, contactSearch],
-  );
+  const filteredContacts = useMemo(() => {
+    let result = allContacts;
+    if (contactFilterTagIds.length > 0) {
+      result = result.filter((c) => (c.tags ?? []).some((t) => contactFilterTagIds.includes(t.id)));
+    }
+    if (contactSearch.trim()) {
+      const q = contactSearch.toLowerCase();
+      result = result.filter((c) => `${c.email} ${c.firstName ?? ''} ${c.lastName ?? ''}`.toLowerCase().includes(q));
+    }
+    return result;
+  }, [allContacts, contactSearch, contactFilterTagIds]);
 
   async function handleCreateList() {
     if (!newListName.trim()) return;
     const created = await createList({ name: newListName.trim() });
     setLists((prev) => [...prev, created]);
-    setListId(created.id);
+    setListIds((prev) => [...prev, created.id]);
     setNewListName('');
   }
 
@@ -92,8 +119,20 @@ export function CampaignCompose() {
     setNewTagName('');
   }
 
+  function toggleListId(id: string) {
+    setListIds((prev) => (prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]));
+  }
+
+  function toggleExcludeListId(id: string) {
+    setExcludeListIds((prev) => (prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]));
+  }
+
   function toggleTag(id: string) {
     setSelectedTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  }
+
+  function toggleContactFilterTag(id: string) {
+    setContactFilterTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   }
 
   function toggleContact(id: string) {
@@ -101,7 +140,7 @@ export function CampaignCompose() {
   }
 
   function audienceValid() {
-    if (audienceType === 'list') return !!listId;
+    if (audienceType === 'list') return listIds.length > 0;
     if (audienceType === 'tags') return selectedTagIds.length > 0;
     return selectedContactIds.length > 0;
   }
@@ -118,7 +157,8 @@ export function CampaignCompose() {
         name: name.trim(),
         templateId,
         audienceType,
-        listId: audienceType === 'list' ? listId : undefined,
+        listIds: audienceType === 'list' ? listIds : undefined,
+        excludeListIds: excludeListIds.length > 0 ? excludeListIds : undefined,
         tagIds: audienceType === 'tags' ? selectedTagIds : undefined,
         contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
         isDryRun,
@@ -201,14 +241,14 @@ export function CampaignCompose() {
             )}
           </div>
 
-          <div className="rounded-md border border-border-default bg-panel p-4">
-            <label className="mb-2 block text-xs font-semibold text-text-secondary">Audience</label>
-            <div className="mb-3 flex gap-1 rounded-md border border-border-default bg-surface p-1">
+          <div className="rounded-md border border-border-default bg-panel p-5">
+            <label className="mb-3 block text-xs font-semibold text-text-secondary">Audience</label>
+            <div className="mb-4 flex gap-1.5 rounded-md border border-border-default bg-surface p-1.5">
               {AUDIENCE_TABS.map((t) => (
                 <button
                   key={t.value}
                   onClick={() => setAudienceType(t.value)}
-                  className={`flex-1 rounded px-2.5 py-1.5 text-xs font-medium ${
+                  className={`flex-1 rounded px-2.5 py-2 text-xs font-medium ${
                     audienceType === t.value ? 'bg-raised text-text-primary' : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >
@@ -218,20 +258,23 @@ export function CampaignCompose() {
             </div>
 
             {audienceType === 'list' && (
-              <>
-                <select
-                  value={listId}
-                  onChange={(e) => setListId(e.target.value)}
-                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
-                >
-                  {lists.length === 0 && <option value="">No lists yet</option>}
-                  {lists.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-2.5 flex gap-2">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <div className="mb-2 text-[11px] text-text-faint">Sends to every contact in any of the selected lists.</div>
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border-subtle">
+                    {lists.map((l) => (
+                      <label
+                        key={l.id}
+                        className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-2.5 py-2 text-xs first:border-t-0 hover:bg-raised"
+                      >
+                        <input type="checkbox" checked={listIds.includes(l.id)} onChange={() => toggleListId(l.id)} />
+                        <span className="truncate text-text-secondary">{l.name}</span>
+                      </label>
+                    ))}
+                    {lists.length === 0 && <div className="px-2.5 py-4 text-center text-[11px] text-text-faint">No lists yet.</div>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
                   <input
                     value={newListName}
                     onChange={(e) => setNewListName(e.target.value)}
@@ -245,32 +288,34 @@ export function CampaignCompose() {
                     Create
                   </button>
                 </div>
-              </>
+              </div>
             )}
 
             {audienceType === 'tags' && (
-              <>
-                <div className="mb-2.5 text-[11px] text-text-faint">Sends to any contact with at least one selected tag.</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map((t) => {
-                    const selected = selectedTagIds.includes(t.id);
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => toggleTag(t.id)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          selected ? '' : 'border-border-default text-text-tertiary hover:bg-raised'
-                        }`}
-                        style={selected ? { borderColor: t.color, backgroundColor: `${t.color}22`, color: t.color } : undefined}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} />
-                        {t.name}
-                      </button>
-                    );
-                  })}
-                  {tags.length === 0 && <span className="text-[11px] text-text-faint">No tags yet.</span>}
+              <div className="flex flex-col gap-3">
+                <div>
+                  <div className="mb-2.5 text-[11px] text-text-faint">Sends to any contact with at least one selected tag.</div>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((t) => {
+                      const selected = selectedTagIds.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => toggleTag(t.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                            selected ? '' : 'border-border-default text-text-tertiary hover:bg-raised'
+                          }`}
+                          style={selected ? { borderColor: t.color, backgroundColor: `${t.color}22`, color: t.color } : undefined}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} />
+                          {t.name}
+                        </button>
+                      );
+                    })}
+                    {tags.length === 0 && <span className="text-[11px] text-text-faint">No tags yet.</span>}
+                  </div>
                 </div>
-                <div className="mt-2.5 flex gap-2">
+                <div className="flex gap-2">
                   <input
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
@@ -284,25 +329,48 @@ export function CampaignCompose() {
                     Create
                   </button>
                 </div>
-              </>
+              </div>
             )}
 
             {audienceType === 'contacts' && (
-              <>
-                <div className="mb-2.5 text-[11px] text-text-faint">
+              <div className="flex flex-col gap-3">
+                <div className="text-[11px] text-text-faint">
                   {selectedContactIds.length} contact{selectedContactIds.length === 1 ? '' : 's'} selected — useful for test or VIP sends.
                 </div>
+                {tags.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-[11px] text-text-faint">Filter by tag</div>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((t) => {
+                        const selected = contactFilterTagIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => toggleContactFilterTag(t.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                              selected ? '' : 'border-border-default text-text-tertiary hover:bg-raised'
+                            }`}
+                            style={selected ? { borderColor: t.color, backgroundColor: `${t.color}22`, color: t.color } : undefined}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} />
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <input
                   value={contactSearch}
                   onChange={(e) => setContactSearch(e.target.value)}
                   placeholder="Search by email or name…"
-                  className="mb-2 h-8 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
+                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
                 />
                 <div className="max-h-56 overflow-y-auto rounded-md border border-border-subtle">
                   {filteredContacts.slice(0, 200).map((c) => (
                     <label
                       key={c.id}
-                      className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-2.5 py-1.5 text-xs first:border-t-0 hover:bg-raised"
+                      className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-2.5 py-2 text-xs first:border-t-0 hover:bg-raised"
                     >
                       <input type="checkbox" checked={selectedContactIds.includes(c.id)} onChange={() => toggleContact(c.id)} />
                       <span className="truncate text-text-secondary">
@@ -313,10 +381,26 @@ export function CampaignCompose() {
                   ))}
                   {filteredContacts.length === 0 && <div className="px-2.5 py-4 text-center text-[11px] text-text-faint">No matching contacts.</div>}
                 </div>
-              </>
+              </div>
             )}
 
-            <div className="mt-3 flex items-center justify-between rounded-md border border-border-subtle bg-surface px-2.5 py-2">
+            <div className="mt-4 border-t border-border-subtle pt-4">
+              <div className="mb-2 text-[11px] text-text-faint">Exclude contacts in list(s) (optional)</div>
+              <div className="max-h-32 overflow-y-auto rounded-md border border-border-subtle">
+                {lists.map((l) => (
+                  <label
+                    key={l.id}
+                    className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-2.5 py-2 text-xs first:border-t-0 hover:bg-raised"
+                  >
+                    <input type="checkbox" checked={excludeListIds.includes(l.id)} onChange={() => toggleExcludeListId(l.id)} />
+                    <span className="truncate text-text-secondary">{l.name}</span>
+                  </label>
+                ))}
+                {lists.length === 0 && <div className="px-2.5 py-3 text-center text-[11px] text-text-faint">No lists yet.</div>}
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between rounded-md border border-border-subtle bg-surface px-2.5 py-2">
               <span className="text-xs text-text-tertiary">Suppressed contacts excluded automatically</span>
               <span className="text-xs font-semibold text-success">✓</span>
             </div>

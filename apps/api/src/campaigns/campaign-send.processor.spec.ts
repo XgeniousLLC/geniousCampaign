@@ -94,7 +94,7 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
 
   afterAll(async () => {
     await drizzle.db.delete(sends).where(eq(sends.templateId, templateId));
-    await drizzle.db.delete(campaigns).where(eq(campaigns.listId, listId));
+    await drizzle.db.delete(campaigns).where(eq(campaigns.templateId, templateId));
     await drizzle.db.delete(contactLists).where(eq(contactLists.listId, listId));
     await drizzle.db.delete(lists).where(eq(lists.id, listId));
     await drizzle.db.delete(templates).where(eq(templates.id, templateId));
@@ -103,7 +103,7 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
   });
 
   it('records a suppressed send and a real (SES-unconfigured -> failed) send, never faking success', async () => {
-    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Real send test', templateId, listId }).returning();
+    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Real send test', templateId, listIds: [listId] }).returning();
 
     const result = await processor.process({ data: { campaignId: campaign.id } } as Job<{ campaignId: string }>);
     expect(result).toEqual(expect.objectContaining({ sentCount: 0, failedCount: 1, suppressedCount: 1 }));
@@ -128,7 +128,7 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
   it('a dry-run campaign never reaches the real sender', async () => {
     const [campaign] = await drizzle.db
       .insert(campaigns)
-      .values({ name: 'Dry run test', templateId, listId, isDryRun: true })
+      .values({ name: 'Dry run test', templateId, listIds: [listId], isDryRun: true })
       .returning();
 
     const result = await processor.process({ data: { campaignId: campaign.id } } as Job<{ campaignId: string }>);
@@ -147,7 +147,7 @@ describe('CampaignSendProcessor (integration, real DB)', () => {
   it('re-firing a job for an already-sending/sent campaign is a no-op (invariant 3 pattern)', async () => {
     const [campaign] = await drizzle.db
       .insert(campaigns)
-      .values({ name: 'No-op retest', templateId, listId, status: 'sent' })
+      .values({ name: 'No-op retest', templateId, listIds: [listId], status: 'sent' })
       .returning();
 
     const result = await processor.process({ data: { campaignId: campaign.id } } as Job<{ campaignId: string }>);

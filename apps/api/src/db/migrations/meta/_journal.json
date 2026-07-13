@@ -176,6 +176,20 @@
       "when": 1783937114493,
       "tag": "0024_cuddly_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783966451999,
+      "tag": "0025_exotic_spencer_smythe",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783966463133,
+      "tag": "0026_handy_vanisher",
+      "breakpoints": true
     }
   ]
 }

@@ -26,7 +26,8 @@ export function CampaignsList() {
   function audienceLabel(c: Campaign): string {
     if (c.audienceType === 'tags') return `${c.tagIds?.length ?? 0} tag${c.tagIds?.length === 1 ? '' : 's'}`;
     if (c.audienceType === 'contacts') return `${c.contactIds?.length ?? 0} contact${c.contactIds?.length === 1 ? '' : 's'}`;
-    return lists.find((l) => l.id === c.listId)?.name ?? '—';
+    const names = (c.listIds ?? []).map((id) => lists.find((l) => l.id === id)?.name).filter(Boolean);
+    return names.length ? names.join(', ') : '—';
   }
 
   return (

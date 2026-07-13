@@ -37,7 +37,7 @@ export function CampaignDetail() {
   const [sends, setSends] = useState<CampaignSend[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [template, setTemplate] = useState<Template | null>(null);
-  const [list, setList] = useState<List | null>(null);
+  const [campaignLists, setCampaignLists] = useState<List[]>([]);
   const [tab, setTab] = useState<RecipientTab>('all');
 
   async function load() {
@@ -53,7 +53,7 @@ export function CampaignDetail() {
     setSends(s);
     setContacts(allContacts);
     setTemplate(allTemplates.find((t) => t.id === c.templateId) ?? null);
-    setList(allLists.find((l) => l.id === c.listId) ?? null);
+    setCampaignLists(allLists.filter((l) => (c.listIds ?? []).includes(l.id)));
   }
 
   useEffect(() => {
@@ -141,7 +141,7 @@ export function CampaignDetail() {
       <p className="mb-5 text-xs text-text-muted">
         {new Date(campaign.createdAt).toLocaleDateString()} · {template?.name ?? '—'} · {stats.total} recipients
         {dominantProvider && <> · via {dominantProvider.toUpperCase()}</>}
-        {list && <> · {list.name}</>}
+        {campaignLists.length > 0 && <> · {campaignLists.map((l) => l.name).join(', ')}</>}
       </p>
 
       <div className="grid max-w-[820px] grid-cols-4 gap-3">

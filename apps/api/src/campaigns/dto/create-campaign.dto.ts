@@ -14,8 +14,14 @@ export class CreateCampaignDto {
   audienceType?: (typeof CAMPAIGN_AUDIENCE_TYPES)[number];
 
   @IsOptional()
-  @IsUUID()
-  listId?: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  listIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  excludeListIds?: string[];
 
   @IsOptional()
   @IsArray()

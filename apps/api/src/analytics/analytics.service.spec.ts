@@ -31,7 +31,7 @@ describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () =>
     templateId = template.id;
     const [campaign] = await drizzle.db
       .insert(campaigns)
-      .values({ name: 'Analytics test campaign', templateId, listId: (await drizzle.db.query.lists.findFirst())!.id })
+      .values({ name: 'Analytics test campaign', templateId, listIds: [(await drizzle.db.query.lists.findFirst())!.id] })
       .returning();
     campaignId = campaign.id;
 

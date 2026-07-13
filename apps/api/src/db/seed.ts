@@ -162,7 +162,7 @@ async function main() {
 
     const [campaign] = await db
       .insert(schema.campaigns)
-      .values({ name, templateId: template.id, listId: list.id, status, createdAt, updatedAt: createdAt })
+      .values({ name, templateId: template.id, listIds: [list.id], status, createdAt, updatedAt: createdAt })
       .returning();
 
     if (status === 'draft') continue;
