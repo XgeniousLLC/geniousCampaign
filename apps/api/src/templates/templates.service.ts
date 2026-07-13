@@ -5,11 +5,21 @@ import type { DbOrTx } from '../db/types';
 import { templates, templateVersions, sends, emailEvents } from '../db/schema';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
-import { renderBodyHtml, renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
+import { SendTestEmailDto } from './dto/send-test-email.dto';
+import { renderBodyHtml, renderBodyText, resolvePersonalization, resolveSpintax, type ProseMirrorNode } from '@genius-campaign/shared';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
+
+// Sample data a test send resolves {{contact.x}} tokens against — there's
+// no real contact behind a test send, so this stands in to show what an
+// actual recipient's resolved copy would look like.
+const SAMPLE_CONTACT = { firstName: 'Alex', lastName: 'Doe', email: 'alex@example.com' };
 
 @Injectable()
 export class TemplatesService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(
+    private readonly drizzle: DrizzleService,
+    private readonly sendDispatcher: SendDispatcherService,
+  ) {}
 
   async create(dto: CreateTemplateDto, db: DbOrTx = this.drizzle.db) {
     const bodyJson = dto.bodyJson as unknown as ProseMirrorNode;
@@ -164,5 +174,29 @@ export class TemplatesService {
       .where(and(eq(templateVersions.templateId, id)))
       .orderBy(desc(templateVersions.versionNumber))
       .limit(limit);
+  }
+
+  /** Sends real content straight from the editor (not a saved template row —
+   * testing while iterating shouldn't require saving first) to an arbitrary
+   * address the admin chose. Personalization tokens resolve against sample
+   * data before spintax, same order as a real send (invariant 5). No `sends`
+   * row is written and suppression isn't checked — this isn't a send to a
+   * contact, it's an ad-hoc QA action against an address the caller picked
+   * themselves; SendDispatcherService still enforces real sender quota and
+   * the circuit breaker, so it can't be used to bypass either. */
+  async sendTestEmail(dto: SendTestEmailDto) {
+    const resolvedSubject = resolveSpintax(resolvePersonalization(dto.subject, SAMPLE_CONTACT));
+    const resolvedHtml = resolveSpintax(resolvePersonalization(dto.bodyHtml, SAMPLE_CONTACT));
+    const resolvedText = resolveSpintax(resolvePersonalization(dto.bodyText, SAMPLE_CONTACT));
+
+    const result = await this.sendDispatcher.send({
+      to: dto.to,
+      subject: `[Test] ${resolvedSubject}`,
+      html: resolvedHtml,
+      text: resolvedText,
+      unsubscribeUrl: '#',
+    });
+
+    return { sent: true, provider: result.provider };
   }
 }

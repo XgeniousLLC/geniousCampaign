@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
+import { renderBodyHtml, renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
@@ -11,6 +12,8 @@ import { CtaButton } from '../lib/tiptap/cta-button';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
+import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
+import { SendTestEmailModal } from '../components/SendTestEmailModal';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
@@ -28,7 +31,10 @@ export function TemplateEditor() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [loaded, setLoaded] = useState(isNew);
   const [showLibrary, setShowLibrary] = useState(isNew);
+  const [showPreview, setShowPreview] = useState(false);
+  const [showSendTest, setShowSendTest] = useState(false);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
+  const currentUserEmail = useAuthStore((s) => s.user?.email ?? '');
 
   const editor = useEditor({
     extensions: [
@@ -78,6 +84,11 @@ export function TemplateEditor() {
     setShowLibrary(false);
   }
 
+  function currentBody() {
+    const bodyJson = (editor?.getJSON() ?? EMPTY_DOC) as ProseMirrorNode;
+    return { bodyHtml: renderBodyHtml(bodyJson), bodyText: renderBodyText(bodyJson) };
+  }
+
   if (!loaded) {
     return <div className="text-sm text-text-muted">Loading template…</div>;
   }
@@ -94,15 +105,29 @@ export function TemplateEditor() {
             onChange={(e) => setName(e.target.value)}
             className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-text-heading outline-none"
           />
-          {canWrite && (
+          <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={handleSave}
-              disabled={saving}
-              className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              onClick={() => setShowPreview(true)}
+              className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
             >
-              {saving ? 'Saving…' : 'Save'}
+              Preview
             </button>
-          )}
+            <button
+              onClick={() => setShowSendTest(true)}
+              className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+            >
+              Send test
+            </button>
+            {canWrite && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            )}
+          </div>
         </div>
 
         <TemplateEditorToolbar editor={editor} />
@@ -128,6 +153,19 @@ export function TemplateEditor() {
       </div>
 
       <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} />
+
+      {showPreview && (
+        <TemplatePreviewModal subject={subject} bodyHtml={currentBody().bodyHtml} onClose={() => setShowPreview(false)} />
+      )}
+      {showSendTest && (
+        <SendTestEmailModal
+          subject={subject}
+          bodyHtml={currentBody().bodyHtml}
+          bodyText={currentBody().bodyText}
+          defaultEmail={currentUserEmail}
+          onClose={() => setShowSendTest(false)}
+        />
+      )}
     </div>
   );
 }

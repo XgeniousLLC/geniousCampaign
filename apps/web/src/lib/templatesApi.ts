@@ -59,3 +59,7 @@ export function listTemplateVersions(id: string) {
 export function listTemplateVariants(id: string) {
   return apiGet<Template[]>(`/templates/${id}/variants`);
 }
+
+export function sendTestEmail(input: { to: string; subject: string; bodyHtml: string; bodyText: string }) {
+  return apiPost<{ sent: boolean; provider: 'ses' | 'gmail' }>('/templates/send-test', input);
+}

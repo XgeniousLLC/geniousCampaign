@@ -5,14 +5,13 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Job } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { resolveSpintax } from '@genius-campaign/shared';
+import { resolveSpintax, resolvePersonalization } from '@genius-campaign/shared';
 import { DrizzleService } from '../db/drizzle.service';
 import { campaigns, templates, sends } from '../db/schema';
 import { CampaignsService } from './campaigns.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
-import { resolvePersonalization } from '../sequence-runner/personalize.util';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
 

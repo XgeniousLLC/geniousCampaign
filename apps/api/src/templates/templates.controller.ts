@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { TemplatesService } from './templates.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
+import { SendTestEmailDto } from './dto/send-test-email.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -26,6 +27,14 @@ export class TemplatesController {
       await this.auditLog.record(user, 'template.create', 'template', created.id, { name: created.name }, tx);
       return created;
     });
+  }
+
+  @Post('send-test')
+  @Roles('owner', 'editor')
+  async sendTest(@Body() dto: SendTestEmailDto, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.templatesService.sendTestEmail(dto);
+    await this.auditLog.record(user, 'template.send_test', 'template', dto.to, { subject: dto.subject });
+    return result;
   }
 
   @Get()
