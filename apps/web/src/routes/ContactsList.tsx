@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   addContactList,
@@ -16,7 +16,7 @@ import { enrollContact } from '../lib/enrollmentsApi';
 import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
 import { manualSuppress } from '../lib/suppressionApi';
 import { CsvImportModal } from '../components/CsvImportModal';
-import { SpinnerIcon } from '../components/icons';
+import { SpinnerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, HelpCircleIcon } from '../components/icons';
 
 const STATUS_STYLES: Record<Contact['status'], string> = {
   active: 'bg-success/10 text-success border-success/25',
@@ -68,17 +68,26 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   const [page, setPage] = useState(1);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState<'list' | 'sequence' | null>(null);
-  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' | 'info' } | null>(null);
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' | 'info'; icon?: ReactNode } | null>(null);
   const [busy, setBusy] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const noticeTimeout = useRef<number | null>(null);
 
-  function toast(text: string, tone: 'success' | 'error' | 'info' = 'info') {
-    setNotice({ text, tone });
+  function toast(text: string, tone: 'success' | 'error' | 'info' = 'info', icon?: ReactNode) {
+    setNotice({ text, tone, icon });
     if (noticeTimeout.current) window.clearTimeout(noticeTimeout.current);
     noticeTimeout.current = window.setTimeout(() => setNotice(null), 5000);
   }
+
+  // Same icon language as the per-row verify button (GC-102) — lets a
+  // verify toast be recognized at a glance instead of reading the text.
+  const VERIFY_ICON: Record<Contact['verificationStatus'] & string, ReactNode> = {
+    valid: <CheckCircleIcon className="text-success" />,
+    invalid: <XCircleIcon className="text-danger" />,
+    risky: <AlertTriangleIcon className="text-warning" />,
+    unknown: <HelpCircleIcon className="text-text-meta" />,
+  };
 
   function reload() {
     setLoading(true);
@@ -249,7 +258,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       const result = await verifyEmail(c.email);
       setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
       const t = VERIFY_TOAST[result.status] ?? { text: `Verified: ${result.status}.`, tone: 'info' as const };
-      toast(t.text, t.tone);
+      toast(t.text, t.tone, VERIFY_ICON[result.status]);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Verification failed.', 'error');
     } finally {
@@ -307,7 +316,14 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                 : 'border-border-strong bg-panel text-text-secondary'
           }`}
         >
-          {notice.text}
+          <span className="flex items-center gap-2">
+            {notice.icon && (
+              <span title={notice.text} className="shrink-0">
+                {notice.icon}
+              </span>
+            )}
+            {notice.text}
+          </span>
           <button
             onClick={() => setNotice(null)}
             className={notice.tone === 'success' ? 'text-success/70 hover:text-success' : notice.tone === 'error' ? 'text-danger/70 hover:text-danger' : 'text-text-faint hover:text-text-primary'}
@@ -509,7 +525,9 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                                   ? 'Verified — not deliverable, click to re-check'
                                   : c.verificationStatus === 'risky'
                                     ? 'Verified — risky (catch-all), click to re-check'
-                                    : 'Not verified — click to verify'
+                                    : c.verificationStatus === 'unknown'
+                                      ? 'Verified — inconclusive, click to re-check'
+                                      : 'Not verified — click to verify'
                           }
                           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full disabled:opacity-70 ${
                             c.verificationStatus === 'valid'
@@ -523,11 +541,14 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                         >
                           {verifyingIds.has(c.id) ? (
                             <SpinnerIcon />
+                          ) : c.verificationStatus === 'valid' ? (
+                            <CheckCircleIcon />
+                          ) : c.verificationStatus === 'invalid' ? (
+                            <XCircleIcon />
+                          ) : c.verificationStatus === 'risky' ? (
+                            <AlertTriangleIcon />
                           ) : (
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                              <path d="m9 11 3 3L22 4" />
-                            </svg>
+                            <HelpCircleIcon />
                           )}
                         </button>
                       </div>
