@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import TextAlign from '@tiptap/extension-text-align';
 import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
+import { CtaButton } from '../lib/tiptap/cta-button';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
@@ -26,7 +28,15 @@ export function TemplateEditor() {
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false }), PersonalizationToken, SpintaxBlock, R2Image],
+    extensions: [
+      StarterKit,
+      Link.configure({ openOnClick: false }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      PersonalizationToken,
+      SpintaxBlock,
+      R2Image,
+      CtaButton,
+    ],
     content: EMPTY_DOC,
     editable: canWrite,
   });
@@ -97,7 +107,7 @@ export function TemplateEditor() {
         <div className="max-w-2xl px-6 py-5">
           <EditorContent
             editor={editor}
-            className="prose-sm min-h-[240px] text-sm leading-relaxed text-text-secondary [&_.ProseMirror]:min-h-[240px] [&_.ProseMirror]:outline-none [&_a]:text-accent-light [&_a]:underline"
+            className="prose-sm min-h-[240px] text-sm leading-relaxed text-text-secondary [&_.ProseMirror]:min-h-[240px] [&_.ProseMirror]:outline-none [&_a]:text-accent-light [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border-strong [&_blockquote]:pl-3 [&_blockquote]:text-text-muted [&_blockquote]:italic [&_hr]:my-4 [&_hr]:border-border-strong [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:text-text-heading [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-text-heading [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-text-heading [&_img]:max-w-full [&_img]:rounded-md [&_p]:my-1.5"
           />
         </div>
 
