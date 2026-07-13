@@ -38,7 +38,6 @@ function VariantCard({
   variant,
   saveKey,
   templateId,
-  templateName,
   savingKey,
   savedKeys,
   onSave,
@@ -47,7 +46,6 @@ function VariantCard({
   variant: Variant;
   saveKey: string;
   templateId?: string;
-  templateName: string;
   savingKey: string | null;
   savedKeys: Set<string>;
   onSave: (saveKey: string, label: string, variant: Variant) => void;
@@ -179,7 +177,6 @@ export function SpintaxShufflePreview({
             variant={aiVariant}
             saveKey="ai"
             templateId={templateId}
-            templateName={templateName}
             savingKey={savingKey}
             savedKeys={savedKeys}
             onSave={saveVariant}
@@ -192,7 +189,6 @@ export function SpintaxShufflePreview({
             variant={v}
             saveKey={`shuffle-${i}`}
             templateId={templateId}
-            templateName={templateName}
             savingKey={savingKey}
             savedKeys={savedKeys}
             onSave={saveVariant}

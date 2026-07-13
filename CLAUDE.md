@@ -23,7 +23,7 @@ Every UI ticket should be checked against the matching screen in the design file
 - **Email verification**: Reoon API (primary, cheapest), NeverBounce (fallback), with a local syntax/MX/disposable-domain pre-filter before either
 - **Package manager**: npm (with npm workspaces for the monorepo) — not pnpm/yarn
 
-## No Docker
+## Local dev: no Docker
 
 PostgreSQL and Redis are already installed and running on this machine — Sprint 0 only needs a new database created, not a fresh install:
 
@@ -31,7 +31,11 @@ PostgreSQL and Redis are already installed and running on this machine — Sprin
 createdb geniuscampaign_dev
 ```
 
-NestJS and React run via their normal dev servers (`nest start --watch`, `vite`), started directly or via an `npm run dev` root script (using `concurrently` or npm workspaces' `-ws` flag) — not via `docker-compose up`. Don't introduce Docker/docker-compose into this repo without asking first; if a future ticket seems to need it (e.g. for a specific service), flag it rather than adding it silently.
+NestJS and React run via their normal dev servers (`nest start --watch`, `vite`), started directly or via an `npm run dev` root script (using `concurrently` or npm workspaces' `-ws` flag) — not via `docker-compose up`. This is unchanged: local development on this machine never needs Docker.
+
+## Docker (deployment only, decided 2026-07-13)
+
+Docker support exists for **deployment/self-hosting** only (`apps/api/Dockerfile`, `apps/web/Dockerfile`, `docker-compose.yml`, `.dockerignore` at repo root) — see `DEPLOY.md`. It does not replace the local dev workflow above; don't switch local dev to `docker compose up` without asking first, same reasoning as before (faster iteration without a container rebuild loop). If a Docker-based change is needed, keep it scoped to the deployment artifacts, not the dev scripts in root `package.json`.
 
 ## Repo layout (target)
 

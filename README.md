@@ -1,7 +1,68 @@
 # geniusCampaign
 
-In-house email marketing / outreach platform (internal tool).
+Free, open-source, self-hosted email marketing and outreach platform. Contacts, templates, sequences, campaigns, deliverability, and sender rotation in one console — built and maintained by [xgenious.com](https://xgenious.com).
 
-## Getting this running
+Bring your own AWS SES / Gmail Workspace / Cloudflare R2 / verification-provider credentials. Nothing routes through a third-party server.
 
-This is an npm-workspaces monorepo (`apps/api` NestJS, `apps/web` React/Vite, `packages/shared` shared types) with no Docker — Postgres and Redis run locally. Copy `.env.example` to `.env` and fill in the Sprint 0/1 values, run `npm install` at the repo root, then `npm run dev` to start both apps. See `docs/SPRINT_PLAN.md` and `docs/TICKETS.md` for what's built and what's next, and `CLAUDE.md` for architecture decisions.
+## Features
+
+- **Contacts, lists & tags** — CSV import with arbitrary column mapping, real-time import progress, and pick-or-create lists/tags at import time
+- **Template editor** — rich-text editor with spintax variants and AI-assisted copywriting (OpenAI or DeepSeek)
+- **Sequences** — multi-step drip sequences with per-contact enrollment, pause/resume, and per-step delays
+- **Campaigns** — one-off sends targeted by list, by tag, or by hand-picked contacts, with open/click tracking and engagement analytics
+- **Email verification** — bulk deliverability checks (Reoon primary, NeverBounce fallback) before you send
+- **Triggers & webhooks** — auto-enroll contacts on events (tag added, field changed, list joined, or an inbound HMAC-signed webhook)
+- **Sender rotation** — AWS SES and Gmail Workspace accounts, quota-aware, rotated automatically
+- **Team & audit** — role-based access (owner/editor/viewer), a full audit log, and a global suppression list checked before every send
+
+## Tech stack
+
+- **Backend**: NestJS (TypeScript), PostgreSQL via Drizzle ORM, BullMQ + Redis for all queued/scheduled work
+- **Frontend**: React (Vite) + TypeScript, Tailwind CSS, Zustand
+- **Monorepo**: npm workspaces (`apps/api`, `apps/web`, `packages/shared`)
+
+## Quick start (local development)
+
+Prerequisites: Node.js 22+, PostgreSQL, Redis, all running locally.
+
+```bash
+git clone https://github.com/XgeniousLLC/geniousCampaign.git
+cd geniousCampaign
+npm install
+
+createdb geniuscampaign_dev
+cp .env.example .env
+# Edit .env — at minimum set JWT_SECRET (openssl rand -hex 32).
+# Everything else can stay blank until you need that specific feature.
+
+npm run db:migrate --workspace apps/api
+npm run dev
+```
+
+This starts both the API (`http://localhost:3000`) and the web app (`http://localhost:5173`) with hot reload. See `.env.example` for the full list of optional integration credentials (AWS SES, Cloudflare R2, Gmail OAuth, Reoon/NeverBounce, OpenAI/DeepSeek, Slack) — every one of these can also be set later from the running app's Settings > Integrations page instead of editing `.env` directly.
+
+## Running with Docker
+
+Prefer containers? See **[DEPLOY.md](./DEPLOY.md)** — covers both `docker compose up` (recommended for self-hosting) and a manual/bare-metal deployment path, plus the full environment variable reference for production.
+
+## Project structure
+
+```
+geniusCampaign/
+  apps/
+    api/          NestJS backend
+    web/          React admin app
+  packages/
+    shared/       Shared TS types (DTOs, enums) used by both api and web
+  docs/           Sprint plan, ticket history, design reference
+  CLAUDE.md       Architecture decisions and conventions
+  DEPLOY.md       Deployment guide (Docker + manual)
+```
+
+## Contributing / architecture notes
+
+`CLAUDE.md` documents the load-bearing architectural decisions (per-contact sequence enrollment, the shared event bus, spintax resolution order, sender-provider abstraction, etc.) — read it before making structural changes.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

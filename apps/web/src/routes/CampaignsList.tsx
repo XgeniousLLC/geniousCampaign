@@ -23,7 +23,11 @@ export function CampaignsList() {
     listLists().then(setLists);
   }, []);
 
-  const listName = (id: string) => lists.find((l) => l.id === id)?.name ?? '—';
+  function audienceLabel(c: Campaign): string {
+    if (c.audienceType === 'tags') return `${c.tagIds?.length ?? 0} tag${c.tagIds?.length === 1 ? '' : 's'}`;
+    if (c.audienceType === 'contacts') return `${c.contactIds?.length ?? 0} contact${c.contactIds?.length === 1 ? '' : 's'}`;
+    return lists.find((l) => l.id === c.listId)?.name ?? '—';
+  }
 
   return (
     <div>
@@ -65,7 +69,7 @@ export function CampaignsList() {
                     {c.name}
                   </Link>
                   <div className="mt-0.5 text-[11px] text-text-faint">
-                    {listName(c.listId)} · {new Date(c.createdAt).toLocaleDateString()}
+                    {audienceLabel(c)} · {new Date(c.createdAt).toLocaleDateString()}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{c.sentCount}</td>
