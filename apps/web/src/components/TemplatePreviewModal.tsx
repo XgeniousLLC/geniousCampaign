@@ -99,12 +99,23 @@ export function TemplatePreviewModal({
         <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
           <h3 className="text-sm font-semibold text-text-heading">Preview</h3>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowSendTest(true)}
-              className="rounded-md border border-border-strong bg-field px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-raised"
-            >
-              Send test
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowSendTest((s) => !s)}
+                className="rounded-md border border-border-strong bg-field px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-raised"
+              >
+                Send test
+              </button>
+              {showSendTest && (
+                <SendTestEmailModal
+                  subject={subject}
+                  bodyHtml={bodyHtml}
+                  bodyText={bodyText}
+                  defaultEmail={defaultTestEmail}
+                  onClose={() => setShowSendTest(false)}
+                />
+              )}
+            </div>
             <button onClick={onClose} className="text-text-muted hover:text-text-primary">
               <CloseIcon />
             </button>
@@ -152,15 +163,6 @@ export function TemplatePreviewModal({
           </div>
         </div>
       </div>
-      {showSendTest && (
-        <SendTestEmailModal
-          subject={subject}
-          bodyHtml={bodyHtml}
-          bodyText={bodyText}
-          defaultEmail={defaultTestEmail}
-          onClose={() => setShowSendTest(false)}
-        />
-      )}
     </div>
   );
 }

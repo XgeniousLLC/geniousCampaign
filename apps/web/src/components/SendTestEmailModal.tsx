@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { sendTestEmail } from '../lib/templatesApi';
 
+const LAST_TEST_EMAIL_KEY = 'gc_last_test_email';
+
+// Small anchored popover (not a full-screen modal) — opens right under the
+// "Send test" button that triggered it. The address is remembered in
+// localStorage so repeat test-sends (the common case while iterating on a
+// template) don't require retyping the same email every time.
 export function SendTestEmailModal({
   subject,
   bodyHtml,
@@ -14,17 +20,19 @@ export function SendTestEmailModal({
   defaultEmail: string;
   onClose: () => void;
 }) {
-  const [to, setTo] = useState(defaultEmail);
+  const [to, setTo] = useState(() => localStorage.getItem(LAST_TEST_EMAIL_KEY) || defaultEmail);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function submit() {
-    if (!to.trim() || sending) return;
+    const email = to.trim();
+    if (!email || sending) return;
     setSending(true);
     setResult(null);
     try {
-      const res = await sendTestEmail({ to: to.trim(), subject, bodyHtml, bodyText });
-      setResult({ ok: true, text: `Sent via ${res.provider === 'ses' ? 'SES' : 'Gmail'} — check ${to.trim()}.` });
+      const res = await sendTestEmail({ to: email, subject, bodyHtml, bodyText });
+      localStorage.setItem(LAST_TEST_EMAIL_KEY, email);
+      setResult({ ok: true, text: `Sent via ${res.provider === 'ses' ? 'SES' : 'Gmail'} — check ${email}.` });
     } catch (err) {
       setResult({ ok: false, text: err instanceof Error ? err.message : 'Send failed.' });
     } finally {
@@ -33,59 +41,45 @@ export function SendTestEmailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
+    <>
+      <button type="button" aria-label="Close" onClick={onClose} className="fixed inset-0 z-[70] cursor-default bg-transparent" />
       <div
-        className="w-[420px] max-w-full rounded-xl border border-border-modal bg-panel2 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="absolute right-0 top-full z-[71] mt-2 w-[340px] rounded-lg border border-border-modal bg-panel2 p-3.5 shadow-2xl"
         onKeyDown={(e) => {
           if (e.key === 'Enter') submit();
           if (e.key === 'Escape') onClose();
         }}
       >
-        <div className="flex items-center justify-between border-b border-border-default px-[18px] py-3.5">
-          <h3 className="text-sm font-semibold text-text-heading">Send test email</h3>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary">
-            ✕
-          </button>
-        </div>
-
-        <div className="p-[18px]">
-          <label className="mb-1.5 block text-xs font-semibold text-text-secondary">Send to</label>
+        <label className="mb-1.5 block text-xs font-semibold text-text-secondary">Send test to</label>
+        <div className="flex gap-1.5">
           <input
             autoFocus
             type="email"
             value={to}
             onChange={(e) => setTo(e.target.value)}
             placeholder="you@example.com"
-            className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
           />
-          <p className="mt-2 text-[11px] text-text-faint">
-            Sends a real email through this app's live sender accounts (real quota is used) — subject prefixed with{' '}
-            <span className="font-mono">[Test]</span>. Personalization tokens resolve against sample data, not a real contact.
-          </p>
-          {result && (
-            <div className={`mt-3 rounded-md border px-3 py-2 text-xs ${result.ok ? 'border-success/25 bg-success/10 text-success' : 'border-danger/25 bg-danger/10 text-danger'}`}>
-              {result.text}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-border-default bg-surface px-[18px] py-3.5">
-          <button
-            onClick={onClose}
-            className="h-[34px] rounded-md border border-border-subtle bg-surface px-3.5 text-sm font-medium text-text-secondary hover:bg-raised"
-          >
-            Close
-          </button>
           <button
             onClick={submit}
             disabled={sending || !to.trim()}
-            className="h-[34px] rounded-md bg-accent px-4 text-sm font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-8 shrink-0 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {sending ? 'Sending…' : 'Send test'}
+            {sending ? 'Sending…' : 'Send'}
           </button>
         </div>
+        <p className="mt-2 text-[10.5px] leading-snug text-text-faint">
+          Real send via live sender accounts, subject prefixed <span className="font-mono">[Test]</span>. Tokens resolve against sample
+          data.
+        </p>
+        {result && (
+          <div
+            className={`mt-2 rounded-md border px-2.5 py-1.5 text-[11px] ${result.ok ? 'border-success/25 bg-success/10 text-success' : 'border-danger/25 bg-danger/10 text-danger'}`}
+          >
+            {result.text}
+          </div>
+        )}
       </div>
-    </div>
+    </>
   );
 }

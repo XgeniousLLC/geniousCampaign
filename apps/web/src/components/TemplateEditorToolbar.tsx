@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Editor } from '@tiptap/react';
+import { renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 import { useImageUpload } from '../lib/useImageUpload';
 import { AiAssistModal } from './AiAssistModal';
 import { PromptDialog } from './PromptDialog';
+import { aiTextToDoc } from '../lib/aiTextToDoc';
 import {
   BoldIcon,
   ItalicIcon,
@@ -222,8 +224,13 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       {aiOpen && (
         <AiAssistModal
           onClose={() => setAiOpen(false)}
+          context={renderBodyText(editor.getJSON() as ProseMirrorNode)}
           onInsert={(text) => {
-            editor.chain().focus().insertContent(text).run();
+            // Replaces the whole doc rather than inserting at cursor — this
+            // modal is opened as "rewrite my template," so the result should
+            // become the new content, with tokens/buttons parsed back into
+            // real nodes rather than left as literal AI-output text.
+            editor.commands.setContent(aiTextToDoc(text));
             setAiOpen(false);
           }}
         />

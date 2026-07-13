@@ -20,7 +20,7 @@ describe('AiAssistService', () => {
     await expect(service.generateCopy({ prompt: 'write something' })).rejects.toThrow(/Unknown LLM_PROVIDER/);
   });
 
-  it('calls the real OpenAI chat completions endpoint when configured, with the exact prompt', async () => {
+  it('calls the real OpenAI chat completions endpoint when configured, with the prompt plus the spintax-variety instruction', async () => {
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ choices: [{ message: { content: 'Generated copy here' } }] }),
@@ -39,7 +39,8 @@ describe('AiAssistService', () => {
     );
     const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.model).toBe('gpt-5.4-mini');
-    expect(body.messages[1].content).toBe('Friendly intro, under 90 words');
+    expect(body.messages[1].content).toContain('Friendly intro, under 90 words');
+    expect(body.messages[1].content.toLowerCase()).toContain('spintax');
   });
 
   it('routes to DeepSeek instead when LLM_PROVIDER=deepseek', async () => {

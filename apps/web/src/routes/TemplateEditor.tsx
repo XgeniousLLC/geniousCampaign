@@ -112,12 +112,23 @@ export function TemplateEditor() {
             >
               Preview
             </button>
-            <button
-              onClick={() => setShowSendTest(true)}
-              className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
-            >
-              Send test
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowSendTest((s) => !s)}
+                className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+              >
+                Send test
+              </button>
+              {showSendTest && (
+                <SendTestEmailModal
+                  subject={subject}
+                  bodyHtml={currentBody().bodyHtml}
+                  bodyText={currentBody().bodyText}
+                  defaultEmail={currentUserEmail}
+                  onClose={() => setShowSendTest(false)}
+                />
+              )}
+            </div>
             {canWrite && (
               <button
                 onClick={handleSave}
@@ -161,15 +172,6 @@ export function TemplateEditor() {
           bodyText={currentBody().bodyText}
           defaultTestEmail={currentUserEmail}
           onClose={() => setShowPreview(false)}
-        />
-      )}
-      {showSendTest && (
-        <SendTestEmailModal
-          subject={subject}
-          bodyHtml={currentBody().bodyHtml}
-          bodyText={currentBody().bodyText}
-          defaultEmail={currentUserEmail}
-          onClose={() => setShowSendTest(false)}
         />
       )}
     </div>

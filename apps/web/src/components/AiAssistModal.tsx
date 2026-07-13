@@ -7,18 +7,30 @@ const QUICK_ACTIONS: { label: string; value: QuickAction }[] = [
   { label: 'Add a stat', value: 'stat' },
 ];
 
-export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onInsert: (text: string) => void }) {
+export function AiAssistModal({
+  onClose,
+  onInsert,
+  context,
+}: {
+  onClose: () => void;
+  onInsert: (text: string) => void;
+  /** Current template body text (tokens/buttons as literal `{{...}}` /
+   * `Label: url` text) — passed as context so "rewrite this" has something
+   * to rewrite, and so quick actions can run directly on the real content. */
+  context?: string;
+}) {
   const [prompt, setPrompt] = useState('');
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasContent = !!(result || context);
 
   async function run(quickAction?: QuickAction) {
     if (!quickAction && !prompt.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const { text } = await generateAiCopy({ prompt, quickAction, previousResult: result ?? undefined });
+      const { text } = await generateAiCopy({ prompt, quickAction, previousResult: result ?? undefined, context });
       setResult(text);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -45,7 +57,11 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g. Friendly intro to a founder about cutting manual outreach work. Casual, under 90 words."
+            placeholder={
+              context
+                ? 'e.g. Rewrite this in a more professional way'
+                : 'e.g. Friendly intro to a founder about cutting manual outreach work. Casual, under 90 words.'
+            }
             className="h-[70px] w-full resize-none rounded-md border border-border-subtle bg-surface p-2.5 text-sm text-text-primary placeholder:text-text-faint"
           />
 
@@ -54,7 +70,7 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
               <button
                 key={qa.value}
                 onClick={() => run(qa.value)}
-                disabled={!result || loading}
+                disabled={!hasContent || loading}
                 className="rounded-md border border-border-subtle bg-surface px-2.5 py-1 text-[11.5px] text-text-tertiary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {qa.label}
@@ -79,7 +95,7 @@ export function AiAssistModal({ onClose, onInsert }: { onClose: () => void; onIn
                 onClick={() => onInsert(result)}
                 className="h-[34px] rounded-md border border-border-subtle bg-surface px-3.5 text-sm font-medium text-text-secondary hover:bg-raised"
               >
-                Insert
+                {context ? 'Replace content' : 'Insert'}
               </button>
             )}
             <button
