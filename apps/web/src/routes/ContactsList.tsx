@@ -1,11 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { addContactList, avatarColor, deleteContact, getList, listContacts, listLists, type Contact, type List } from '../lib/contactsApi';
+import {
+  addContactList,
+  avatarColor,
+  deleteContact,
+  bulkDeleteContacts,
+  getList,
+  listContacts,
+  listLists,
+  type Contact,
+  type List,
+} from '../lib/contactsApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
 import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
 import { manualSuppress } from '../lib/suppressionApi';
 import { CsvImportModal } from '../components/CsvImportModal';
+import { SpinnerIcon } from '../components/icons';
 
 const STATUS_STYLES: Record<Contact['status'], string> = {
   active: 'bg-success/10 text-success border-success/25',
@@ -57,9 +68,17 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   const [page, setPage] = useState(1);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState<'list' | 'sequence' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' | 'info' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const noticeTimeout = useRef<number | null>(null);
+
+  function toast(text: string, tone: 'success' | 'error' | 'info' = 'info') {
+    setNotice({ text, tone });
+    if (noticeTimeout.current) window.clearTimeout(noticeTimeout.current);
+    noticeTimeout.current = window.setTimeout(() => setNotice(null), 5000);
+  }
 
   function reload() {
     setLoading(true);
@@ -148,7 +167,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     setBusy(true);
     setPickerOpen(null);
     await Promise.all([...selected].map((id) => addContactList(listId, id)));
-    setNotice(`Added ${selected.size} contact(s) to the list.`);
+    toast(`Added ${selected.size} contact(s) to the list.`, 'success');
     setSelected(new Set());
     setBusy(false);
     reload();
@@ -167,7 +186,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
         failed++;
       }
     }
-    setNotice(`Enrolled ${ok} contact(s)${failed ? `, ${failed} failed (already enrolled?)` : ''}.`);
+    toast(`Enrolled ${ok} contact(s)${failed ? `, ${failed} failed (already enrolled?)` : ''}.`, failed ? 'info' : 'success');
     setSelected(new Set());
     setBusy(false);
   }
@@ -180,7 +199,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       const result = await localCheckEmail(c.email);
       if (result.valid) valid++;
     }
-    setNotice(`Local check: ${valid} of ${targets.length} passed syntax/MX check (not a paid deliverability verification).`);
+    toast(`Local check: ${valid} of ${targets.length} passed syntax/MX check (not a paid deliverability verification).`, 'info');
     setSelected(new Set());
     setBusy(false);
   }
@@ -188,10 +207,26 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   async function runBulkSuppress() {
     setBusy(true);
     await Promise.all([...selected].map((id) => manualSuppress(id)));
-    setNotice(`Suppressed ${selected.size} contact(s).`);
+    toast(`Suppressed ${selected.size} contact(s).`, 'success');
     setSelected(new Set());
     setBusy(false);
     reload();
+  }
+
+  async function runBulkDelete() {
+    setBusy(true);
+    setConfirmBulkDelete(false);
+    const count = selected.size;
+    try {
+      await bulkDeleteContacts([...selected]);
+      toast(`Deleted ${count} contact(s).`, 'success');
+      setSelected(new Set());
+      reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Bulk delete failed.', 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -200,14 +235,23 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     reload();
   }
 
+  const VERIFY_TOAST: Record<Contact['verificationStatus'] & string, { text: string; tone: 'success' | 'error' | 'info' }> = {
+    valid: { text: 'Verified — deliverable.', tone: 'success' },
+    invalid: { text: 'Verified — not deliverable.', tone: 'error' },
+    risky: { text: 'Verified — risky (catch-all domain).', tone: 'info' },
+    unknown: { text: 'Verification came back inconclusive.', tone: 'info' },
+  };
+
   async function handleVerify(c: Contact) {
     if (verifyingIds.has(c.id)) return;
     setVerifyingIds((s) => new Set(s).add(c.id));
     try {
       const result = await verifyEmail(c.email);
       setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
+      const t = VERIFY_TOAST[result.status] ?? { text: `Verified: ${result.status}.`, tone: 'info' as const };
+      toast(t.text, t.tone);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Verification failed.');
+      toast(err instanceof Error ? err.message : 'Verification failed.', 'error');
     } finally {
       setVerifyingIds((s) => {
         const next = new Set(s);
@@ -254,9 +298,20 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       </div>
 
       {notice && (
-        <div className="mb-3 flex items-center justify-between rounded-md border border-border-strong bg-panel px-3 py-2 text-xs text-text-secondary">
-          {notice}
-          <button onClick={() => setNotice(null)} className="text-text-faint hover:text-text-primary">
+        <div
+          className={`mb-3 flex items-center justify-between rounded-md border px-3 py-2 text-xs ${
+            notice.tone === 'success'
+              ? 'border-success/25 bg-success/10 text-success'
+              : notice.tone === 'error'
+                ? 'border-danger/25 bg-danger/10 text-danger'
+                : 'border-border-strong bg-panel text-text-secondary'
+          }`}
+        >
+          {notice.text}
+          <button
+            onClick={() => setNotice(null)}
+            className={notice.tone === 'success' ? 'text-success/70 hover:text-success' : notice.tone === 'error' ? 'text-danger/70 hover:text-danger' : 'text-text-faint hover:text-text-primary'}
+          >
             Dismiss
           </button>
         </div>
@@ -383,6 +438,13 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                 >
                   Suppress
                 </button>
+                <button
+                  disabled={busy}
+                  onClick={() => setConfirmBulkDelete(true)}
+                  className="h-[30px] rounded-md border border-danger/40 bg-danger/20 px-2.5 text-xs font-semibold text-danger disabled:opacity-50"
+                >
+                  Delete
+                </button>
               </div>
             )}
           </div>
@@ -443,16 +505,30 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                               ? 'Verifying…'
                               : c.verificationStatus === 'valid'
                                 ? 'Verified deliverable'
-                                : 'Not verified — click to verify'
+                                : c.verificationStatus === 'invalid'
+                                  ? 'Verified — not deliverable, click to re-check'
+                                  : c.verificationStatus === 'risky'
+                                    ? 'Verified — risky (catch-all), click to re-check'
+                                    : 'Not verified — click to verify'
                           }
-                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full disabled:opacity-50 ${
-                            c.verificationStatus === 'valid' ? 'text-success' : 'text-text-meta hover:text-text-tertiary'
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full disabled:opacity-70 ${
+                            c.verificationStatus === 'valid'
+                              ? 'text-success'
+                              : c.verificationStatus === 'invalid'
+                                ? 'text-danger'
+                                : c.verificationStatus === 'risky'
+                                  ? 'text-warning'
+                                  : 'text-text-meta hover:text-text-tertiary'
                           }`}
                         >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                            <path d="m9 11 3 3L22 4" />
-                          </svg>
+                          {verifyingIds.has(c.id) ? (
+                            <SpinnerIcon />
+                          ) : (
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                              <path d="m9 11 3 3L22 4" />
+                            </svg>
+                          )}
                         </button>
                       </div>
                     </td>
@@ -548,6 +624,32 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       )}
 
       {importOpen && <CsvImportModal onClose={() => setImportOpen(false)} onImported={reload} />}
+
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-6" onClick={() => setConfirmBulkDelete(false)}>
+          <div className="w-[400px] max-w-full rounded-xl border border-border-modal bg-panel2 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-2 text-sm font-semibold text-text-heading">Delete {selected.size} contact(s)?</h3>
+            <p className="mb-4 text-xs text-text-muted">
+              This permanently deletes these contacts and all their sends, list/tag memberships, and sequence enrollments. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmBulkDelete(false)}
+                className="h-8 rounded-md border border-border-subtle px-3.5 text-xs font-medium text-text-secondary hover:bg-raised"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runBulkDelete}
+                disabled={busy}
+                className="h-8 rounded-md bg-danger px-3.5 text-xs font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
+              >
+                {busy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -92,6 +92,10 @@ export function deleteContact(id: string) {
   return apiDelete(`/contacts/${id}`);
 }
 
+export function bulkDeleteContacts(ids: string[]) {
+  return apiPost<{ deleted: number }>('/contacts/bulk-delete', { ids });
+}
+
 export function listTags() {
   return apiGet<Tag[]>('/tags');
 }

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/commo
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { BulkDeleteContactsDto } from './dto/bulk-delete-contacts.dto';
 
 @Controller('contacts')
 export class ContactsController {
@@ -15,6 +16,15 @@ export class ContactsController {
   @Get()
   findAll() {
     return this.contactsService.findAll();
+  }
+
+  // Declared before ':id' — 'bulk-delete' would otherwise never be reached
+  // if a param route matched first, though Nest resolves POST vs GET/DELETE
+  // separately either way; kept here for readability alongside the other
+  // literal-path route.
+  @Post('bulk-delete')
+  bulkRemove(@Body() dto: BulkDeleteContactsDto) {
+    return this.contactsService.bulkRemove(dto.ids);
   }
 
   @Get(':id')

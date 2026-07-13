@@ -139,6 +139,18 @@ export class ContactsService {
     return { id };
   }
 
+  /** One DB round trip regardless of selection size — unlike the other bulk
+   * contact actions (add-to-list, enroll, verify, suppress), which each loop
+   * a per-contact endpoint client-side because they call a different
+   * sub-resource per contact, a delete is a single homogeneous operation
+   * that batches naturally. Cascade to contact_tags/contact_lists/sends/
+   * email_events/sequence_enrollments is handled entirely by the schema's
+   * `onDelete: 'cascade'` FKs, same as the single-contact delete above. */
+  async bulkRemove(ids: string[]) {
+    const deleted = await this.drizzle.db.delete(contacts).where(inArray(contacts.id, ids)).returning({ id: contacts.id });
+    return { deleted: deleted.length };
+  }
+
   async upsertByEmail(email: string, fields: { firstName?: string; lastName?: string; customFields?: Record<string, unknown> }) {
     const existing = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.email, email) });
 
