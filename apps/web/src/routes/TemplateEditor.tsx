@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -29,6 +29,8 @@ export function TemplateEditor() {
   const [subject, setSubject] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
+  const noticeTimeout = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(isNew);
   const [showLibrary, setShowLibrary] = useState(isNew);
   const [showPreview, setShowPreview] = useState(false);
@@ -60,6 +62,12 @@ export function TemplateEditor() {
     });
   }, [id, editor]);
 
+  function toast(text: string, tone: 'success' | 'error') {
+    setNotice({ text, tone });
+    if (noticeTimeout.current) window.clearTimeout(noticeTimeout.current);
+    noticeTimeout.current = window.setTimeout(() => setNotice(null), 5000);
+  }
+
   async function handleSave() {
     if (!editor) return;
     setSaving(true);
@@ -72,6 +80,9 @@ export function TemplateEditor() {
         await updateTemplate(id!, { name, subject, bodyJson });
       }
       setSavedAt(new Date());
+      toast('Template saved.', 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Save failed.', 'error');
     } finally {
       setSaving(false);
     }
@@ -97,6 +108,15 @@ export function TemplateEditor() {
     <div className="grid grid-cols-[1fr_320px] items-start gap-4">
       {showLibrary && canWrite && (
         <TemplateLibraryModal onPick={applyLibraryTemplate} onBlank={() => setShowLibrary(false)} />
+      )}
+      {notice && (
+        <div
+          className={`fixed right-5 top-5 z-[80] rounded-md border px-3.5 py-2.5 text-xs shadow-lg ${
+            notice.tone === 'success' ? 'border-success/25 bg-panel2 text-success' : 'border-danger/25 bg-panel2 text-danger'
+          }`}
+        >
+          {notice.text}
+        </div>
       )}
       <div className="flex flex-col rounded-md border border-border-default bg-panel">
         <div className="flex items-center justify-between gap-4 border-b border-border-default px-5 py-3">
