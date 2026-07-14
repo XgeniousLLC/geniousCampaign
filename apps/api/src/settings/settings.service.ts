@@ -18,6 +18,10 @@ export interface SettingFieldStatus {
   // Static option list for fields that should render as a <select> on the
   // frontend (e.g. LLM_PROVIDER) — undefined for plain text/secret fields.
   options?: string[];
+  // TRACKING_DOMAIN-style fields that require a side-channel check (DNS
+  // verification) before they can be saved — the frontend renders a
+  // dedicated component instead of a plain input for these.
+  verifyOnly?: boolean;
 }
 
 export interface SettingCategoryStatus {
@@ -61,9 +65,12 @@ export class SettingsService implements OnModuleInit {
 
   /** The single source of truth every credential-consuming provider should
    * call instead of ConfigService.get() for keys in known-settings.ts — a
-   * DB-stored override (set via the UI) always wins over process.env. */
+   * DB-stored override (set via the UI) always wins over process.env.
+   * Uses `||` rather than `??`: an `.env` line present but left blank
+   * (e.g. "GOOGLE_OAUTH_CLIENT_ID=") is process.env["..."] === "", which is
+   * not nullish — treating it as "set" would wrongly skip the fallback. */
   get(key: string): string | undefined {
-    return this.cache.get(key) ?? this.config.get<string>(key) ?? undefined;
+    return this.cache.get(key) || this.config.get<string>(key) || undefined;
   }
 
   async setMany(values: Record<string, string>) {
@@ -100,9 +107,14 @@ export class SettingsService implements OnModuleInit {
       description: category.description,
       instructions: category.instructions,
       fields: category.fields.map((field) => {
-        const dbValue = this.cache.get(field.key);
-        const envValue = this.config.get<string>(field.key);
-        const effective = dbValue ?? envValue;
+        // `||`, not `??` — an `.env` line present but left blank is `""`,
+        // not undefined, and must still count as "not set". A blank
+        // GOOGLE_OAUTH_REDIRECT_URI was masquerading as a real empty value,
+        // so the frontend's `f.value ?? computedDefault` fallback never
+        // kicked in.
+        const dbValue = this.cache.get(field.key) || undefined;
+        const envValue = this.config.get<string>(field.key) || undefined;
+        const effective = dbValue || envValue;
         const source: SettingFieldStatus['source'] = dbValue ? 'db' : envValue ? 'env' : 'unset';
         return {
           key: field.key,
@@ -112,6 +124,7 @@ export class SettingsService implements OnModuleInit {
           source,
           value: field.secret ? null : (effective ?? null),
           options: field.options,
+          verifyOnly: field.verifyOnly,
         };
       }),
     }));

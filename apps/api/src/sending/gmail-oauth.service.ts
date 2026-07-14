@@ -24,7 +24,7 @@ export class GmailOAuthService {
     const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
     if (!clientId || !clientSecret || !redirectUri) {
       throw new InternalServerErrorException(
-        'Google OAuth is not configured — set GOOGLE_OAUTH_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI in .env.',
+        'Google OAuth is not configured — click the lock icon next to "Connect Gmail account" to set it up.',
       );
     }
     return new google.auth.OAuth2(clientId, clientSecret, redirectUri);

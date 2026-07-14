@@ -8,6 +8,8 @@ import {
   type SenderAccount,
 } from '../lib/senderAccountsApi';
 import { SesAccountModal } from '../components/SesAccountModal';
+import { GmailOAuthConfigModal } from '../components/GmailOAuthConfigModal';
+import { LockIcon } from '../components/icons';
 import { useAuthStore } from '../stores/useAuthStore';
 
 function quotaBarColor(pct: number): string {
@@ -23,6 +25,7 @@ export function SenderAccountsSettings() {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalAccount, setModalAccount] = useState<SenderAccount | 'new' | null>(null);
+  const [gmailConfigOpen, setGmailConfigOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [params] = useSearchParams();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
@@ -47,8 +50,15 @@ export function SenderAccountsSettings() {
       const { authUrl } = await getGmailConnectUrl();
       window.location.href = authUrl;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
       setConnecting(false);
+      // The config modal explains and fixes this directly — showing the raw
+      // API error banner underneath it too is redundant.
+      if (message.includes('Google OAuth is not configured')) {
+        setGmailConfigOpen(true);
+      } else {
+        setError(message);
+      }
     }
   }
 
@@ -95,6 +105,13 @@ export function SenderAccountsSettings() {
               className="flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-panel px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
             >
               {connecting ? 'Redirecting…' : 'Connect Gmail account'}
+            </button>
+            <button
+              onClick={() => setGmailConfigOpen(true)}
+              title="Configure Google OAuth app"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-panel text-text-tertiary hover:bg-raised"
+            >
+              <LockIcon />
             </button>
           </div>
         )}
@@ -202,6 +219,10 @@ export function SenderAccountsSettings() {
             load();
           }}
         />
+      )}
+
+      {gmailConfigOpen && (
+        <GmailOAuthConfigModal onClose={() => setGmailConfigOpen(false)} onSaved={() => setError(null)} />
       )}
     </div>
   );

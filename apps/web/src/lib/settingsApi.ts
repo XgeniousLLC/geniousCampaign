@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 
 export interface SettingField {
   key: string;
@@ -8,6 +8,7 @@ export interface SettingField {
   source: 'db' | 'env' | 'unset';
   value: string | null;
   options?: string[];
+  verifyOnly?: boolean;
 }
 
 export interface SettingCategory {
@@ -28,4 +29,15 @@ export function updateIntegrationSettings(values: Record<string, string>) {
 
 export function clearIntegrationSetting(key: string) {
   return apiDelete<SettingCategory[]>(`/settings/integrations/${key}`);
+}
+
+export interface TrackingDomainVerifyResult {
+  verified: boolean;
+  domain?: string;
+  devSkip?: boolean;
+  record?: { type: string; host: string; value: string };
+}
+
+export function verifyTrackingDomain(domain: string) {
+  return apiPost<TrackingDomainVerifyResult>('/settings/tracking-domain/verify', { domain });
 }

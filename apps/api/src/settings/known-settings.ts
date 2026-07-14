@@ -9,6 +9,11 @@ export interface SettingDef {
   // LLM_PROVIDER) are left without `options` here and handled by
   // category-specific rendering logic on the frontend instead.
   options?: string[];
+  // Set on fields that can never be saved through the generic bulk PATCH —
+  // e.g. TRACKING_DOMAIN, which must pass a DNS CNAME check first. The
+  // frontend renders these with a dedicated component instead of a plain
+  // input, and excludes them from the category's normal "Save" payload.
+  verifyOnly?: boolean;
 }
 
 export interface SettingCategory {
@@ -74,12 +79,44 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     ],
   },
   {
+    key: 'google_oauth',
+    label: 'Gmail sending (Google OAuth)',
+    description: 'OAuth app used to connect Gmail Workspace mailboxes as sender accounts.',
+    fields: [
+      { key: 'GOOGLE_OAUTH_CLIENT_ID', label: 'Client ID', secret: false },
+      { key: 'GOOGLE_OAUTH_CLIENT_SECRET', label: 'Client secret', secret: true },
+      {
+        key: 'GOOGLE_OAUTH_REDIRECT_URI',
+        label: 'Redirect URI',
+        secret: false,
+        placeholder: 'https://your-api-host/sender-accounts/gmail/callback',
+      },
+    ],
+    instructions: [
+      'This is one shared OAuth app — every Gmail mailbox you connect from Sender Accounts goes through it. You only need to set this up once.',
+      'In Google Cloud Console (https://console.developers.google.com/), create (or pick) a project, then open "APIs & Services" > "Enabled APIs" and enable the Gmail API.',
+      'Under "APIs & Services" > "OAuth consent screen", set the app to Internal user type (or Testing, if this is a personal Google account without Workspace) and add the mailboxes you plan to connect as test users.',
+      'Under "APIs & Services" > "Credentials", create an OAuth client ID of type "Web application".',
+      'Add an Authorized redirect URI of exactly "<your API\'s public URL>/sender-accounts/gmail/callback" (e.g. http://localhost:3002/sender-accounts/gmail/callback in local dev). Paste that same value into the Redirect URI field here — it must match exactly, including http vs https.',
+      'Copy the Client ID and Client secret shown after creation into the two fields here, then Save.',
+      'Once saved, "Connect Gmail account" on the Sender Accounts page will open a real Google consent popup for each mailbox you add — no further setup needed per mailbox.',
+    ],
+  },
+  {
     key: 'tracking',
     label: 'Open/click tracking',
     description: 'Pixel + link tracking and unsubscribe link signing.',
     fields: [
-      { key: 'TRACKING_DOMAIN', label: 'Tracking domain', secret: false, placeholder: 'track.yourdomain.com' },
+      { key: 'TRACKING_DOMAIN', label: 'Tracking domain', secret: false, verifyOnly: true },
       { key: 'TRACKING_SIGNING_SECRET', label: 'Signing secret', secret: true },
+    ],
+    instructions: [
+      'Pick a subdomain of your actual sending domain for this — e.g. track.yourdomain.com, not an unrelated third-party-looking domain. Every open pixel and click-through link in outgoing email points here, so it needs to resolve to this app and hold a valid TLS certificate.',
+      'Type the domain below and click "Check DNS" — this shows the exact CNAME record to add at your DNS provider (host = your tracking domain, value = this API\'s own hostname).',
+      'Add that CNAME record at your registrar/DNS provider. Propagation can take a few minutes to a few hours depending on the provider.',
+      'Click "Check DNS" again once it\'s live — the domain is only saved here after the CNAME actually resolves, so a typo or a domain you don\'t control can\'t silently become the tracking host.',
+      'No SPF/DKIM/DMARC records are needed for this domain — that\'s a separate concern handled by your sending domain (SES), not the tracking domain.',
+      'Signing secret below is generated internally (not something you fetch from an external dashboard) — leave it blank to keep the current one, or paste a replacement if you\'re rotating it.',
     ],
   },
 ];

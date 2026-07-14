@@ -135,7 +135,7 @@ Every variable is documented with inline comments in `.env.example`. Summary by 
 | Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time) |
 | AWS SES | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET`, `SES_FROM_EMAIL` | Primary/bulk email sending |
 | Cloudflare R2 | `CLOUDFLARE_R2_*` | Template editor image uploads |
-| Tracking | `TRACKING_DOMAIN`, `TRACKING_SIGNING_SECRET` | Open/click tracking, unsubscribe links |
+| Tracking | `TRACKING_SIGNING_SECRET` | Open/click tracking, unsubscribe links |
 | Gmail Workspace | `GOOGLE_OAUTH_*`, `ADMIN_APP_URL`, `TOKEN_ENCRYPTION_KEY`, `GMAIL_DEFAULT_DAILY_LIMIT` | Rotated secondary sender accounts |
 | Verification | `REOON_API_KEY`, `NEVERBOUNCE_API_KEY` | Bulk email verification |
 | Webhooks | `OUTBOUND_WEBHOOK_HMAC_SECRET` | Outbound webhook signing |
@@ -143,6 +143,11 @@ Every variable is documented with inline comments in `.env.example`. Summary by 
 | AI-assisted copy | `LLM_PROVIDER`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` | Template editor AI Assist |
 
 All of the above (except the core/frontend rows) can also be set from **Settings > Integrations** in the running app instead of `.env` — that's usually the easier path once the instance is up.
+
+Two of these have a different setup path than the rest:
+
+- **Open/click tracking domain** (`TRACKING_DOMAIN`) is deliberately **not** an `.env` field at all — it's DB-only, set from Settings > Integrations > "Open/click tracking." Type the domain, click "Check DNS" — the app shows you the exact CNAME record to add at your DNS provider, and only saves the domain once that record actually resolves back to this API. This stops a typo'd or unowned domain from silently becoming your tracking host.
+- **Gmail OAuth app** (`GOOGLE_OAUTH_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`) can still be set via `.env`, but the UI for it lives on the **Sender Accounts** page itself (the lock icon next to "Connect Gmail account"), not Settings > Integrations — that's the credential "Connect Gmail account" directly depends on, so it's configured right there. One shared Google Cloud OAuth app covers every Gmail mailbox you connect; that page shows the exact redirect URI to register in Google Cloud Console (prefilled from wherever this API is actually reachable) and walks through the rest of the setup.
 
 ## Database migrations in general
 

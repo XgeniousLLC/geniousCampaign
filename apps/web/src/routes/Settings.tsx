@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon } from '../components/icons';
 import { PaginationBar } from '../components/PaginationBar';
 import { AddMemberModal } from '../components/AddMemberModal';
+import { TrackingDomainField } from '../components/TrackingDomainField';
 
 const LOG_PAGE_SIZE = 20;
 
@@ -274,7 +275,10 @@ function IntegrationsPanel() {
   const [helpCategory, setHelpCategory] = useState<SettingCategory | null>(null);
 
   function load() {
-    getIntegrationSettings().then((cats) => {
+    getIntegrationSettings().then((allCats) => {
+      // google_oauth is configured from Sender Accounts (it's what
+      // "Connect Gmail account" directly depends on), not this general tab.
+      const cats = allCats.filter((c) => c.key !== 'google_oauth');
       setCategories(cats);
       setActiveCategory((prev) => prev ?? cats[0]?.key ?? null);
       setValues((prev) => {
@@ -297,6 +301,9 @@ function IntegrationsPanel() {
     try {
       const payload: Record<string, string> = {};
       for (const f of category.fields) {
+        // verifyOnly fields (TRACKING_DOMAIN) have their own dedicated save
+        // path (DNS check first) — never send them through the bulk PATCH.
+        if (f.verifyOnly) continue;
         if (values[f.key]) payload[f.key] = values[f.key];
       }
       const updated = await updateIntegrationSettings(payload);
@@ -408,6 +415,9 @@ function IntegrationsPanel() {
                     </span>
                   </div>
                   {(() => {
+                    if (f.verifyOnly) {
+                      return <TrackingDomainField field={f} onSaved={load} />;
+                    }
                     const selectOptions =
                       f.options ?? (category.key === 'ai' && f.key === 'LLM_MODEL' ? AI_MODEL_OPTIONS[values['LLM_PROVIDER'] || 'openai'] : undefined);
                     if (selectOptions) {

@@ -75,6 +75,7 @@ These came out of earlier design work and are load-bearing — if a ticket seems
 10. **Everything that happens "later"** (a sequence step wait, a scheduled send, a verification API call, a webhook retry) **is a BullMQ job**, not a custom setTimeout/cron loop. This is what makes the system survive restarts and scale past one process.
 11. **Auth is minimal JWT, decided 2026-07-11.** `users` table with `owner | editor | viewer` roles. `POST /auth/register` — the first user ever registered becomes `owner`, everyone after defaults to `viewer` (no invite-by-email flow; an owner promotes others via `PATCH /users/:id/role`). `JwtAuthGuard` + `RolesGuard` currently gate only the RBAC-scoped controllers named in GC-056 (templates/sequences/lists) — reads need any authenticated role, writes need `owner`/`editor`. Don't silently expand guard coverage to other controllers (contacts, tags, webhooks) without a ticket — GC-056 named its scope deliberately. `AuditLogService` is called from every guarded write endpoint; `GET /audit-log` is `owner`-only.
 12. **One internal event bus (`EventEmitter2`, global via `EventEmitterModule.forRoot()`), everything that produces a domain event emits on it — nothing calls the trigger engine or the outbound webhook dispatcher directly.** `ContactsService`/`TagsService`/`ListsService`/`TrackingService`/`SuppressionService`/`SequenceRunnerService` all just `emit()`; `TriggerEvaluationService` (GC-035) and `OutboundWebhookEventListener` (GC-037/043 bridge) are two independent listeners on the same bus, each with explicit `@OnEvent('event.name')` handlers per event type — never a wildcard listener. This is what lets GC-035's auto-enrollment and GC-043's external webhook forwarding both react to the same `contact.tag_added`/`email.bounced`/etc. without the emitting service knowing either consumer exists. Adding a new consumer of an existing event = a new `@OnEvent()` listener, not a new call site in the producer.
+13. **`TRACKING_DOMAIN` is DB-only and DNS-verified, decided 2026-07-14.** Unlike every other Settings > Integrations field, it's never read from `.env` and can't be saved through the generic bulk PATCH (`SettingDef.verifyOnly: true` in `known-settings.ts` marks this). `POST /settings/tracking-domain/verify` (`tracking/tracking-domain.controller.ts`) checks a live DNS CNAME from the submitted domain to the API's own request hostname before calling `SettingsService.setMany()` — a typo'd or unowned domain can never quietly become the open/click tracking host. No local-dev bypass — the check always runs, even against `localhost`, so the "show the DNS record" step is exercisable and testable in every environment (a localhost target can never actually verify, which is correct — there's no real domain that should ever point there). If a future custom-domain feature needs the same "prove you control this DNS" pattern (e.g. a custom sending domain), follow this same shape rather than a plain env-backed field.
 
 ## Reference implementations already drafted
 
@@ -124,7 +125,9 @@ REOON_API_KEY=
 NEVERBOUNCE_API_KEY=
 
 # Tracking
-TRACKING_DOMAIN=track.yourdomain.com
+# TRACKING_DOMAIN is DB-only — set via Settings > Integrations > Open/click
+# tracking, which requires a live DNS CNAME check before saving. Not settable
+# via .env.
 TRACKING_SIGNING_SECRET=
 
 # Outbound webhooks

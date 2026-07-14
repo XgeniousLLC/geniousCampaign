@@ -39,7 +39,7 @@ npm run db:migrate --workspace apps/api
 npm run dev
 ```
 
-This starts both the API (`http://localhost:3000`) and the web app (`http://localhost:5173`) with hot reload. See `.env.example` for the full list of optional integration credentials (AWS SES, Cloudflare R2, Gmail OAuth, Reoon/NeverBounce, OpenAI/DeepSeek, Slack) — every one of these can also be set later from the running app's Settings > Integrations page instead of editing `.env` directly.
+This starts both the API (`http://localhost:3000`) and the web app (`http://localhost:5173`) with hot reload. See `.env.example` for the full list of optional integration credentials (AWS SES, Cloudflare R2, Gmail OAuth, Reoon/NeverBounce, OpenAI/DeepSeek, Slack) — most of these can also be set later from the running app's Settings > Integrations page instead of editing `.env` directly. Two exceptions: the open/click tracking domain is DB-only and requires a live DNS check (Settings > Integrations > "Open/click tracking" — type a domain, "Check DNS" shows the CNAME record to add, saves only once it resolves), and the Gmail OAuth app is configured from the Sender Accounts page itself (lock icon next to "Connect Gmail account"), not Settings > Integrations.
 
 ## Running with Docker
 
