@@ -15,6 +15,14 @@ Bring your own AWS SES / Gmail Workspace / Cloudflare R2 / verification-provider
 - **Sender rotation** — AWS SES and Gmail Workspace accounts, quota-aware, rotated automatically
 - **Team & audit** — role-based access (owner/editor/viewer), a full audit log, and a global suppression list checked before every send
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) Dashboard | ![Contacts](docs/screenshots/contacts.png) Contacts |
+| ![Template editor](docs/screenshots/template-editor.png) Template editor (spintax + AI assist) | ![Campaign detail](docs/screenshots/campaign-detail.png) Campaign detail |
+| ![Sequence builder](docs/screenshots/sequence-builder.png) Sequence builder | ![Webhooks](docs/screenshots/webhooks.png) Webhooks |
+
 ## Tech stack
 
 - **Backend**: NestJS (TypeScript), PostgreSQL via Drizzle ORM, BullMQ + Redis for all queued/scheduled work
