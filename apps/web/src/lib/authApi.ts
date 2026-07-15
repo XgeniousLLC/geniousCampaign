@@ -33,6 +33,10 @@ export function register(email: string, password: string) {
   return apiPost<AuthResponse>('/auth/register', { email, password });
 }
 
+export function getSetupStatus() {
+  return apiGet<{ needsSetup: boolean }>('/auth/setup-status');
+}
+
 export function forgotPassword(email: string) {
   return apiPost<{ message: string }>('/auth/forgot-password', { email });
 }

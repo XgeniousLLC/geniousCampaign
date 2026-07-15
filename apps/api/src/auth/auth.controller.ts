@@ -16,6 +16,11 @@ export class AuthController {
     return this.authService.register(dto.email, dto.password);
   }
 
+  @Get('setup-status')
+  setupStatus() {
+    return this.authService.setupStatus();
+  }
+
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password, dto.rememberMe);

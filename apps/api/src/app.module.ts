@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -86,5 +87,6 @@ import { DebugLogModule } from './debug-log/debug-log.module';
     SettingsModule,
     DebugLogModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

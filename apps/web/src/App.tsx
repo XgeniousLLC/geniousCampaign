@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './routes/Login';
+import { Register } from './routes/Register';
 import { ForgotPassword } from './routes/ForgotPassword';
 import { ResetPassword } from './routes/ResetPassword';
 import { Dashboard } from './routes/Dashboard';
@@ -25,6 +26,7 @@ import { Settings } from './routes/Settings';
 import { Profile } from './routes/Profile';
 import { ChangePassword } from './routes/ChangePassword';
 import { About } from './routes/About';
+import { NotFound } from './routes/NotFound';
 
 function App() {
   return (
@@ -32,6 +34,7 @@ function App() {
       <Routes>
         <Route path="about" element={<About />} />
         <Route path="login" element={<Login />} />
+        <Route path="register" element={<Register />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
         <Route element={<ProtectedRoute />}>
@@ -60,6 +63,7 @@ function App() {
             <Route path="profile" element={<Profile />} />
           </Route>
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
