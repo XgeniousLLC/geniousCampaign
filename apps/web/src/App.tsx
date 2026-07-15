@@ -25,6 +25,7 @@ import { Settings } from './routes/Settings';
 import { Profile } from './routes/Profile';
 import { ChangePassword } from './routes/ChangePassword';
 import { About } from './routes/About';
+import { NotFound } from './routes/NotFound';
 
 function App() {
   return (
@@ -60,6 +61,7 @@ function App() {
             <Route path="profile" element={<Profile />} />
           </Route>
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
