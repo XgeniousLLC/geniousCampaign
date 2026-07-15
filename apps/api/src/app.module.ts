@@ -42,9 +42,20 @@ import { DebugLogModule } from './debug-log/debug-log.module';
     EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        connection: { url: config.get<string>('REDIS_URL') },
-      }),
+      useFactory: (config: ConfigService) => {
+        const url = config.get<string>('REDIS_URL')!;
+        return {
+          // ioredis turns on default (fully-verifying) TLS for rediss:// on
+          // its own, but unlike `pg` it never reads a query-string toggle to
+          // relax that — so a managed Redis on a self-signed cert needs this
+          // passed explicitly, the same "encrypt but don't verify the CA"
+          // trade-off as DATABASE_URL's sslmode=no-verify.
+          connection: {
+            url,
+            ...(url.startsWith('rediss://') ? { tls: { rejectUnauthorized: false } } : {}),
+          },
+        };
+      },
     }),
     DbModule,
     HealthModule,
