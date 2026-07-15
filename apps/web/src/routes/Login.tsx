@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login } from '../lib/authApi';
+import { login, getSetupStatus } from '../lib/authApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { getPublicSummary, type PublicSummary } from '../lib/analyticsApi';
 
@@ -22,7 +22,14 @@ export function Login() {
     getPublicSummary()
       .then(setSummary)
       .catch(() => setSummary(null));
-  }, []);
+    // No admin created yet — send straight to the one-time setup form
+    // instead of showing a login screen no credentials can pass yet.
+    getSetupStatus()
+      .then(({ needsSetup }) => {
+        if (needsSetup) navigate('/register', { replace: true });
+      })
+      .catch(() => {});
+  }, [navigate]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,13 +130,6 @@ export function Login() {
               {loading ? 'Please wait…' : 'Sign in'}
             </button>
           </form>
-
-          <p className="mt-4 text-center text-[12.5px] text-text-tertiary">
-            No account yet?{' '}
-            <Link to="/register" className="font-medium text-accent-light hover:text-accent-lighter">
-              Create one
-            </Link>
-          </p>
 
           {import.meta.env.DEV && (
             <div className="mt-5 rounded-[9px] border border-info/25 bg-info/10 p-3 text-[11.5px] leading-relaxed text-text-tertiary">

@@ -17,6 +17,11 @@ export class AuthService {
     return this.buildTokenResponse(user);
   }
 
+  async setupStatus() {
+    const hasAnyUser = await this.usersService.hasAnyUser();
+    return { needsSetup: !hasAnyUser };
+  }
+
   async login(email: string, password: string, rememberMe?: boolean) {
     const user = await this.usersService.validateCredentials(email, password);
     // Default (unchecked) keeps JwtModule's own configured expiry (7d);

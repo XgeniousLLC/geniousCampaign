@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
@@ -11,18 +11,27 @@ type UserRole = (typeof userRoleEnum.enumValues)[number];
 export class UsersService {
   constructor(private readonly drizzle: DrizzleService) {}
 
+  /** Self-registration only ever creates the very first (owner) account —
+   * this is an internal, single-org admin tool, not a public signup page.
+   * Every account after that is created by an owner via `createByAdmin()`
+   * (Members tab), never through this endpoint. */
   async register(email: string, password: string) {
-    const existing = await this.drizzle.db.query.users.findFirst({ where: eq(users.email, email) });
-    if (existing) {
-      throw new ConflictException(`A user with email "${email}" already exists`);
+    const anyUser = await this.drizzle.db.query.users.findFirst();
+    if (anyUser) {
+      throw new ForbiddenException('Registration is closed — ask an owner to create your account from Settings > Members.');
     }
 
-    const anyUser = await this.drizzle.db.query.users.findFirst();
-    const role: UserRole = anyUser ? 'viewer' : 'owner';
-
     const passwordHash = await bcrypt.hash(password, 12);
-    const [created] = await this.drizzle.db.insert(users).values({ email, passwordHash, role }).returning();
+    const [created] = await this.drizzle.db.insert(users).values({ email, passwordHash, role: 'owner' }).returning();
     return created;
+  }
+
+  /** Public setup-check — lets the frontend show the one-time "create
+   * admin" form only when no account exists yet, without leaking
+   * anything else about the users table. */
+  async hasAnyUser(): Promise<boolean> {
+    const anyUser = await this.drizzle.db.query.users.findFirst();
+    return !!anyUser;
   }
 
   /** Owner-only admin-created member — unlike `register()`, the caller

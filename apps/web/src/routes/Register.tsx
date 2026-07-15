@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { register } from '../lib/authApi';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { register, getSetupStatus } from '../lib/authApi';
 import { useAuthStore } from '../stores/useAuthStore';
 
 export function Register() {
@@ -11,6 +11,19 @@ export function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // This form only exists for the one-time initial admin — once an
+  // account already exists, register() 403s anyway, but bounce away
+  // before the form even renders rather than let it be found/used.
+  const [checkingSetup, setCheckingSetup] = useState(true);
+
+  useEffect(() => {
+    getSetupStatus()
+      .then(({ needsSetup }) => {
+        if (!needsSetup) navigate('/login', { replace: true });
+        else setCheckingSetup(false);
+      })
+      .catch(() => setCheckingSetup(false));
+  }, [navigate]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +50,10 @@ export function Register() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (checkingSetup) {
+    return <div className="h-screen bg-base" />;
   }
 
   return (
@@ -121,13 +138,6 @@ export function Register() {
               {loading ? 'Please wait…' : 'Create account'}
             </button>
           </form>
-
-          <p className="mt-4 text-center text-[12.5px] text-text-tertiary">
-            Already have an account?{' '}
-            <Link to="/login" className="font-medium text-accent-light hover:text-accent-lighter">
-              Sign in
-            </Link>
-          </p>
         </div>
       </div>
 
