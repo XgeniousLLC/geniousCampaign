@@ -87,8 +87,10 @@ In the resource's **Build** settings:
 - Base Directory: `/` (repo root)
 - Install Command: `npm ci`
 - Build Command: `npm run build --workspace packages/shared && npm run build --workspace apps/api`
-- Start Command: `npm run start:prod --workspace apps/api`
+- Start Command: `npm run db:migrate --workspace apps/api && npm run start:prod --workspace apps/api`
 - Port: `3000`
+
+Migration is chained into the Start Command, not left to the Post-deployment Command alone — on a fresh database the app crashes on boot querying tables that don't exist yet (`SettingsService` reads `app_settings` in `onModuleInit`), which crash-loops the container before it's ever healthy enough for Coolify's Post-deployment step to `exec` into it. Running migrate first, in the same command, guarantees the schema exists before Nest touches the DB at all. `drizzle-kit migrate` is idempotent, so this is safe on every restart, not just the first.
 
 Set these in the resource's **Environment Variables** tab (runtime, not build-time — the API reads them via `process.env` at startup/request time):
 
@@ -135,15 +137,9 @@ VITE_API_BASE_URL=<the public URL of the API resource, e.g. https://api.yourdoma
 
 Deploy the resource. If you ever change this value, you must trigger a rebuild (not just a restart) for it to take effect.
 
-### 4. Run migrations
+### 4. Migrations
 
-On the API resource's **Advanced** tab, set **Post-deployment Command** to:
-
-```bash
-npm run db:migrate --workspace apps/api
-```
-
-Runs automatically after every deploy, once the new container is up. `drizzle-kit migrate` is idempotent (skips already-applied migrations), so it's safe to leave wired permanently rather than removing it after the first deploy. If you'd rather run it manually instead, use Coolify's terminal/exec on the running container with the same command.
+Already handled — chained into step 2's Start Command, ahead of `start:prod`, specifically so it runs before the app can crash-loop on missing tables. Don't rely on Coolify's **Post-deployment Command** for this on a fresh database: it `exec`s into the already-running new container, which never happens if that container is crash-looping because the schema doesn't exist yet — a deadlock. The Post-deployment Command field can still be set to the same `npm run db:migrate --workspace apps/api` as a no-op safety net once the app's healthy, but the Start Command chain is what actually has to carry this.
 
 ### 5. Verify and finish setup
 
