@@ -1,6 +1,6 @@
 # Deploying geniusCampaign
 
-Two supported paths: **Docker** (recommended — the fastest way to get a production instance running) or **manual** (build the two apps yourself and run them with your own process manager / reverse proxy).
+Three supported paths: **Docker** (`docker compose` — fastest for a self-managed VM), **Coolify** (if you're deploying to a Coolify instance), or **manual** (build the two apps yourself and run them with your own process manager / reverse proxy).
 
 Either way, you need real accounts/credentials for the integrations you plan to use — see [Environment variables](#environment-variables) below. Nothing works with fake/placeholder credentials; every send/verify/upload call hits the real provider.
 
@@ -68,6 +68,86 @@ docker compose down          # stops containers, keeps volumes (data preserved)
 docker compose down -v       # also deletes postgres/redis volumes — destroys all data
 ```
 
+## Coolify (Nixpacks)
+
+This repo also has Dockerfiles (`apps/api/Dockerfile`, `apps/web/Dockerfile`) for the plain-Docker path above, but if your Coolify instance is set to build with **Nixpacks**, skip those — deploy `apps/api` and `apps/web` as two separate Nixpacks resources instead, against Postgres/Redis you provide (Coolify's own managed database resources, or any external instance). Don't use `docker-compose.yml` here either; it's for the standalone Docker path only.
+
+Both apps live in one npm-workspaces monorepo, so Nixpacks' auto-detected build (`npm ci` + whatever `build`/`start` it finds in `package.json`) doesn't know which app to build — you override the Install/Build/Start commands per resource, with **Base Directory set to the repo root**, not `apps/api/` or `apps/web/`. That's what lets `npm ci` resolve the `packages/shared` workspace dependency.
+
+### 1. Provision Postgres and Redis
+
+In Coolify: **+ New > Database > PostgreSQL** and **+ New > Database > Redis** (or point at existing external instances). Copy the connection strings Coolify shows you — these become `DATABASE_URL` and `REDIS_URL` below.
+
+### 2. Create the API resource
+
+**+ New > Application** > pick this repo/branch > **Build Pack: Nixpacks**.
+
+In the resource's **Build** settings:
+
+- Base Directory: `/` (repo root)
+- Install Command: `npm ci`
+- Build Command: `npm run build --workspace packages/shared && npm run build --workspace apps/api`
+- Start Command: `npm run start:prod --workspace apps/api`
+- Port: `3000`
+
+Set these in the resource's **Environment Variables** tab (runtime, not build-time — the API reads them via `process.env` at startup/request time):
+
+```
+DATABASE_URL=<from step 1>
+REDIS_URL=<from step 1>
+JWT_SECRET=<openssl rand -hex 32>
+PORT=3000
+ADMIN_APP_URL=<the public URL of the web app, e.g. https://app.yourdomain.com>
+```
+
+Add these two only if you plan to use Gmail sending — they're real secrets the app needs at startup and, unlike the Gmail OAuth client ID/secret themselves, are **not** settable from the running app's UI:
+
+```
+TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>
+GMAIL_DEFAULT_DAILY_LIMIT=300
+```
+
+Add this only if you want Slack circuit-breaker/large-send notifications — there's currently no in-app UI for it (removed in GC-080), so it's `.env`-only:
+
+```
+SLACK_WEBHOOK_URL=
+```
+
+Everything else in `.env.example` (AWS SES, Cloudflare R2, Reoon/NeverBounce, Gmail OAuth client, OpenAI/DeepSeek) can be left unset here — configure those from the running app itself after first deploy (see the table below for exactly where each one lives). Deploy the resource.
+
+### 3. Create the web resource
+
+**+ New > Application** > same repo/branch > **Build Pack: Nixpacks**.
+
+- Base Directory: `/` (repo root)
+- Install Command: `npm ci`
+- Build Command: `npm run build --workspace packages/shared && npm run build --workspace apps/web`
+- Start Command: `npx serve -s apps/web/dist -l 3000` (or any static-file server with SPA fallback — `apps/web/dist` is a static build, Nixpacks' default Node start won't serve it on its own)
+- Port: `3000` (or whatever port your static server binds)
+
+Set one **Build-Time Variable** (Coolify has a separate section for this vs. runtime env — must be build-time, since Vite inlines it into the JS bundle and it does nothing set at runtime):
+
+```
+VITE_API_BASE_URL=<the public URL of the API resource, e.g. https://api.yourdomain.com>
+```
+
+Deploy the resource. If you ever change this value, you must trigger a rebuild (not just a restart) for it to take effect.
+
+### 4. Run migrations
+
+On the API resource's **Advanced** tab, set **Post-deployment Command** to:
+
+```bash
+npm run db:migrate --workspace apps/api
+```
+
+Runs automatically after every deploy, once the new container is up. `drizzle-kit migrate` is idempotent (skips already-applied migrations), so it's safe to leave wired permanently rather than removing it after the first deploy. If you'd rather run it manually instead, use Coolify's terminal/exec on the running container with the same command.
+
+### 5. Verify and finish setup
+
+- Open the web resource's URL, register the first account (becomes `owner` automatically).
+- Go to **Settings > Integrations** and **Sender Accounts** in the app itself to add the credentials you skipped in step 2 — see the "Set via" column below for where each one lives.
+
 ## Manual deployment (no Docker)
 
 ### Prerequisites
@@ -127,27 +207,27 @@ Put the API behind its own subdomain/port (`api.yourdomain.com` or `yourdomain.c
 
 ## Environment variables
 
-Every variable is documented with inline comments in `.env.example`. Summary by feature area — leave a section blank if you don't need that feature yet; the app degrades gracefully and marks the corresponding ticket/feature as blocked rather than faking success:
+Every variable is documented with inline comments in `.env.example`. The key thing to know before filling these in: **most of them are not actually required at deploy time.** Only "env-only" rows below must be set in `.env`/Coolify — everything marked "DB, via UI" can be left blank and configured from the running app itself after first deploy (Settings > Integrations or Sender Accounts, per row), stored encrypted in the database, and takes effect immediately with no restart.
 
-| Area | Variables | Required for |
-|---|---|---|
-| Core | `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `PORT` | Everything |
-| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time) |
-| AWS SES | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET`, `SES_FROM_EMAIL` | Primary/bulk email sending |
-| Cloudflare R2 | `CLOUDFLARE_R2_*` | Template editor image uploads |
-| Tracking | `TRACKING_SIGNING_SECRET` | Open/click tracking, unsubscribe links |
-| Gmail Workspace | `GOOGLE_OAUTH_*`, `ADMIN_APP_URL`, `TOKEN_ENCRYPTION_KEY`, `GMAIL_DEFAULT_DAILY_LIMIT` | Rotated secondary sender accounts |
-| Verification | `REOON_API_KEY`, `NEVERBOUNCE_API_KEY` | Bulk email verification |
-| Webhooks | `OUTBOUND_WEBHOOK_HMAC_SECRET` | Outbound webhook signing |
-| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications |
-| AI-assisted copy | `LLM_PROVIDER`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` | Template editor AI Assist |
+| Area | Variables | Required for | Set via |
+|---|---|---|---|
+| Core | `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `PORT` | Everything | **env-only**, required |
+| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time) | **env-only**, required (build-time) |
+| Gmail token encryption | `TOKEN_ENCRYPTION_KEY`, `ADMIN_APP_URL`, `GMAIL_DEFAULT_DAILY_LIMIT` | Encrypting stored Gmail refresh tokens at rest; correct password-reset/OAuth-redirect links | **env-only** if using Gmail sending — not settable from the UI even though the OAuth client credentials below are |
+| AWS SES | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET`, `SES_FROM_EMAIL` | Primary/bulk email sending | **Sender Accounts** page — add an SES account with its own credentials there; `.env` values are only used as a fallback default for accounts left blank |
+| Cloudflare R2 | `CLOUDFLARE_R2_*` | Template editor image uploads | **Settings > Integrations** — DB, no env needed |
+| Gmail OAuth client | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` | Connecting Gmail mailboxes as sender accounts | **Sender Accounts** page (lock icon next to "Connect Gmail account") — DB, no env needed |
+| Verification | `REOON_API_KEY`, `NEVERBOUNCE_API_KEY` | Bulk email verification | **Settings > Integrations** — DB, no env needed |
+| Tracking | `TRACKING_SIGNING_SECRET` | Signing open/click/unsubscribe tokens | **Settings > Integrations** — DB, no env needed |
+| Tracking domain | `TRACKING_DOMAIN` | Open/click tracking host | **Settings > Integrations** only — DNS-verified, never settable via `.env` at all |
+| Webhooks | `OUTBOUND_WEBHOOK_HMAC_SECRET` | Outbound webhook signing | **env-only** — feature not implemented yet (GC-037/043), harmless to leave blank today |
+| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications | **env-only** — no Settings UI exists for this (removed in GC-080); set it in `.env`/Coolify or skip the feature |
+| AI-assisted copy | `LLM_PROVIDER`, `LLM_MODEL`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` | Template editor AI Assist | **Settings > Integrations** — DB, no env needed |
 
-All of the above (except the core/frontend rows) can also be set from **Settings > Integrations** in the running app instead of `.env` — that's usually the easier path once the instance is up.
+Notes on the two DB-only rows:
 
-Two of these have a different setup path than the rest:
-
-- **Open/click tracking domain** (`TRACKING_DOMAIN`) is deliberately **not** an `.env` field at all — it's DB-only, set from Settings > Integrations > "Open/click tracking." Type the domain, click "Check DNS" — the app shows you the exact CNAME record to add at your DNS provider, and only saves the domain once that record actually resolves back to this API. This stops a typo'd or unowned domain from silently becoming your tracking host.
-- **Gmail OAuth app** (`GOOGLE_OAUTH_CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI`) can still be set via `.env`, but the UI for it lives on the **Sender Accounts** page itself (the lock icon next to "Connect Gmail account"), not Settings > Integrations — that's the credential "Connect Gmail account" directly depends on, so it's configured right there. One shared Google Cloud OAuth app covers every Gmail mailbox you connect; that page shows the exact redirect URI to register in Google Cloud Console (prefilled from wherever this API is actually reachable) and walks through the rest of the setup.
+- **Open/click tracking domain** (`TRACKING_DOMAIN`): type the domain in Settings > Integrations > "Open/click tracking," click "Check DNS" — the app shows the exact CNAME record to add at your DNS provider, and only saves the domain once that record actually resolves back to this API. This stops a typo'd or unowned domain from silently becoming your tracking host.
+- **AWS SES / Gmail OAuth client**: both moved off the generic Settings > Integrations panel and onto the **Sender Accounts** page directly (GC-077/GC-080) — that's the page each credential actually gates, so it's configured right there instead of a separate settings screen.
 
 ## Database migrations in general
 
