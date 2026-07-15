@@ -93,12 +93,14 @@ In the resource's **Build** settings:
 Set these in the resource's **Environment Variables** tab (runtime, not build-time — the API reads them via `process.env` at startup/request time):
 
 ```
-DATABASE_URL=<from step 1>
+DATABASE_URL=<from step 1>?sslmode=no-verify
 REDIS_URL=<from step 1>
 JWT_SECRET=<openssl rand -hex 32>
 PORT=3000
 ADMIN_APP_URL=<the public URL of the web app, e.g. https://app.yourdomain.com>
 ```
+
+If `DATABASE_URL` points at a Coolify-managed Postgres (self-signed/internal cert), use `sslmode=no-verify`, not `require` — newer `pg-connection-string` versions treat `require` as an alias for `verify-full` (full CA chain verification), which fails against a self-signed cert with `unable to verify the first certificate` / `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. `no-verify` still encrypts the connection, it just skips CA verification.
 
 Add these two only if you plan to use Gmail sending — they're real secrets the app needs at startup and, unlike the Gmail OAuth client ID/secret themselves, are **not** settable from the running app's UI:
 
@@ -120,7 +122,7 @@ Everything else in `.env.example` (AWS SES, Cloudflare R2, Reoon/NeverBounce, Gm
 **+ New > Application** > same repo/branch > **Build Pack: Nixpacks**.
 
 - Base Directory: `/` (repo root)
-- Install Command: `npm ci`
+- Install Command: `npm install` (**not** `npm ci` — the committed `package-lock.json` was generated on macOS and is missing the Linux optional-dependency entry for `rolldown`'s native binding; `npm ci` installs exactly what's locked and fails on the Linux build container with `Cannot find module '.../rolldown-binding.linux-x64-gnu.node'`, a known npm optional-deps bug (npm/cli#4828). `npm install` re-resolves and pulls the correct platform binary. The API resource is unaffected — keep `npm ci` there.)
 - Build Command: `npm run build --workspace packages/shared && npm run build --workspace apps/web`
 - Start Command: `npx serve -s apps/web/dist -l 3000` (or any static-file server with SPA fallback — `apps/web/dist` is a static build, Nixpacks' default Node start won't serve it on its own)
 - Port: `3000` (or whatever port your static server binds)
