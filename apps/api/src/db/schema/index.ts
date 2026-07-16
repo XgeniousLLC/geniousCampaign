@@ -17,3 +17,4 @@ export * from './password-resets';
 export * from './app-settings';
 export * from './trigger-evaluations';
 export * from './error-logs';
+export * from './ai-usage';

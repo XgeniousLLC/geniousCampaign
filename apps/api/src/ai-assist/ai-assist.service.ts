@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import { OpenAiCompatibleProvider } from './openai-compatible.provider';
+import { AiUsageService } from './ai-usage.service';
 import type { LlmProvider } from './llm-provider.interface';
 import type { GenerateCopyDto } from './dto/generate-copy.dto';
 
@@ -37,26 +38,29 @@ const DEFAULT_MODELS: Record<'openai' | 'deepseek', string> = {
 
 @Injectable()
 export class AiAssistService {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly aiUsage: AiUsageService,
+  ) {}
 
-  private getProvider(): LlmProvider {
+  private getProvider(): { provider: LlmProvider; providerName: string; model: string } {
     const providerName = (this.settings.get('LLM_PROVIDER') || 'openai').toLowerCase();
 
     if (providerName === 'deepseek') {
-      return new OpenAiCompatibleProvider(
-        'DeepSeek',
-        'https://api.deepseek.com',
-        this.settings.get('LLM_MODEL') || DEFAULT_MODELS.deepseek,
-        this.settings.get('DEEPSEEK_API_KEY'),
-      );
+      const model = this.settings.get('LLM_MODEL') || DEFAULT_MODELS.deepseek;
+      return {
+        provider: new OpenAiCompatibleProvider('DeepSeek', 'https://api.deepseek.com', model, this.settings.get('DEEPSEEK_API_KEY')),
+        providerName: 'deepseek',
+        model,
+      };
     }
     if (providerName === 'openai') {
-      return new OpenAiCompatibleProvider(
-        'OpenAI',
-        'https://api.openai.com/v1',
-        this.settings.get('LLM_MODEL') || DEFAULT_MODELS.openai,
-        this.settings.get('OPENAI_API_KEY'),
-      );
+      const model = this.settings.get('LLM_MODEL') || DEFAULT_MODELS.openai;
+      return {
+        provider: new OpenAiCompatibleProvider('OpenAI', 'https://api.openai.com/v1', model, this.settings.get('OPENAI_API_KEY')),
+        providerName: 'openai',
+        model,
+      };
     }
     throw new InternalServerErrorException(`Unknown LLM_PROVIDER "${providerName}" — expected "openai" or "deepseek".`);
   }
@@ -65,7 +69,7 @@ export class AiAssistService {
    * provider is used, never hardcoded to one, never a stubbed response
    * when the selected provider's key is missing. */
   async generateCopy(dto: GenerateCopyDto): Promise<string> {
-    const provider = this.getProvider();
+    const { provider, providerName, model } = this.getProvider();
 
     let prompt: string;
     if (dto.quickAction) {
@@ -80,6 +84,12 @@ export class AiAssistService {
       prompt = `${dto.prompt}\n\n${SPINTAX_INSTRUCTION}`;
     }
 
-    return provider.generate(prompt);
+    const result = await provider.generate(prompt);
+    if (result.usage) {
+      // Fire-and-forget — a usage-tracking failure must never fail the
+      // actual copy generation the user is waiting on.
+      void this.aiUsage.record(providerName, model, result.usage.promptTokens, result.usage.completionTokens);
+    }
+    return result.text;
   }
 }

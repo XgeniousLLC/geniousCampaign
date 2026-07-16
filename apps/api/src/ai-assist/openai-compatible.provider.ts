@@ -1,8 +1,9 @@
 import { InternalServerErrorException, Logger } from '@nestjs/common';
-import type { LlmProvider } from './llm-provider.interface';
+import type { LlmProvider, LlmGenerateResult } from './llm-provider.interface';
 
 interface ChatCompletionResponse {
   choices?: { message?: { content?: string } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 /**
@@ -23,7 +24,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     this.logger = new Logger(`${providerName}Provider`);
   }
 
-  async generate(prompt: string): Promise<string> {
+  async generate(prompt: string): Promise<LlmGenerateResult> {
     if (!this.apiKey) {
       throw new InternalServerErrorException(`${this.providerName} is not configured — no API key set.`);
     }
@@ -56,6 +57,10 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     if (!text) {
       throw new Error(`${this.providerName} returned no content`);
     }
-    return text;
+    const usage =
+      data.usage?.prompt_tokens !== undefined && data.usage?.completion_tokens !== undefined
+        ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens }
+        : undefined;
+    return { text, usage };
   }
 }

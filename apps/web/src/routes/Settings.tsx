@@ -3,6 +3,7 @@ import { listUsers, updateUserRole, type User } from '../lib/usersApi';
 import { listAuditLog, type AuditLogEntry } from '../lib/auditLogApi';
 import { listSuppressionList, type SuppressionEntry } from '../lib/suppressionApi';
 import { listDebugLog, type ErrorLogEntry } from '../lib/debugLogApi';
+import { getAiUsageSummary, type AiUsageSummary } from '../lib/aiAssistApi';
 import { getIntegrationSettings, updateIntegrationSettings, clearIntegrationSetting, type SettingCategory } from '../lib/settingsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon } from '../components/icons';
@@ -12,7 +13,7 @@ import { TrackingDomainField } from '../components/TrackingDomainField';
 
 const LOG_PAGE_SIZE = 20;
 
-const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'Integrations'] as const;
+const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'AI usage', 'Integrations'] as const;
 type Tab = (typeof TABS)[number];
 
 // Selectable models per LLM provider for Settings > Integrations > AI-assisted
@@ -50,6 +51,7 @@ export function Settings() {
   const [debugLog, setDebugLog] = useState<ErrorLogEntry[]>([]);
   const [debugPage, setDebugPage] = useState(1);
   const [debugTotal, setDebugTotal] = useState(0);
+  const [aiUsage, setAiUsage] = useState<AiUsageSummary | null>(null);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const isOwner = useAuthStore((s) => s.user?.role === 'owner');
@@ -86,6 +88,10 @@ export function Settings() {
     }
   }, [tab, debugPage]);
 
+  useEffect(() => {
+    if (tab === 'AI usage') getAiUsageSummary().then(setAiUsage);
+  }, [tab]);
+
   async function handleRoleChange(userId: string, role: User['role']) {
     await updateUserRole(userId, role);
     listUsers().then(setUsers);
@@ -99,7 +105,7 @@ export function Settings() {
       </div>
 
       <div className="mb-[18px] flex gap-5 border-b border-border-default">
-        {TABS.filter((t) => (t !== 'Integrations' && t !== 'Debug log') || isOwner).map((t) => (
+        {TABS.filter((t) => (t !== 'Integrations' && t !== 'Debug log' && t !== 'AI usage') || isOwner).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -257,6 +263,63 @@ export function Settings() {
           ))}
           {debugLog.length === 0 && <div className="px-4 py-6 text-center text-xs text-text-muted">No errors logged — good sign.</div>}
           {debugTotal > 0 && <PaginationBar page={debugPage} limit={LOG_PAGE_SIZE} total={debugTotal} onPageChange={setDebugPage} />}
+        </div>
+      )}
+
+      {tab === 'AI usage' && isOwner && aiUsage && (
+        <div className="max-w-3xl">
+          <div className="mb-4 grid grid-cols-3 gap-3">
+            <div className="rounded-md border border-border-default bg-panel p-4">
+              <div className="text-[11px] font-medium text-text-muted">Total calls</div>
+              <div className="mt-1 text-xl font-semibold text-text-heading">{aiUsage.totals.calls.toLocaleString()}</div>
+            </div>
+            <div className="rounded-md border border-border-default bg-panel p-4">
+              <div className="text-[11px] font-medium text-text-muted">Total tokens</div>
+              <div className="mt-1 text-xl font-semibold text-text-heading">
+                {(aiUsage.totals.promptTokens + aiUsage.totals.completionTokens).toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-md border border-border-default bg-panel p-4">
+              <div className="text-[11px] font-medium text-text-muted">Estimated cost</div>
+              <div className="mt-1 text-xl font-semibold text-text-heading">
+                ${aiUsage.totals.costUsd.toFixed(2)}
+                {aiUsage.totals.hasUnknownCost && <span className="ml-1 text-[11px] font-normal text-warning">+ unknown</span>}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-md border border-border-default bg-panel">
+            <div className="border-b border-border-default px-4 py-3 text-sm font-semibold text-text-primary">By provider &amp; model</div>
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-border-subtle text-text-muted">
+                  <th className="px-4 py-2 font-medium">Provider</th>
+                  <th className="px-4 py-2 font-medium">Model</th>
+                  <th className="px-4 py-2 font-medium">Calls</th>
+                  <th className="px-4 py-2 font-medium">Prompt tokens</th>
+                  <th className="px-4 py-2 font-medium">Completion tokens</th>
+                  <th className="px-4 py-2 font-medium">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiUsage.byModel.map((row) => (
+                  <tr key={`${row.provider}-${row.model}`} className="border-t border-border-subtle">
+                    <td className="px-4 py-2 text-text-secondary">{row.provider}</td>
+                    <td className="px-4 py-2 font-mono text-text-secondary">{row.model}</td>
+                    <td className="px-4 py-2 text-text-secondary">{row.calls.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-text-secondary">{row.promptTokens.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-text-secondary">{row.completionTokens.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-text-secondary">
+                      {row.costUsd === null ? <span className="text-text-faint">unknown</span> : `$${row.costUsd.toFixed(4)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {aiUsage.byModel.length === 0 && (
+              <div className="px-4 py-6 text-center text-xs text-text-muted">No AI Assist calls recorded yet.</div>
+            )}
+          </div>
         </div>
       )}
 
