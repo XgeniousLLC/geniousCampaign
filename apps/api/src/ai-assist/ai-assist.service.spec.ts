@@ -1,5 +1,8 @@
 import { SettingsService } from '../settings/settings.service';
 import { AiAssistService } from './ai-assist.service';
+import type { AiUsageService } from './ai-usage.service';
+
+const fakeAiUsage = { record: jest.fn() } as unknown as AiUsageService;
 
 describe('AiAssistService', () => {
   let fetchSpy: jest.SpyInstance;
@@ -8,14 +11,14 @@ describe('AiAssistService', () => {
 
   it('throws instead of faking output when the selected provider has no API key', async () => {
     const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'openai' : undefined) } as unknown as SettingsService;
-    const service = new AiAssistService(config);
+    const service = new AiAssistService(config, fakeAiUsage);
 
     await expect(service.generateCopy({ prompt: 'write something' })).rejects.toThrow(/OpenAI is not configured/);
   });
 
   it('rejects an unknown LLM_PROVIDER value rather than silently falling back to one', async () => {
     const config = { get: (key: string) => (key === 'LLM_PROVIDER' ? 'anthropic' : undefined) } as unknown as SettingsService;
-    const service = new AiAssistService(config);
+    const service = new AiAssistService(config, fakeAiUsage);
 
     await expect(service.generateCopy({ prompt: 'write something' })).rejects.toThrow(/Unknown LLM_PROVIDER/);
   });
@@ -28,7 +31,7 @@ describe('AiAssistService', () => {
 
     const values: Record<string, string> = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key' };
     const config = { get: (key: string) => values[key] } as unknown as SettingsService;
-    const service = new AiAssistService(config);
+    const service = new AiAssistService(config, fakeAiUsage);
 
     const result = await service.generateCopy({ prompt: 'Friendly intro, under 90 words' });
 
@@ -51,7 +54,7 @@ describe('AiAssistService', () => {
 
     const values: Record<string, string> = { LLM_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'ds-key' };
     const config = { get: (key: string) => values[key] } as unknown as SettingsService;
-    const service = new AiAssistService(config);
+    const service = new AiAssistService(config, fakeAiUsage);
 
     const result = await service.generateCopy({ prompt: 'write something' });
 
@@ -69,7 +72,7 @@ describe('AiAssistService', () => {
 
     const values: Record<string, string> = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key' };
     const config = { get: (key: string) => values[key] } as unknown as SettingsService;
-    const service = new AiAssistService(config);
+    const service = new AiAssistService(config, fakeAiUsage);
 
     await service.generateCopy({ prompt: 'original prompt', quickAction: 'shorter', previousResult: 'the long draft to shrink' });
 
