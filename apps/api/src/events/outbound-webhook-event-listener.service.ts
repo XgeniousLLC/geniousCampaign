@@ -56,6 +56,11 @@ export class OutboundWebhookEventListener {
     return this.dispatch.emit('email.unsubscribed', payload);
   }
 
+  @OnEvent('email.verification_failed')
+  onEmailVerificationFailed(payload: unknown) {
+    return this.dispatch.emit('email.verification_failed', payload);
+  }
+
   @OnEvent('sequence.completed')
   onSequenceCompleted(payload: unknown) {
     return this.dispatch.emit('sequence.completed', payload);

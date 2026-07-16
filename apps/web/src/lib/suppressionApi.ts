@@ -4,7 +4,7 @@ import type { Contact } from './contactsApi';
 export interface SuppressionEntry {
   id: string;
   email: string;
-  reason: 'hard_bounce' | 'complaint' | 'manual_unsubscribe' | 'repeated_soft_bounce';
+  reason: 'hard_bounce' | 'complaint' | 'manual_unsubscribe' | 'repeated_soft_bounce' | 'invalid_email';
   source: string;
   createdAt: string;
 }

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, uuid, text, jsonb, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, jsonb, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 export const contactStatusEnum = pgEnum('contact_status', [
   'active',
@@ -19,5 +19,5 @@ export const contacts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('contacts_email_unique_idx').on(table.email)],
+  (table) => [uniqueIndex('contacts_email_unique_idx').on(table.email), index('contacts_status_idx').on(table.status)],
 );

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp, index } from 'drizzle-orm/pg-core';
 import { contacts } from './contacts';
 import { templates } from './templates';
 import { sequences, sequenceSteps } from './sequences';
@@ -54,39 +54,51 @@ export const campaigns = pgTable('campaigns', {
 export const sendProviderEnum = pgEnum('send_provider', ['ses', 'gmail']);
 export const sendStatusEnum = pgEnum('send_status', ['sent', 'failed', 'suppressed', 'bounced', 'complained']);
 
-export const sends = pgTable('sends', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  contactId: uuid('contact_id')
-    .notNull()
-    .references(() => contacts.id, { onDelete: 'cascade' }),
-  templateId: uuid('template_id').references(() => templates.id, { onDelete: 'set null' }),
-  campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
-  sequenceEnrollmentId: uuid('sequence_enrollment_id').references(() => sequenceEnrollments.id, {
-    onDelete: 'set null',
-  }),
-  sequenceId: uuid('sequence_id').references(() => sequences.id, { onDelete: 'set null' }),
-  sequenceStepId: uuid('sequence_step_id').references(() => sequenceSteps.id, { onDelete: 'set null' }),
-  provider: sendProviderEnum('provider').notNull().default('ses'),
-  providerMessageId: text('provider_message_id'),
-  resolvedSubject: text('resolved_subject').notNull(),
-  resolvedBodyHtml: text('resolved_body_html').notNull(),
-  resolvedBodyText: text('resolved_body_text').notNull(),
-  status: sendStatusEnum('status').notNull(),
-  error: text('error'),
-  isDryRun: boolean('is_dry_run').notNull().default(false),
-  sentAt: timestamp('sent_at', { withTimezone: true }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const sends = pgTable(
+  'sends',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contactId: uuid('contact_id')
+      .notNull()
+      .references(() => contacts.id, { onDelete: 'cascade' }),
+    templateId: uuid('template_id').references(() => templates.id, { onDelete: 'set null' }),
+    campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
+    sequenceEnrollmentId: uuid('sequence_enrollment_id').references(() => sequenceEnrollments.id, {
+      onDelete: 'set null',
+    }),
+    sequenceId: uuid('sequence_id').references(() => sequences.id, { onDelete: 'set null' }),
+    sequenceStepId: uuid('sequence_step_id').references(() => sequenceSteps.id, { onDelete: 'set null' }),
+    provider: sendProviderEnum('provider').notNull().default('ses'),
+    providerMessageId: text('provider_message_id'),
+    resolvedSubject: text('resolved_subject').notNull(),
+    resolvedBodyHtml: text('resolved_body_html').notNull(),
+    resolvedBodyText: text('resolved_body_text').notNull(),
+    status: sendStatusEnum('status').notNull(),
+    error: text('error'),
+    isDryRun: boolean('is_dry_run').notNull().default(false),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // FK constraints don't implicitly create an index in Postgres — without
+  // this, every per-contact "last activity" lookup (contacts list, contact
+  // detail) was a full table scan of `sends`. Found while diagnosing slow
+  // contacts-page loads at 7k+ contacts (GC-118).
+  (table) => [index('sends_contact_id_idx').on(table.contactId)],
+);
 
 export const emailEventTypeEnum = pgEnum('email_event_type', ['open', 'click', 'bounce', 'complaint']);
 
-export const emailEvents = pgTable('email_events', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  sendId: uuid('send_id')
-    .notNull()
-    .references(() => sends.id, { onDelete: 'cascade' }),
-  type: emailEventTypeEnum('type').notNull(),
-  url: text('url'),
-  metadata: text('metadata'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const emailEvents = pgTable(
+  'email_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sendId: uuid('send_id')
+      .notNull()
+      .references(() => sends.id, { onDelete: 'cascade' }),
+    type: emailEventTypeEnum('type').notNull(),
+    url: text('url'),
+    metadata: text('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('email_events_send_id_idx').on(table.sendId)],
+);

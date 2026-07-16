@@ -13,6 +13,7 @@ const REASON_TO_EVENT: Record<SuppressionReason, string> = {
   repeated_soft_bounce: 'email.bounced',
   complaint: 'email.complained',
   manual_unsubscribe: 'email.unsubscribed',
+  invalid_email: 'email.verification_failed',
 };
 
 @Injectable()

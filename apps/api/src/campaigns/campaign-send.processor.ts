@@ -53,7 +53,13 @@ export class CampaignSendProcessor extends WorkerHost {
     let suppressedCount = 0;
 
     for (const { contact } of recipients) {
-      if (await this.suppression.isSuppressed(contact.email)) {
+      // Two independent gates: suppression_list (bounces/complaints/manual
+      // unsubscribe/invalid-verification) and contact.status — a contact
+      // can carry status 'suppressed'/'unsubscribed' without a matching
+      // suppression_list row (e.g. set directly via CSV import or a
+      // PATCH /contacts/:id) and must still never receive a send.
+      const statusBlocked = contact.status === 'suppressed' || contact.status === 'unsubscribed';
+      if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
         suppressedCount++;
         await this.drizzle.db.insert(sends).values({
           contactId: contact.id,
@@ -64,7 +70,7 @@ export class CampaignSendProcessor extends WorkerHost {
           resolvedBodyHtml: template.bodyHtml,
           resolvedBodyText: template.bodyText,
           status: 'suppressed',
-          error: `${contact.email} is on the suppression list`,
+          error: statusBlocked ? `${contact.email} has status "${contact.status}"` : `${contact.email} is on the suppression list`,
           isDryRun: campaign.isDryRun,
         });
         continue;

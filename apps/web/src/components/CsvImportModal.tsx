@@ -27,6 +27,9 @@ const TARGET_LABELS: Record<ColumnTarget, string> = {
   ignore: 'Ignore this column',
 };
 
+// custom/ignore may repeat across columns; every other target is 1:1.
+const SINGLE_USE_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
+
 const STATUS_LABELS: Record<Contact['status'], string> = {
   active: 'Active',
   unsubscribed: 'Unsubscribed',
@@ -75,7 +78,20 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
     const p = await previewCsv(f);
     setPreview(p);
     const initialMapping: Record<string, ColumnTarget> = {};
-    for (const h of p.headers) initialMapping[h.trim().toLowerCase()] = guessColumnTarget(h);
+    const usedSingleUseTargets = new Set<ColumnTarget>();
+    for (const h of p.headers) {
+      const key = h.trim().toLowerCase();
+      const guess = guessColumnTarget(h);
+      // Only the first header matching a given single-use target (e.g. two
+      // differently-worded "email" columns) gets auto-mapped to it — the
+      // rest fall back to Ignore rather than silently colliding.
+      if (SINGLE_USE_TARGETS.includes(guess) && usedSingleUseTargets.has(guess)) {
+        initialMapping[key] = 'ignore';
+      } else {
+        initialMapping[key] = guess;
+        if (SINGLE_USE_TARGETS.includes(guess)) usedSingleUseTargets.add(guess);
+      }
+    }
     setMapping(initialMapping);
     setStep('map');
   }
@@ -218,11 +234,17 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
                                 onChange={(e) => setMapping((prev) => ({ ...prev, [key]: e.target.value as ColumnTarget }))}
                                 className="h-7 rounded border border-border-default bg-field px-1.5 text-[11px] text-text-primary"
                               >
-                                {(Object.keys(TARGET_LABELS) as ColumnTarget[]).map((t) => (
-                                  <option key={t} value={t}>
-                                    {TARGET_LABELS[t]}
-                                  </option>
-                                ))}
+                                {(Object.keys(TARGET_LABELS) as ColumnTarget[]).map((t) => {
+                                  const takenByOtherColumn =
+                                    SINGLE_USE_TARGETS.includes(t) &&
+                                    Object.entries(mapping).some(([otherKey, otherTarget]) => otherKey !== key && otherTarget === t);
+                                  return (
+                                    <option key={t} value={t} disabled={takenByOtherColumn}>
+                                      {TARGET_LABELS[t]}
+                                      {takenByOtherColumn ? ' (already mapped)' : ''}
+                                    </option>
+                                  );
+                                })}
                               </select>
                             </td>
                           </tr>

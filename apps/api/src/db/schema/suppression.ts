@@ -5,6 +5,7 @@ export const suppressionReasonEnum = pgEnum('suppression_reason', [
   'complaint',
   'manual_unsubscribe',
   'repeated_soft_bounce',
+  'invalid_email',
 ]);
 
 export const suppressionList = pgTable(
