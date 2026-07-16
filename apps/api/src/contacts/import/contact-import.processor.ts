@@ -8,7 +8,7 @@ import { ListsService } from '../../lists/lists.service';
 import { TagsService } from '../../tags/tags.service';
 import { contacts } from '../../db/schema';
 
-export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'custom' | 'ignore';
+export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore';
 
 export interface ContactImportJobData {
   filePath: string;
@@ -73,6 +73,7 @@ export class ContactImportProcessor extends WorkerHost {
     const emailColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'email');
     const firstNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'firstName');
     const lastNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'lastName');
+    const fullNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'fullName');
     const customColumns = Object.keys(columnMapping).filter((key) => columnMapping[key] === 'custom');
 
     // Fetched once outside the per-row loop — addContactSilent() would
@@ -99,8 +100,20 @@ export class ContactImportProcessor extends WorkerHost {
         continue;
       }
 
-      const firstName = firstNameColumn ? row[firstNameColumn]?.trim() || undefined : undefined;
-      const lastName = lastNameColumn ? row[lastNameColumn]?.trim() || undefined : undefined;
+      let firstName = firstNameColumn ? row[firstNameColumn]?.trim() || undefined : undefined;
+      let lastName = lastNameColumn ? row[lastNameColumn]?.trim() || undefined : undefined;
+      if (fullNameColumn) {
+        const fullName = row[fullNameColumn]?.trim();
+        if (fullName) {
+          const spaceIdx = fullName.indexOf(' ');
+          if (spaceIdx === -1) {
+            firstName = firstName ?? fullName;
+          } else {
+            firstName = firstName ?? fullName.slice(0, spaceIdx);
+            lastName = lastName ?? fullName.slice(spaceIdx + 1).trim();
+          }
+        }
+      }
       const customFields: Record<string, string> = {};
       for (const col of customColumns) {
         if (row[col]) customFields[col] = row[col];

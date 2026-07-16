@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import {
   getImportStatus,
   uploadContactsCsv,
@@ -21,6 +21,7 @@ const TARGET_LABELS: Record<ColumnTarget, string> = {
   email: 'Email',
   firstName: 'First name',
   lastName: 'Last name',
+  fullName: 'Full name (split into first/last)',
   custom: 'Custom field',
   ignore: 'Ignore this column',
 };
@@ -42,6 +43,7 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
   const [newTagName, setNewTagName] = useState('');
   const [status, setStatus] = useState<ImportStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -55,6 +57,10 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
 
   async function handleFile(f: File | null) {
     if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.csv')) {
+      setError('Please select a .csv file.');
+      return;
+    }
     setFile(f);
     setError(null);
     const p = await previewCsv(f);
@@ -63,6 +69,22 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
     for (const h of p.headers) initialMapping[h.trim().toLowerCase()] = guessColumnTarget(h);
     setMapping(initialMapping);
     setStep('map');
+  }
+
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFile(e.dataTransfer.files?.[0] ?? null);
   }
 
   async function handleCreateList() {
@@ -136,7 +158,13 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
           {step === 'pick' && (
             <div
               onClick={() => fileInput.current?.click()}
-              className="cursor-pointer rounded-lg border border-dashed border-border-emphasis bg-surface p-8 text-center"
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition-colors ${
+                isDragging ? 'border-accent bg-accent/10' : 'border-border-emphasis bg-surface'
+              }`}
             >
               <div className="mb-1 text-sm font-semibold text-text-primary">Drop your CSV here</div>
               <div className="text-xs text-text-muted">or click to browse — any column layout works, you'll map columns next</div>
