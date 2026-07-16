@@ -164,13 +164,14 @@ export function removeContactList(listId: string, contactId: string) {
 
 export async function uploadContactsCsv(
   file: File,
-  opts: { columnMapping: Record<string, ColumnTarget>; listId?: string; tagIds?: string[] },
+  opts: { columnMapping: Record<string, ColumnTarget>; listId?: string; tagIds?: string[]; status?: Contact['status'] },
 ): Promise<{ jobId: string }> {
   const form = new FormData();
   form.append('file', file);
   form.append('columnMapping', JSON.stringify(opts.columnMapping));
   if (opts.listId) form.append('listId', opts.listId);
   form.append('tagIds', JSON.stringify(opts.tagIds ?? []));
+  if (opts.status) form.append('status', opts.status);
   const res = await fetch(`${API_BASE_URL}/contacts/import`, {
     method: 'POST',
     headers: { ...authHeadersForUpload() },

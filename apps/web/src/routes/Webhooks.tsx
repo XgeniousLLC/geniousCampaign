@@ -10,6 +10,7 @@ import {
   type OutboundSubscription,
 } from '../lib/webhooksApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import { PanelListSkeleton, TableSkeleton } from '../components/skeletons';
 
 export function Webhooks() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
@@ -19,6 +20,7 @@ export function Webhooks() {
   const [newEndpointSlug, setNewEndpointSlug] = useState('');
   const [newSubName, setNewSubName] = useState('');
   const [newSubUrl, setNewSubUrl] = useState('');
+  const [loading, setLoading] = useState(true);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function loadEndpoints() {
@@ -32,8 +34,7 @@ export function Webhooks() {
   }
 
   useEffect(() => {
-    loadEndpoints();
-    listOutboundSubscriptions().then(setSubscriptions);
+    Promise.all([loadEndpoints(), listOutboundSubscriptions().then(setSubscriptions)]).finally(() => setLoading(false));
   }, []);
 
   async function handleCreateEndpoint() {
@@ -62,6 +63,9 @@ export function Webhooks() {
       <div className="mb-[18px] grid grid-cols-2 gap-[18px]">
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
           <div className="border-b border-border-default px-3.5 py-3 text-sm font-semibold text-text-primary">Inbound endpoints</div>
+          {loading ? (
+            <PanelListSkeleton rows={3} />
+          ) : (
           <div className="p-1.5">
             {endpoints.map((w) => (
               <div key={w.id} className="rounded-md px-2.5 py-2.5 hover:bg-raised">
@@ -72,6 +76,7 @@ export function Webhooks() {
             ))}
             {endpoints.length === 0 && <div className="px-2.5 py-4 text-center text-xs text-text-faint">No inbound endpoints yet.</div>}
           </div>
+          )}
           {canWrite && (
             <div className="flex gap-1.5 border-t border-border-subtle p-2">
               <input value={newEndpointName} onChange={(e) => setNewEndpointName(e.target.value)} placeholder="Name" className="h-7 flex-1 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint" />
@@ -85,6 +90,9 @@ export function Webhooks() {
 
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
           <div className="border-b border-border-default px-3.5 py-3 text-sm font-semibold text-text-primary">Outbound subscriptions</div>
+          {loading ? (
+            <PanelListSkeleton rows={3} />
+          ) : (
           <div className="p-1.5">
             {subscriptions.map((s) => (
               <div key={s.id} className="rounded-md px-2.5 py-2.5 hover:bg-raised">
@@ -97,6 +105,7 @@ export function Webhooks() {
             ))}
             {subscriptions.length === 0 && <div className="px-2.5 py-4 text-center text-xs text-text-faint">No outbound subscriptions yet.</div>}
           </div>
+          )}
           {canWrite && (
             <div className="flex gap-1.5 border-t border-border-subtle p-2">
               <input value={newSubName} onChange={(e) => setNewSubName(e.target.value)} placeholder="Name" className="h-7 w-20 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint" />
@@ -109,6 +118,9 @@ export function Webhooks() {
         </div>
       </div>
 
+      {loading ? (
+        <TableSkeleton cols={3} rows={5} />
+      ) : (
       <div className="overflow-hidden rounded-md border border-border-default bg-panel">
         <div className="border-b border-border-default px-3.5 py-3 text-sm font-semibold text-text-primary">
           Delivery log {endpoints.length > 0 && <span className="font-normal text-text-faint">· {endpoints[endpoints.length - 1].name}</span>}
@@ -139,6 +151,7 @@ export function Webhooks() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

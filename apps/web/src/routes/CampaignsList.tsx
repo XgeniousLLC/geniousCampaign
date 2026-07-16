@@ -4,6 +4,7 @@ import { listCampaigns, type Campaign, type CampaignStatus } from '../lib/campai
 import { listLists } from '../lib/contactsApi';
 import type { List } from '../lib/contactsApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import { TableSkeleton } from '../components/skeletons';
 
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: 'bg-text-muted/10 text-text-muted border-text-muted/25',
@@ -15,12 +16,12 @@ const STATUS_STYLES: Record<CampaignStatus, string> = {
 export function CampaignsList() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [lists, setLists] = useState<List[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
-    listCampaigns().then(setCampaigns);
-    listLists().then(setLists);
+    Promise.all([listCampaigns().then(setCampaigns), listLists().then(setLists)]).finally(() => setLoading(false));
   }, []);
 
   function audienceLabel(c: Campaign): string {
@@ -51,6 +52,9 @@ export function CampaignsList() {
         )}
       </div>
 
+      {loading ? (
+        <TableSkeleton cols={5} />
+      ) : (
       <div className="overflow-hidden rounded-md border border-border-default bg-panel">
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -104,6 +108,7 @@ export function CampaignsList() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

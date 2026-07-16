@@ -27,4 +27,15 @@ export class SuppressionController {
     await this.suppression.suppress(contact.email, 'manual_unsubscribe', 'admin_ui');
     return this.contactsService.update(dto.contactId, { status: 'suppressed' });
   }
+
+  // Same suppression_list gate as manual suppress (still blocks future
+  // sends per CLAUDE.md invariant 8), but marks the contact 'unsubscribed'
+  // rather than 'suppressed' — the status the contacts filter already
+  // exposes but nothing previously set.
+  @Post('unsubscribe')
+  async manualUnsubscribe(@Body() dto: ManualSuppressDto) {
+    const contact = await this.contactsService.findOne(dto.contactId);
+    await this.suppression.suppress(contact.email, 'manual_unsubscribe', 'admin_ui');
+    return this.contactsService.update(dto.contactId, { status: 'unsubscribed' });
+  }
 }

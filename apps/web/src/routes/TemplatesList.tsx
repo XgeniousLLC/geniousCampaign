@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listTemplates, type Template } from '../lib/templatesApi';
+import { TableSkeleton } from '../components/skeletons';
 
 export function TemplatesList() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -32,7 +33,9 @@ export function TemplatesList() {
         </button>
       </div>
 
-      {!loading && templates.length === 0 ? (
+      {loading ? (
+        <TableSkeleton cols={5} />
+      ) : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

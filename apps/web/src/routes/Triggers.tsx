@@ -6,18 +6,22 @@ import { listWebhookEndpoints, type WebhookEndpoint } from '../lib/webhooksApi';
 import { NewTriggerModal } from '../components/NewTriggerModal';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ClockIcon, BoltIcon, WebhookIcon } from '../components/icons';
+import { CardListSkeleton } from '../components/skeletons';
 
 export function Triggers() {
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [webhookEndpoints, setWebhookEndpoints] = useState<WebhookEndpoint[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   function load() {
-    listTriggers().then(setTriggers);
-    listSequences().then(setSequences);
-    listWebhookEndpoints().then(setWebhookEndpoints);
+    Promise.all([
+      listTriggers().then(setTriggers),
+      listSequences().then(setSequences),
+      listWebhookEndpoints().then(setWebhookEndpoints),
+    ]).finally(() => setLoading(false));
   }
 
   useEffect(load, []);
@@ -55,6 +59,9 @@ export function Triggers() {
         )}
       </div>
 
+      {loading ? (
+        <CardListSkeleton rows={4} />
+      ) : (
       <div className="flex flex-col gap-2.5">
         {triggers.map((t) => (
           <div key={t.id} className="flex items-center gap-3.5 rounded-md border border-border-default bg-panel p-3.5">
@@ -102,6 +109,7 @@ export function Triggers() {
           </div>
         )}
       </div>
+      )}
 
       {modalOpen && (
         <NewTriggerModal
