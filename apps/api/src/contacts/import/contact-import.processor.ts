@@ -9,6 +9,7 @@ import { TagsService } from '../../tags/tags.service';
 import { contacts } from '../../db/schema';
 
 export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore';
+export type ImportContactStatus = 'active' | 'unsubscribed' | 'bounced' | 'suppressed';
 
 export interface ContactImportJobData {
   filePath: string;
@@ -18,6 +19,10 @@ export interface ContactImportJobData {
   columnMapping: Record<string, ColumnTarget>;
   listId?: string;
   tagIds?: string[];
+  // Status applied to newly-created contacts only — an existing contact's
+  // status is left untouched on re-import, same as firstName/lastName only
+  // filling in when previously blank. Defaults to 'active'.
+  status?: ImportContactStatus;
 }
 
 export interface ContactImportRowIssue {
@@ -60,7 +65,7 @@ export class ContactImportProcessor extends WorkerHost {
   }
 
   async process(job: Job<ContactImportJobData>): Promise<ContactImportResult> {
-    const { columnMapping, listId, tagIds = [] } = job.data;
+    const { columnMapping, listId, tagIds = [], status } = job.data;
     const fileContent = await readFile(job.data.filePath, 'utf8');
     let rows: Record<string, string>[];
     try {
@@ -135,7 +140,10 @@ export class ContactImportProcessor extends WorkerHost {
           contactId = existing.id;
           result.duplicates++;
         } else {
-          const [created] = await this.drizzle.db.insert(contacts).values({ email, firstName, lastName, customFields }).returning();
+          const [created] = await this.drizzle.db
+            .insert(contacts)
+            .values({ email, firstName, lastName, customFields, status: status ?? 'active' })
+            .returning();
           contactId = created.id;
           result.created++;
         }

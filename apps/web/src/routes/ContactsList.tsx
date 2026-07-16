@@ -14,7 +14,7 @@ import {
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
 import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
-import { manualSuppress } from '../lib/suppressionApi';
+import { manualSuppress, manualUnsubscribe } from '../lib/suppressionApi';
 import { CsvImportModal } from '../components/CsvImportModal';
 import { SpinnerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, HelpCircleIcon } from '../components/icons';
 
@@ -25,7 +25,8 @@ const STATUS_STYLES: Record<Contact['status'], string> = {
   suppressed: 'bg-danger/10 text-danger border-danger/25',
 };
 
-const PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 type SortKey = 'name' | 'status' | 'lastActivityAt';
 type SortDir = 'asc' | 'desc';
@@ -38,6 +39,32 @@ function initials(contact: Contact): string {
 
 function displayName(c: Contact): string {
   return c.firstName || c.lastName ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.email;
+}
+
+function ContactsSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-md border border-border-default bg-panel">
+      <div className="flex items-center gap-4 border-b border-border-default bg-surface px-3.5 py-2.5">
+        <div className="h-3.5 w-3.5 animate-pulse rounded bg-raised2" />
+        <div className="h-2.5 w-16 animate-pulse rounded bg-raised2" />
+        <div className="h-2.5 w-10 animate-pulse rounded bg-raised2" />
+        <div className="h-2.5 w-10 animate-pulse rounded bg-raised2" />
+        <div className="h-2.5 w-12 animate-pulse rounded bg-raised2" />
+      </div>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 border-t border-border-subtle px-3.5 py-3 first:border-t-0">
+          <div className="h-3.5 w-3.5 shrink-0 animate-pulse rounded bg-raised2" />
+          <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-raised2" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-40 animate-pulse rounded bg-raised2" />
+            <div className="h-2.5 w-56 animate-pulse rounded bg-raised2" />
+          </div>
+          <div className="h-4 w-14 shrink-0 animate-pulse rounded bg-raised2" />
+          <div className="h-4 w-20 shrink-0 animate-pulse rounded bg-raised2" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function relativeTime(iso: string | null | undefined): string {
@@ -66,6 +93,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState<'list' | 'sequence' | null>(null);
   const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' | 'info'; icon?: ReactNode } | null>(null);
@@ -132,10 +160,10 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     });
   }, [scopedContacts, search, statusFilter, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  useEffect(() => setPage(1), [search, statusFilter, listId]);
+  useEffect(() => setPage(1), [search, statusFilter, listId, pageSize]);
 
   const counts = useMemo(() => {
     const byStatus: Record<string, number> = { all: scopedContacts.length };
@@ -202,13 +230,20 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
 
   async function runBulkVerify() {
     setBusy(true);
-    const targets = contacts.filter((c) => selected.has(c.id));
+    const allTargets = contacts.filter((c) => selected.has(c.id));
+    const targets = allTargets.filter((c) => c.status !== 'suppressed');
+    const skipped = allTargets.length - targets.length;
     let valid = 0;
     for (const c of targets) {
       const result = await localCheckEmail(c.email);
       if (result.valid) valid++;
     }
-    toast(`Local check: ${valid} of ${targets.length} passed syntax/MX check (not a paid deliverability verification).`, 'info');
+    toast(
+      `Local check: ${valid} of ${targets.length} passed syntax/MX check (not a paid deliverability verification).${
+        skipped ? ` Skipped ${skipped} suppressed contact(s).` : ''
+      }`,
+      'info',
+    );
     setSelected(new Set());
     setBusy(false);
   }
@@ -217,6 +252,15 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     setBusy(true);
     await Promise.all([...selected].map((id) => manualSuppress(id)));
     toast(`Suppressed ${selected.size} contact(s).`, 'success');
+    setSelected(new Set());
+    setBusy(false);
+    reload();
+  }
+
+  async function runBulkUnsubscribe() {
+    setBusy(true);
+    await Promise.all([...selected].map((id) => manualUnsubscribe(id)));
+    toast(`Unsubscribed ${selected.size} contact(s).`, 'success');
     setSelected(new Set());
     setBusy(false);
     reload();
@@ -333,7 +377,9 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
         </div>
       )}
 
-      {!loading && scopedContacts.length === 0 ? (
+      {loading ? (
+        <ContactsSkeleton />
+      ) : scopedContacts.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -446,6 +492,13 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                   className="flex h-[30px] items-center gap-1.5 rounded-md border border-success/25 bg-success/10 px-2.5 text-xs font-medium text-success disabled:opacity-50"
                 >
                   Verify
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={runBulkUnsubscribe}
+                  className="h-[30px] rounded-md border border-border-strong bg-field px-2.5 text-xs text-text-tertiary hover:bg-raised disabled:opacity-50"
+                >
+                  Unsubscribe
                 </button>
                 <button
                   disabled={busy}
@@ -620,9 +673,25 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
               </tbody>
             </table>
             <div className="flex items-center justify-between border-t border-border-subtle px-3.5 py-2.5 text-xs text-text-meta">
-              <span>
-                Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
-              </span>
+              <div className="flex items-center gap-3">
+                <span>
+                  Showing {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of {filtered.length}
+                </span>
+                <label className="flex items-center gap-1.5">
+                  <span>Rows per page</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="h-7 rounded-md border border-border-strong bg-field px-1.5 text-xs text-text-tertiary"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="flex gap-1.5">
                 <button
                   disabled={page <= 1}

@@ -9,6 +9,7 @@ import {
   type ImportStatus,
   type ImportProgress,
   type ColumnTarget,
+  type Contact,
   type List,
   type Tag,
 } from '../lib/contactsApi';
@@ -26,6 +27,13 @@ const TARGET_LABELS: Record<ColumnTarget, string> = {
   ignore: 'Ignore this column',
 };
 
+const STATUS_LABELS: Record<Contact['status'], string> = {
+  active: 'Active',
+  unsubscribed: 'Unsubscribed',
+  bounced: 'Bounced',
+  suppressed: 'Suppressed',
+};
+
 function isProgressObject(p: ImportProgress | number | undefined): p is ImportProgress {
   return typeof p === 'object' && p !== null;
 }
@@ -41,6 +49,7 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
   const [newListName, setNewListName] = useState('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState('');
+  const [importStatus, setImportStatus] = useState<Contact['status']>('active');
   const [status, setStatus] = useState<ImportStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -129,7 +138,12 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
     setError(null);
     setStep('progress');
     try {
-      const { jobId } = await uploadContactsCsv(file, { columnMapping: mapping, listId: selectedListId || undefined, tagIds: selectedTagIds });
+      const { jobId } = await uploadContactsCsv(file, {
+        columnMapping: mapping,
+        listId: selectedListId || undefined,
+        tagIds: selectedTagIds,
+        status: importStatus,
+      });
       setStatus({ jobId, state: 'waiting', progress: 0 });
       poll(jobId);
     } catch (err) {
@@ -288,6 +302,22 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
                     + Create tag
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-xs font-semibold text-text-secondary">Set imported contacts as</div>
+                <select
+                  value={importStatus}
+                  onChange={(e) => setImportStatus(e.target.value as Contact['status'])}
+                  className="h-8 w-full rounded-md border border-border-default bg-field px-2 text-xs text-text-primary"
+                >
+                  {(Object.keys(STATUS_LABELS) as Contact['status'][]).map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-1 text-[11px] text-text-faint">Applies to newly created contacts only — existing contacts keep their current status.</div>
               </div>
             </div>
           )}

@@ -16,3 +16,7 @@ export function listSuppressionList(page = 1, limit = 50) {
 export function manualSuppress(contactId: string) {
   return apiPost<Contact>('/suppression-list/manual', { contactId });
 }
+
+export function manualUnsubscribe(contactId: string) {
+  return apiPost<Contact>('/suppression-list/unsubscribe', { contactId });
+}

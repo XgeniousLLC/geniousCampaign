@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ListsService } from '../../lists/lists.service';
 import { TagsService } from '../../tags/tags.service';
-import type { ColumnTarget, ContactImportJobData } from './contact-import.processor';
+import { CONTACT_STATUSES } from '../dto/create-contact.dto';
+import type { ColumnTarget, ContactImportJobData, ImportContactStatus } from './contact-import.processor';
 
 const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName', 'custom', 'ignore'];
 
@@ -27,6 +28,7 @@ export class ContactImportController {
     @Body('columnMapping') columnMappingRaw?: string,
     @Body('listId') listId?: string,
     @Body('tagIds') tagIdsRaw?: string,
+    @Body('status') statusRaw?: string,
   ) {
     if (!file) {
       throw new BadRequestException('CSV file is required (multipart field "file")');
@@ -58,6 +60,10 @@ export class ContactImportController {
       }
     }
 
+    if (statusRaw && !CONTACT_STATUSES.includes(statusRaw as (typeof CONTACT_STATUSES)[number])) {
+      throw new BadRequestException(`Invalid status "${statusRaw}"`);
+    }
+
     // Fail fast on a bad list/tag id rather than deep inside the queued job.
     if (listId) await this.listsService.findOne(listId);
     for (const tagId of tagIds) await this.tagsService.findOne(tagId);
@@ -71,6 +77,7 @@ export class ContactImportController {
       columnMapping,
       listId: listId || undefined,
       tagIds,
+      status: (statusRaw as ImportContactStatus) || undefined,
     });
     return { jobId: job.id };
   }

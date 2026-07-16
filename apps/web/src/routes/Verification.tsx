@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getVerificationStats, startBulkVerify, getBulkVerifyStatus, type VerificationStats, type BulkVerifyJobStatus } from '../lib/verificationApi';
+import { StatCardSkeleton } from '../components/skeletons';
 
 const STAT_CARDS: { key: keyof Omit<VerificationStats, 'total'>; label: string; color: string }[] = [
   { key: 'valid', label: 'Valid', color: '#34D399' },
@@ -101,14 +102,19 @@ export function Verification() {
         </div>
       )}
 
+      {stats === null ? (
+        <div className="mb-3.5">
+          <StatCardSkeleton count={4} />
+        </div>
+      ) : (
       <div className="mb-3.5 grid grid-cols-4 gap-3">
         {STAT_CARDS.map((card) => {
-          const value = stats ? stats[card.key] : 0;
-          const pct = stats && stats.total > 0 ? (value / stats.total) * 100 : 0;
+          const value = stats[card.key];
+          const pct = stats.total > 0 ? (value / stats.total) * 100 : 0;
           return (
             <div key={card.key} className="rounded-md border border-border-default bg-panel p-3.5">
               <div className="text-xs text-text-muted">{card.label}</div>
-              <div className="mt-1.5 font-mono text-xl font-semibold leading-none text-text-heading">{stats ? value : '—'}</div>
+              <div className="mt-1.5 font-mono text-xl font-semibold leading-none text-text-heading">{value}</div>
               <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-border-subtle">
                 <div className="h-full rounded-full" style={{ width: `${pct}%`, background: card.color }} />
               </div>
@@ -116,6 +122,7 @@ export function Verification() {
           );
         })}
       </div>
+      )}
 
       <div className="flex max-w-[820px] items-center justify-between rounded-md border border-border-default bg-panel px-4 py-4">
         <div className="flex items-center gap-3">

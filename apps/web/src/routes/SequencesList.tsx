@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createSequence, listSequences, type Sequence } from '../lib/sequencesApi';
 import { useAuthStore } from '../stores/useAuthStore';
+import { TableSkeleton } from '../components/skeletons';
 
 export function SequencesList() {
   const [sequences, setSequences] = useState<Sequence[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
-    listSequences().then(setSequences);
+    listSequences()
+      .then(setSequences)
+      .finally(() => setLoading(false));
   }, []);
 
   async function handleNew() {
@@ -35,6 +39,9 @@ export function SequencesList() {
         )}
       </div>
 
+      {loading ? (
+        <TableSkeleton cols={5} />
+      ) : (
       <div className="overflow-hidden rounded-md border border-border-default bg-panel">
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -85,6 +92,7 @@ export function SequencesList() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

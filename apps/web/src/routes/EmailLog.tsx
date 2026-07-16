@@ -3,6 +3,7 @@ import { listEmailLog, getEmailLogDetail, type EmailLogRow, type EmailLogDetail 
 import { listContacts, type Contact } from '../lib/contactsApi';
 import type { SendStatus } from '../lib/campaignsApi';
 import { PaginationBar } from '../components/PaginationBar';
+import { TableSkeleton } from '../components/skeletons';
 
 const PAGE_SIZE = 50;
 
@@ -31,12 +32,16 @@ export function EmailLog() {
   const [filter, setFilter] = useState<SendStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<EmailLogDetail | null>(null);
+  const [loading, setLoading] = useState(true);
 
   function load() {
-    listEmailLog({ status: filter === 'all' ? undefined : filter, page, limit: PAGE_SIZE }).then((res) => {
-      setRows(res.data);
-      setTotal(res.total);
-    });
+    setLoading(true);
+    listEmailLog({ status: filter === 'all' ? undefined : filter, page, limit: PAGE_SIZE })
+      .then((res) => {
+        setRows(res.data);
+        setTotal(res.total);
+      })
+      .finally(() => setLoading(false));
   }
 
   useEffect(load, [filter, page]);
@@ -92,6 +97,9 @@ export function EmailLog() {
         </div>
       </div>
 
+      {loading ? (
+        <TableSkeleton cols={5} rows={10} />
+      ) : (
       <div className="overflow-hidden rounded-md border border-border-default bg-panel">
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -134,6 +142,7 @@ export function EmailLog() {
           total > 0 && <PaginationBar page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />
         )}
       </div>
+      )}
 
       {detail && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setDetail(null)}>
