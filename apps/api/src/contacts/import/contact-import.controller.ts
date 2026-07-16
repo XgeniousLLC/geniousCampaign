@@ -12,6 +12,9 @@ import { CONTACT_STATUSES } from '../dto/create-contact.dto';
 import type { ColumnTarget, ContactImportJobData, ImportContactStatus } from './contact-import.processor';
 
 const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName', 'custom', 'ignore'];
+// custom/ignore may repeat across columns; every other target is 1:1 —
+// e.g. two columns both mapped to "email" is a user mistake, not a valid layout.
+const SINGLE_USE_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
 
 @Controller('contacts/import')
 export class ContactImportController {
@@ -49,6 +52,12 @@ export class ContactImportController {
     }
     if (!Object.values(columnMapping).includes('email')) {
       throw new BadRequestException('columnMapping must map exactly one CSV column to "email"');
+    }
+    for (const target of SINGLE_USE_TARGETS) {
+      const columns = Object.entries(columnMapping).filter(([, t]) => t === target).map(([key]) => key);
+      if (columns.length > 1) {
+        throw new BadRequestException(`Multiple columns (${columns.join(', ')}) are mapped to "${target}" — each field can only be mapped once`);
+      }
     }
 
     let tagIds: string[] = [];

@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost, API_BASE_URL, authHeadersForUpload } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost, API_BASE_URL, authHeadersForUpload, type Page } from './api';
 
 export interface Contact {
   id: string;
@@ -59,6 +59,36 @@ export interface ImportStatus {
 
 export function listContacts() {
   return apiGet<Contact[]>('/contacts');
+}
+
+export interface ContactsPage extends Page<Contact> {
+  counts: Record<'all' | 'active' | 'unsubscribed' | 'bounced' | 'suppressed', number>;
+  verifiedCount: number;
+}
+
+// GC-118: the paginated view the Contacts admin page uses — filtering,
+// sorting, and paging all happen server-side so the page stays fast well
+// past the 7k+ contacts where the old fetch-everything listContacts() call
+// started taking 10s+. listContacts() above is untouched for the handful
+// of callers that genuinely need the full array (pickers/lookups).
+export function listContactsPaged(params: {
+  page: number;
+  limit: number;
+  search?: string;
+  status?: Contact['status'];
+  listId?: string;
+  sortKey?: 'name' | 'status' | 'lastActivityAt';
+  sortDir?: 'asc' | 'desc';
+}) {
+  const q = new URLSearchParams();
+  q.set('page', String(params.page));
+  q.set('limit', String(params.limit));
+  if (params.search) q.set('search', params.search);
+  if (params.status) q.set('status', params.status);
+  if (params.listId) q.set('listId', params.listId);
+  if (params.sortKey) q.set('sortKey', params.sortKey);
+  if (params.sortDir) q.set('sortDir', params.sortDir);
+  return apiGet<ContactsPage>(`/contacts/paged?${q.toString()}`);
 }
 
 export function getContact(id: string) {

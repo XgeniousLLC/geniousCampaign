@@ -37,6 +37,7 @@ const SUPPRESSION_REASON_STYLES: Record<SuppressionEntry['reason'], string> = {
   complaint: 'border-danger/25 bg-danger/10 text-danger',
   repeated_soft_bounce: 'border-warning/25 bg-warning/10 text-warning',
   manual_unsubscribe: 'border-text-muted/25 bg-text-muted/10 text-text-muted',
+  invalid_email: 'border-danger/25 bg-danger/10 text-danger',
 };
 
 export function Settings() {

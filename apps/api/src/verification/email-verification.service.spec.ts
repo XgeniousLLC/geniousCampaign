@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
 import { EmailVerificationService } from './email-verification.service';
 import { LocalVerifyService } from './local-verify.service';
@@ -7,7 +8,8 @@ import { ReoonProvider } from './reoon.provider';
 import { NeverBounceProvider } from './neverbounce.provider';
 import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
-import { verificationResults } from '../db/schema';
+import { SuppressionService } from '../suppression/suppression.service';
+import { verificationResults, suppressionList } from '../db/schema';
 
 describe('EmailVerificationService (integration, real DB, mocked HTTP)', () => {
   let service: EmailVerificationService;
@@ -17,8 +19,16 @@ describe('EmailVerificationService (integration, real DB, mocked HTTP)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] })],
-      providers: [EmailVerificationService, LocalVerifyService, ReoonProvider, NeverBounceProvider, DrizzleService, SettingsService],
+      imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }), EventEmitterModule.forRoot()],
+      providers: [
+        EmailVerificationService,
+        LocalVerifyService,
+        ReoonProvider,
+        NeverBounceProvider,
+        DrizzleService,
+        SettingsService,
+        SuppressionService,
+      ],
     }).compile();
 
     // Real ConfigService (so DrizzleService still gets a real DATABASE_URL),
@@ -41,13 +51,17 @@ describe('EmailVerificationService (integration, real DB, mocked HTTP)', () => {
 
   afterAll(async () => {
     await drizzle.db.delete(verificationResults).where(eq(verificationResults.email, testEmail));
+    await drizzle.db.delete(suppressionList).where(eq(suppressionList.email, 'not-an-email'));
   });
 
-  it('rejects a syntactically invalid address without any external API call', async () => {
+  it('rejects a syntactically invalid address without any external API call, and auto-suppresses it (GC-117)', async () => {
     fetchSpy = jest.spyOn(global, 'fetch');
     const result = await service.verify('not-an-email');
     expect(result).toEqual({ status: 'invalid', isDeliverable: false, provider: 'local', cached: false });
     expect(fetchSpy).not.toHaveBeenCalled();
+
+    const suppressed = await drizzle.db.query.suppressionList.findFirst({ where: eq(suppressionList.email, 'not-an-email') });
+    expect(suppressed?.reason).toBe('invalid_email');
   });
 
   it('calls Reoon once, caches the result, and a second verify within the TTL makes zero further calls', async () => {

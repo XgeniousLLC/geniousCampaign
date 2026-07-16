@@ -8,9 +8,10 @@ import { EmailVerificationService } from './email-verification.service';
 import { VerificationStatsService } from './verification-stats.service';
 import { BulkVerifyProcessor } from './bulk-verify.processor';
 import { AuthModule } from '../auth/auth.module';
+import { SuppressionModule } from '../suppression/suppression.module';
 
 @Module({
-  imports: [AuthModule, BullModule.registerQueue({ name: 'bulk-verify' })],
+  imports: [AuthModule, SuppressionModule, BullModule.registerQueue({ name: 'bulk-verify' })],
   controllers: [VerificationController],
   providers: [LocalVerifyService, ReoonProvider, NeverBounceProvider, EmailVerificationService, VerificationStatsService, BulkVerifyProcessor],
   exports: [LocalVerifyService, EmailVerificationService],

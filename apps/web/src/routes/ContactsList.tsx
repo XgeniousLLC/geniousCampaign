@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   addContactList,
@@ -6,7 +6,7 @@ import {
   deleteContact,
   bulkDeleteContacts,
   getList,
-  listContacts,
+  listContactsPaged,
   listLists,
   type Contact,
   type List,
@@ -82,10 +82,20 @@ function relativeTime(iso: string | null | undefined): string {
 
 export function ContactsList({ listId }: { listId?: string } = {}) {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<'all' | 'active' | 'unsubscribed' | 'bounced' | 'suppressed', number>>({
+    all: 0,
+    active: 0,
+    unsubscribed: 0,
+    bounced: 0,
+    suppressed: 0,
+  });
+  const [verifiedCount, setVerifiedCount] = useState(0);
   const [scopeList, setScopeList] = useState<List | null>(null);
   const [allLists, setAllLists] = useState<List[]>([]);
   const [allSequences, setAllSequences] = useState<Sequence[]>([]);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<Contact['status'] | 'all'>('all');
   const [importOpen, setImportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -101,6 +111,12 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const noticeTimeout = useRef<number | null>(null);
+  // Selection persists across page navigation (Set of ids), but `contacts`
+  // now only ever holds the current page's rows — this accumulates every
+  // contact object ever fetched so bulk actions needing full contact data
+  // (runBulkVerify's email) can still resolve a selected id from a page
+  // that's no longer loaded.
+  const contactCache = useRef<Map<string, Contact>>(new Map());
 
   function toast(text: string, tone: 'success' | 'error' | 'info' = 'info', icon?: ReactNode) {
     setNotice({ text, tone, icon });
@@ -117,14 +133,31 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     unknown: <HelpCircleIcon className="text-text-meta" />,
   };
 
+  // GC-118: filtering/sorting/paging all happen server-side now (was a
+  // single fetch-everything call, 10s+ at 7k+ contacts) — this refetches
+  // the current page whenever any of page/pageSize/filter/sort changes.
   function reload() {
     setLoading(true);
-    listContacts()
-      .then(setContacts)
+    listContactsPaged({
+      page,
+      limit: pageSize,
+      search: debouncedSearch || undefined,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      listId,
+      sortKey: sortKey ?? undefined,
+      sortDir,
+    })
+      .then((res) => {
+        setContacts(res.data);
+        setTotal(res.total);
+        setCounts(res.counts);
+        setVerifiedCount(res.verifiedCount);
+        for (const c of res.data) contactCache.current.set(c.id, c);
+      })
       .finally(() => setLoading(false));
   }
 
-  useEffect(reload, []);
+  useEffect(reload, [page, pageSize, debouncedSearch, statusFilter, listId, sortKey, sortDir]);
   useEffect(() => {
     listLists().then(setAllLists);
     listSequences().then(setAllSequences);
@@ -135,45 +168,34 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       return;
     }
     getList(listId).then(setScopeList);
+    setPage(1);
   }, [listId]);
 
-  const scopedContacts = useMemo(
-    () => (listId ? contacts.filter((c) => (c.lists ?? []).some((l) => l.id === listId)) : contacts),
-    [contacts, listId],
-  );
+  // Debounced separately from the controlled input so the box stays
+  // responsive while typing — only fires (and resets to page 1) 300ms
+  // after the last keystroke, batched into one render/one fetch.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setPage(1);
+      setDebouncedSearch(search);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    const rows = scopedContacts.filter((c) => {
-      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-      if (!search) return true;
-      const haystack = `${c.email} ${c.firstName ?? ''} ${c.lastName ?? ''} ${(c.tags ?? []).map((t) => t.name).join(' ')}`.toLowerCase();
-      return haystack.includes(search.toLowerCase());
-    });
-    if (!sortKey) return rows;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      if (sortKey === 'name') return displayName(a).localeCompare(displayName(b)) * dir;
-      if (sortKey === 'status') return a.status.localeCompare(b.status) * dir;
-      const av = a.lastActivityAt ?? '';
-      const bv = b.lastActivityAt ?? '';
-      return av.localeCompare(bv) * dir;
-    });
-  }, [scopedContacts, search, statusFilter, sortKey, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  function setStatusFilterAndResetPage(s: Contact['status'] | 'all') {
+    setStatusFilter(s);
+    setPage(1);
+  }
 
-  useEffect(() => setPage(1), [search, statusFilter, listId, pageSize]);
-
-  const counts = useMemo(() => {
-    const byStatus: Record<string, number> = { all: scopedContacts.length };
-    for (const c of scopedContacts) byStatus[c.status] = (byStatus[c.status] ?? 0) + 1;
-    return byStatus;
-  }, [scopedContacts]);
-
-  const verifiedCount = scopedContacts.filter((c) => c.verificationStatus === 'valid').length;
+  function setPageSizeAndResetPage(n: number) {
+    setPageSize(n);
+    setPage(1);
+  }
 
   function toggleSort(key: SortKey) {
+    setPage(1);
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
       setSortKey(key);
@@ -191,7 +213,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   }
 
   function toggleAllOnPage() {
-    const pageIds = pageRows.map((c) => c.id);
+    const pageIds = contacts.map((c) => c.id);
     const allSelected = pageIds.every((id) => selected.has(id));
     setSelected((s) => {
       const next = new Set(s);
@@ -230,7 +252,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
 
   async function runBulkVerify() {
     setBusy(true);
-    const allTargets = contacts.filter((c) => selected.has(c.id));
+    const allTargets = [...selected].map((id) => contactCache.current.get(id)).filter((c): c is Contact => !!c);
     const targets = allTargets.filter((c) => c.status !== 'suppressed');
     const skipped = allTargets.length - targets.length;
     let valid = 0;
@@ -301,6 +323,8 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     try {
       const result = await verifyEmail(c.email);
       setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
+      const cached = contactCache.current.get(c.id);
+      if (cached) contactCache.current.set(c.id, { ...cached, verificationStatus: result.status });
       const t = VERIFY_TOAST[result.status] ?? { text: `Verified: ${result.status}.`, tone: 'info' as const };
       toast(t.text, t.tone, VERIFY_ICON[result.status]);
     } catch (err) {
@@ -314,7 +338,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     }
   }
 
-  const allOnPageSelected = pageRows.length > 0 && pageRows.every((c) => selected.has(c.id));
+  const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
 
   return (
     <div>
@@ -329,12 +353,12 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
           <p className="mt-1 text-xs text-text-muted">
             {listId ? (
               <>
-                {scopedContacts.length} member{scopedContacts.length === 1 ? '' : 's'}
+                {counts.all} member{counts.all === 1 ? '' : 's'}
                 {scopeList && <> · {scopeList.type} list</>}
               </>
             ) : (
               <>
-                {contacts.length} total · {verifiedCount} verified · {counts.suppressed ?? 0} suppressed
+                {counts.all} total · {verifiedCount} verified · {counts.suppressed} suppressed
               </>
             )}
           </p>
@@ -379,7 +403,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
 
       {loading ? (
         <ContactsSkeleton />
-      ) : scopedContacts.length === 0 ? (
+      ) : counts.all === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -417,7 +441,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                 return (
                   <button
                     key={s}
-                    onClick={() => setStatusFilter(s)}
+                    onClick={() => setStatusFilterAndResetPage(s)}
                     className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium capitalize ${
                       on
                         ? 'border-accent/30 bg-accent/10 text-accent-tint'
@@ -425,7 +449,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                     }`}
                   >
                     {s}
-                    <span className={`font-mono text-[11px] ${on ? 'text-accent-light' : 'text-text-meta'}`}>{counts[s] ?? 0}</span>
+                    <span className={`font-mono text-[11px] ${on ? 'text-accent-light' : 'text-text-meta'}`}>{counts[s]}</span>
                   </button>
                 );
               })}
@@ -543,7 +567,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((c) => (
+                {contacts.map((c) => (
                   <tr key={c.id} className="border-t border-border-subtle hover:bg-raised">
                     <td className="py-2 pl-3.5" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleRow(c.id)} className="h-3.5 w-3.5 accent-accent" />
@@ -663,7 +687,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                     </td>
                   </tr>
                 ))}
-                {!loading && filtered.length === 0 && (
+                {!loading && contacts.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-text-muted">
                       No contacts match.
@@ -675,13 +699,13 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
             <div className="flex items-center justify-between border-t border-border-subtle px-3.5 py-2.5 text-xs text-text-meta">
               <div className="flex items-center gap-3">
                 <span>
-                  Showing {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of {filtered.length}
+                  Showing {total === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
                 </span>
                 <label className="flex items-center gap-1.5">
                   <span>Rows per page</span>
                   <select
                     value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    onChange={(e) => setPageSizeAndResetPage(Number(e.target.value))}
                     className="h-7 rounded-md border border-border-strong bg-field px-1.5 text-xs text-text-tertiary"
                   >
                     {PAGE_SIZE_OPTIONS.map((n) => (

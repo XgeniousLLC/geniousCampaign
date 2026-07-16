@@ -107,7 +107,11 @@ export class SequenceRunnerService {
       return;
     }
 
-    if (await this.suppression.isSuppressed(contact.email)) {
+    // Two independent gates: suppression_list and contact.status — a
+    // contact can carry status 'suppressed'/'unsubscribed' without a
+    // matching suppression_list row and must still never receive a send.
+    const statusBlocked = contact.status === 'suppressed' || contact.status === 'unsubscribed';
+    if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
       await this.drizzle.db.insert(sends).values({
         contactId: contact.id,
         templateId: template.id,
@@ -119,7 +123,7 @@ export class SequenceRunnerService {
         resolvedBodyHtml: template.bodyHtml,
         resolvedBodyText: template.bodyText,
         status: 'suppressed',
-        error: `${contact.email} is on the suppression list`,
+        error: statusBlocked ? `${contact.email} has status "${contact.status}"` : `${contact.email} is on the suppression list`,
       });
       return;
     }
