@@ -10,7 +10,7 @@ import { ListsService } from '../../lists/lists.service';
 import { TagsService } from '../../tags/tags.service';
 import type { ColumnTarget, ContactImportJobData } from './contact-import.processor';
 
-const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'custom', 'ignore'];
+const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName', 'custom', 'ignore'];
 
 @Controller('contacts/import')
 export class ContactImportController {

@@ -50,11 +50,13 @@ export async function previewCsv(file: File): Promise<CsvPreview> {
 const EMAIL_HEADER_RE = /email/i;
 const FIRST_NAME_RE = /^first[\s_-]?name$/i;
 const LAST_NAME_RE = /^last[\s_-]?name$/i;
+const FULL_NAME_RE = /^(full[\s_-]?)?name$/i;
 
-export function guessColumnTarget(header: string): 'email' | 'firstName' | 'lastName' | 'custom' {
+export function guessColumnTarget(header: string): 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' {
   const h = header.trim();
   if (EMAIL_HEADER_RE.test(h)) return 'email';
   if (FIRST_NAME_RE.test(h)) return 'firstName';
   if (LAST_NAME_RE.test(h)) return 'lastName';
+  if (FULL_NAME_RE.test(h)) return 'fullName';
   return 'custom';
 }
