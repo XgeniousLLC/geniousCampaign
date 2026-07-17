@@ -6,7 +6,8 @@ import { LocalVerifyService } from './local-verify.service';
 import { ReoonProvider } from './reoon.provider';
 import { NeverBounceProvider } from './neverbounce.provider';
 import { SuppressionService } from '../suppression/suppression.service';
-import type { VerificationProviderResult } from './verification-provider.interface';
+import { SettingsService } from '../settings/settings.service';
+import type { EmailVerificationProvider, VerificationProviderResult } from './verification-provider.interface';
 
 const TTL_DAYS = 180; // 6 months — within GC-049's 6-12 month window
 
@@ -25,13 +26,24 @@ export class EmailVerificationService {
     private readonly reoon: ReoonProvider,
     private readonly neverBounce: NeverBounceProvider,
     private readonly suppression: SuppressionService,
+    private readonly settings: SettingsService,
   ) {}
+
+  /** VERIFICATION_PROVIDER (Settings > Integrations > Email verification)
+   * picks which provider is tried first — defaults to Reoon. The other is
+   * only called as a fallback when the default fails or errors. */
+  private providerOrder(): [{ name: 'reoon' | 'neverbounce'; provider: EmailVerificationProvider }, { name: 'reoon' | 'neverbounce'; provider: EmailVerificationProvider }] {
+    const reoon = { name: 'reoon' as const, provider: this.reoon };
+    const neverBounce = { name: 'neverbounce' as const, provider: this.neverBounce };
+    return this.settings.get('VERIFICATION_PROVIDER') === 'neverbounce' ? [neverBounce, reoon] : [reoon, neverBounce];
+  }
 
   /**
    * Local pre-filter first (GC-048) — a syntactically invalid, disposable,
    * or no-MX address never reaches a paid API. Then the cache, keyed by
    * email with a 6-month TTL — a cache hit also never reaches a paid API.
-   * Only then Reoon, falling back to NeverBounce on any Reoon failure.
+   * Only then the default provider (VERIFICATION_PROVIDER), falling back to
+   * the other provider on any failure.
    */
   async verify(email: string): Promise<VerificationOutcome> {
     const local = await this.localVerify.check(email);
@@ -48,15 +60,18 @@ export class EmailVerificationService {
       return { status: cached.status, isDeliverable: cached.isDeliverable, provider: cached.provider as 'reoon' | 'neverbounce', cached: true };
     }
 
+    const [primary, fallback] = this.providerOrder();
     let result: VerificationProviderResult;
     let provider: 'reoon' | 'neverbounce';
     try {
-      result = await this.reoon.verify(email);
-      provider = 'reoon';
-    } catch (reoonErr) {
-      this.logger.warn(`Reoon failed for ${email}, falling back to NeverBounce: ${reoonErr instanceof Error ? reoonErr.message : reoonErr}`);
-      result = await this.neverBounce.verify(email);
-      provider = 'neverbounce';
+      result = await primary.provider.verify(email);
+      provider = primary.name;
+    } catch (primaryErr) {
+      this.logger.warn(
+        `${primary.name} failed for ${email}, falling back to ${fallback.name}: ${primaryErr instanceof Error ? primaryErr.message : primaryErr}`,
+      );
+      result = await fallback.provider.verify(email);
+      provider = fallback.name;
     }
 
     await this.cacheResult(email, result, provider);
@@ -75,6 +90,14 @@ export class EmailVerificationService {
     if (status !== 'invalid' && status !== 'risky') return;
     await this.suppression.suppress(email, 'invalid_email', 'verification');
     await this.drizzle.db.update(contacts).set({ status: 'suppressed', updatedAt: new Date() }).where(eq(contacts.email, email));
+  }
+
+  /** Switching VERIFICATION_PROVIDER only affects emails not already cached
+   * (6-month TTL) — this lets an admin force everything to re-check against
+   * the newly-picked provider instead of waiting out the old cache. */
+  async clearCache() {
+    const { rowCount } = await this.drizzle.db.delete(verificationResults);
+    return { cleared: rowCount ?? 0 };
   }
 
   private async cacheResult(email: string, result: VerificationProviderResult, provider: 'reoon' | 'neverbounce') {

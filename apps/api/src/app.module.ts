@@ -32,6 +32,8 @@ import { AiAssistModule } from './ai-assist/ai-assist.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
 import { SettingsModule } from './settings/settings.module';
 import { DebugLogModule } from './debug-log/debug-log.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { PublicApiModule } from './public-api/public-api.module';
 
 @Module({
   imports: [
@@ -86,6 +88,8 @@ import { DebugLogModule } from './debug-log/debug-log.module';
     PasswordResetModule,
     SettingsModule,
     DebugLogModule,
+    ApiKeysModule,
+    PublicApiModule,
   ],
   controllers: [AppController],
 })

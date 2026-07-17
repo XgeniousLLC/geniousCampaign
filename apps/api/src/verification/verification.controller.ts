@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { LocalVerifyService } from './local-verify.service';
@@ -9,6 +9,8 @@ import { BulkVerifyDto } from './dto/bulk-verify.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
+import { AuditLogService } from '../auth/audit-log.service';
 
 @Controller('verification')
 export class VerificationController {
@@ -16,6 +18,7 @@ export class VerificationController {
     private readonly localVerify: LocalVerifyService,
     private readonly emailVerification: EmailVerificationService,
     private readonly stats: VerificationStatsService,
+    private readonly auditLog: AuditLogService,
     @InjectQueue('bulk-verify') private readonly bulkVerifyQueue: Queue,
   ) {}
 
@@ -37,6 +40,18 @@ export class VerificationController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   getStats() {
     return this.stats.getStats();
+  }
+
+  // Cached results (6-month TTL) keep the provider that originally checked
+  // them — switching VERIFICATION_PROVIDER doesn't touch already-cached
+  // emails. This lets an owner force a full re-check against the new default.
+  @Delete('cache')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner')
+  async clearCache(@CurrentUser() user: AuthenticatedUser) {
+    const result = await this.emailVerification.clearCache();
+    await this.auditLog.record(user, 'verification.cache.clear', 'verification', 'cache', result);
+    return result;
   }
 
   // GC-062 — enqueues a real BullMQ job rather than looping over

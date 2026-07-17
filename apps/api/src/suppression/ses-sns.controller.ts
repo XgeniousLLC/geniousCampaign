@@ -1,8 +1,12 @@
-import { Body, Controller, Logger, Post } from '@nestjs/common';
+import { Body, Controller, Get, Logger, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { eq } from 'drizzle-orm';
 import { SuppressionService } from './suppression.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { sends } from '../db/schema';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 interface SesMailObject {
   messageId?: string;
@@ -47,6 +51,17 @@ export class SesSnsController {
     private readonly suppression: SuppressionService,
     private readonly drizzle: DrizzleService,
   ) {}
+
+  // Read-only, so Settings > Integrations can show the exact URL to paste
+  // into the SNS topic's HTTPS subscription — same req.hostname derivation
+  // TrackingDomainController uses for its CNAME target, kept auth-gated
+  // (unlike the POST handler below, which SNS itself calls with no auth).
+  @Get('webhook-url')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner')
+  getWebhookUrl(@Req() req: Request) {
+    return { url: `${req.protocol}://${req.get('host')}/webhooks/ses/sns` };
+  }
 
   @Post()
   async handle(@Body() rawBody: string) {
