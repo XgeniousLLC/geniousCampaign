@@ -3,8 +3,8 @@ export interface VerificationProviderResult {
   isDeliverable: boolean;
 }
 
-/** Reoon and NeverBounce implement this same interface — GC-049 tries
- * Reoon first (cheaper), falls back to NeverBounce on any failure. */
+/** Reoon and NeverBounce implement this same interface — EmailVerificationService
+ * tries VERIFICATION_PROVIDER's pick first, falls back to the other on any failure. */
 export interface EmailVerificationProvider {
   verify(email: string): Promise<VerificationProviderResult>;
 }

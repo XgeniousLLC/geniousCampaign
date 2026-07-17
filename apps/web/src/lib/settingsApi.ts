@@ -41,3 +41,11 @@ export interface TrackingDomainVerifyResult {
 export function verifyTrackingDomain(domain: string) {
   return apiPost<TrackingDomainVerifyResult>('/settings/tracking-domain/verify', { domain });
 }
+
+export function clearVerificationCache() {
+  return apiDelete<{ cleared: number }>('/verification/cache');
+}
+
+export function getSesSnsWebhookUrl() {
+  return apiGet<{ url: string }>('/webhooks/ses/sns/webhook-url');
+}

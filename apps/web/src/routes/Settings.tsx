@@ -4,12 +4,19 @@ import { listAuditLog, type AuditLogEntry } from '../lib/auditLogApi';
 import { listSuppressionList, type SuppressionEntry } from '../lib/suppressionApi';
 import { listDebugLog, type ErrorLogEntry } from '../lib/debugLogApi';
 import { getAiUsageSummary, type AiUsageSummary } from '../lib/aiAssistApi';
-import { getIntegrationSettings, updateIntegrationSettings, clearIntegrationSetting, type SettingCategory } from '../lib/settingsApi';
+import {
+  getIntegrationSettings,
+  updateIntegrationSettings,
+  clearIntegrationSetting,
+  clearVerificationCache,
+  type SettingCategory,
+} from '../lib/settingsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon } from '../components/icons';
 import { PaginationBar } from '../components/PaginationBar';
 import { AddMemberModal } from '../components/AddMemberModal';
 import { TrackingDomainField } from '../components/TrackingDomainField';
+import { SesSnsWebhookUrlField } from '../components/SesSnsWebhookUrlField';
 
 const LOG_PAGE_SIZE = 20;
 
@@ -337,6 +344,7 @@ function IntegrationsPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [helpCategory, setHelpCategory] = useState<SettingCategory | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
 
   function load() {
     getIntegrationSettings().then((allCats) => {
@@ -391,6 +399,18 @@ function IntegrationsPanel() {
     setValues((prev) => ({ ...prev, [key]: '' }));
   }
 
+  async function handleClearVerificationCache() {
+    setClearingCache(true);
+    try {
+      const { cleared } = await clearVerificationCache();
+      setNotice(`Cleared ${cleared} cached verification result${cleared === 1 ? '' : 's'} — everything re-checks against the current default provider next time.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear cache.');
+    } finally {
+      setClearingCache(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl">
       <p className="mb-4 text-xs text-text-muted">
@@ -442,21 +462,29 @@ function IntegrationsPanel() {
                   </button>
                 )}
               </div>
-              <button
-                onClick={() => handleSave(category)}
-                disabled={savingCategory === category.key}
-                className="h-8 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-              >
-                {savingCategory === category.key ? 'Saving…' : 'Save'}
-              </button>
+              {category.fields.length > 0 && (
+                <button
+                  onClick={() => handleSave(category)}
+                  disabled={savingCategory === category.key}
+                  className="h-8 shrink-0 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                >
+                  {savingCategory === category.key ? 'Saving…' : 'Save'}
+                </button>
+              )}
             </div>
+            {category.key === 'ses_sns' && (
+              <div className="p-4">
+                <SesSnsWebhookUrlField />
+              </div>
+            )}
             <div className="flex flex-col gap-3 p-4">
               {category.fields
                 .filter((f) => {
-                  if (category.key !== 'ai') return true;
-                  const currentProvider = values['LLM_PROVIDER'] || 'openai';
-                  if (f.key === 'OPENAI_API_KEY') return currentProvider === 'openai';
-                  if (f.key === 'DEEPSEEK_API_KEY') return currentProvider === 'deepseek';
+                  if (category.key === 'ai') {
+                    const currentProvider = values['LLM_PROVIDER'] || 'openai';
+                    if (f.key === 'OPENAI_API_KEY') return currentProvider === 'openai';
+                    if (f.key === 'DEEPSEEK_API_KEY') return currentProvider === 'deepseek';
+                  }
                   return true;
                 })
                 .map((f) => (
@@ -523,6 +551,20 @@ function IntegrationsPanel() {
                   })()}
                 </label>
               ))}
+              {category.key === 'verification' && (
+                <div className="flex items-center justify-between border-t border-border-subtle pt-3">
+                  <div className="text-[11px] text-text-faint">
+                    Force every cached email to re-check against the current default provider on its next verify.
+                  </div>
+                  <button
+                    onClick={handleClearVerificationCache}
+                    disabled={clearingCache}
+                    className="h-7 shrink-0 rounded-md border border-border-default bg-panel px-2.5 text-[11px] font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
+                  >
+                    {clearingCache ? 'Clearing…' : 'Clear cached results'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}

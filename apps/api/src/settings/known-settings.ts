@@ -67,15 +67,18 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   {
     key: 'verification',
     label: 'Email verification',
-    description: 'Paid deliverability checks (Reoon primary, NeverBounce fallback).',
+    description: 'Paid deliverability checks (default provider primary, the other as fallback).',
     fields: [
+      { key: 'VERIFICATION_PROVIDER', label: 'Default provider', secret: false, options: ['reoon', 'neverbounce'] },
       { key: 'REOON_API_KEY', label: 'Reoon API key', secret: true },
       { key: 'NEVERBOUNCE_API_KEY', label: 'NeverBounce API key', secret: true },
     ],
     instructions: [
-      'Reoon (primary, cheapest — required to get started): sign up at reoon.com, open the API section of your dashboard, and copy your API key.',
-      'NeverBounce (fallback — optional): sign up at neverbounce.com, go to Account > API, and copy your API key. It is only called automatically when Reoon fails or errors on a check.',
+      'Reoon (cheapest — required to get started): sign up at reoon.com, open the API section of your dashboard, and copy your API key.',
+      'NeverBounce (optional): sign up at neverbounce.com, go to Account > API, and copy your API key.',
+      'Default provider picks which one is tried first; the other is only called automatically as a fallback when the default fails or errors on a check.',
       'A local syntax/MX-record/disposable-domain pre-filter always runs before either paid API is called, so most obviously-invalid addresses never spend a credit.',
+      'Results are cached per email for 6 months — switching the default provider only changes which provider is used for emails not yet cached (or re-checked after "Clear cached results" below). Already-cached emails keep showing whichever provider originally checked them until that cache entry expires.',
     ],
   },
   {
@@ -117,6 +120,24 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
       'Click "Check DNS" again once it\'s live — the domain is only saved here after the CNAME actually resolves, so a typo or a domain you don\'t control can\'t silently become the tracking host.',
       'No SPF/DKIM/DMARC records are needed for this domain — that\'s a separate concern handled by your sending domain (SES), not the tracking domain.',
       'Signing secret below is generated internally (not something you fetch from an external dashboard) — leave it blank to keep the current one, or paste a replacement if you\'re rotating it.',
+    ],
+  },
+  {
+    // No fields — nothing here is a stored credential. The URL shown by the
+    // frontend is derived from the request host (GET /webhooks/ses/sns/webhook-url),
+    // same pattern as TRACKING_DOMAIN's CNAME target, just with no save step
+    // since SNS confirms its own subscription via the SubscribeURL handshake.
+    key: 'ses_sns',
+    label: 'SES bounce/complaint webhook',
+    description: 'AWS SNS → this app, so hard bounces and complaints auto-suppress.',
+    fields: [],
+    instructions: [
+      'This makes SES bounce and complaint notifications reach the suppression list automatically (a hard bounce suppresses immediately; 3+ soft bounces to the same address suppress it too) — without it, bounces are never reported back and the same bad addresses keep getting sent to.',
+      'In the AWS SNS console, create a new Standard topic (e.g. "ses-notifications").',
+      'Create a subscription on that topic: protocol "HTTPS", endpoint = the webhook URL shown below.',
+      'SNS immediately sends a subscription-confirmation request to that URL — this app auto-confirms it, so the subscription should show "Confirmed" in the SNS console within a few seconds. If it stays "Pending confirmation," the URL isn\'t reachable from the internet yet (check DNS/firewall/deploy status).',
+      'In the SES console, open your verified sending identity (or the configuration set you use for sending — SES_CONFIGURATION_SET) and add a new Event destination of type "SNS" for the Bounce and Complaint event types, pointing at the topic you just created.',
+      'Send a real email to one of SES\'s mailbox simulator addresses (e.g. bounce@simulator.amazonses.com) to confirm a bounce round-trips into Settings > Suppression list.',
     ],
   },
 ];
