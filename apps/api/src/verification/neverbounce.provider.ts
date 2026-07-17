@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
-import type { EmailVerificationProvider, VerificationProviderResult } from './verification-provider.interface';
+import { RateLimitError, parseRetryAfterMs, type EmailVerificationProvider, type VerificationProviderResult } from './verification-provider.interface';
 
 interface NeverBounceResponse {
   status: 'success' | 'auth_failure' | 'temp_unavail' | 'throttle_triggered' | 'general_failure';
@@ -39,10 +39,18 @@ export class NeverBounceProvider implements EmailVerificationProvider {
     url.searchParams.set('key', apiKey);
 
     const res = await fetch(url.toString());
+    if (res.status === 429) {
+      throw new RateLimitError('NeverBounce rate limit hit (429)', parseRetryAfterMs(res.headers.get('retry-after')));
+    }
     if (!res.ok) {
       throw new Error(`NeverBounce API returned ${res.status} ${res.statusText}`);
     }
     const data = (await res.json()) as NeverBounceResponse;
+    // throttle_triggered is NeverBounce's own rate-limit signal, sent with a
+    // 200 OK — it never surfaces as an HTTP 429.
+    if (data.status === 'throttle_triggered') {
+      throw new RateLimitError('NeverBounce rate limit hit (throttle_triggered)');
+    }
     if (data.status !== 'success') {
       throw new Error(`NeverBounce API responded with status: ${data.status}`);
     }

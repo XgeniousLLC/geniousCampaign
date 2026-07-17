@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
-import type { EmailVerificationProvider, VerificationProviderResult } from './verification-provider.interface';
+import { RateLimitError, parseRetryAfterMs, type EmailVerificationProvider, type VerificationProviderResult } from './verification-provider.interface';
 
 // Confirmed against a real live response (2026-07-13, mode=quick, a real
 // REOON_API_KEY): { "status": "valid", "is_valid_syntax": true, ... } — quick
@@ -47,6 +47,10 @@ export class ReoonProvider implements EmailVerificationProvider {
     url.searchParams.set('mode', 'quick');
 
     const res = await fetch(url.toString());
+    if (res.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'));
+      throw new RateLimitError('Reoon rate limit hit (429)', retryAfterMs);
+    }
     if (!res.ok) {
       throw new Error(`Reoon API returned ${res.status} ${res.statusText}`);
     }
