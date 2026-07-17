@@ -127,6 +127,22 @@ export class EnrollmentService {
     return enrollment;
   }
 
+  /** Stops every active/paused enrollment a contact has, across all
+   * sequences — enrollment is per-(sequence, contact) with no shared clock
+   * (invariant 1), so "stop everywhere" is inherently a loop over each one,
+   * not a single row update. Reuses stop() so each transition is identical
+   * to a single-sequence stop, just applied per enrollment. */
+  async stopAllForContact(contactId: string, db: DbOrTx = this.drizzle.db) {
+    const active = await db.query.sequenceEnrollments.findMany({
+      where: and(eq(sequenceEnrollments.contactId, contactId), inArray(sequenceEnrollments.status, ['active', 'paused'])),
+    });
+    const stopped: (typeof sequenceEnrollments.$inferSelect)[] = [];
+    for (const enrollment of active) {
+      stopped.push(await this.stop(enrollment.id, db));
+    }
+    return stopped;
+  }
+
   listForContact(contactId: string) {
     return this.drizzle.db.query.sequenceEnrollments.findMany({
       where: eq(sequenceEnrollments.contactId, contactId),

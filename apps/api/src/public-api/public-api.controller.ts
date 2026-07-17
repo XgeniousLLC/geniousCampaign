@@ -1,7 +1,8 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ContactsService } from '../contacts/contacts.service';
 import { ListsService } from '../lists/lists.service';
 import { TagsService } from '../tags/tags.service';
+import { EnrollmentService } from '../enrollments/enrollment.service';
 import { ApiKeyAuthGuard } from '../api-keys/api-key-auth.guard';
 import { CurrentApiKey, type AuthenticatedApiKey } from '../api-keys/current-api-key.decorator';
 import { CreatePublicContactDto } from './dto/create-public-contact.dto';
@@ -21,6 +22,7 @@ export class PublicApiController {
     private readonly contacts: ContactsService,
     private readonly lists: ListsService,
     private readonly tags: TagsService,
+    private readonly enrollments: EnrollmentService,
   ) {}
 
   @Post('contacts')
@@ -56,6 +58,22 @@ export class PublicApiController {
       status: contact.status,
       listId: listId ?? null,
       tagIds,
+    };
+  }
+
+  // Stops every active/paused sequence enrollment for the contact with this
+  // email, across all sequences — enrollment has no shared sequence-wide
+  // clock (invariant 1), so this is a lookup-by-email + stopAllForContact,
+  // not a single row flip. Contact must already exist (404 if not) — this
+  // endpoint stops enrollments, it never creates a contact as a side effect.
+  @Post('contacts/:email/stop-sequences')
+  async stopSequences(@Param('email') email: string) {
+    const contact = await this.contacts.findByEmail(email);
+    const stopped = await this.enrollments.stopAllForContact(contact.id);
+    return {
+      contactId: contact.id,
+      email: contact.email,
+      stopped: stopped.map((e) => ({ enrollmentId: e.id, sequenceId: e.sequenceId })),
     };
   }
 }

@@ -206,6 +206,14 @@ export class ContactsService {
     return contact;
   }
 
+  async findByEmail(email: string) {
+    const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.email, email) });
+    if (!contact) {
+      throw new NotFoundException(`No contact with email "${email}"`);
+    }
+    return contact;
+  }
+
   async update(id: string, dto: UpdateContactDto) {
     await this.findOne(id);
 
