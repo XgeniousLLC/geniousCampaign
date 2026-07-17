@@ -22,15 +22,28 @@ export class SendDispatcherService {
     private readonly breaker: CircuitBreakerService,
   ) {}
 
-  async send(params: Omit<SendEmailParams, 'from' | 'senderAccountId'>): Promise<SendEmailResult> {
+  async send(
+    params: Omit<SendEmailParams, 'from' | 'senderAccountId'> & {
+      /** GC-125 — a campaign's explicit sender pick; hard-overrides quota
+       * rotation, see SenderAccountService.pickAccountForSend(). */
+      senderAccountId?: string;
+      /** GC-125 — per-campaign From display name; falls back to the picked
+       * account's own displayName when unset. */
+      fromName?: string;
+    },
+  ): Promise<SendEmailResult> {
     // GC-050 — blocks in real time, not just at the next 5-minute
     // evaluation cycle.
     await this.breaker.assertNotTripped();
 
-    const account = await this.senderAccounts.pickAccountForSend();
+    const { senderAccountId: overrideAccountId, fromName, ...rest } = params;
+    const account = await this.senderAccounts.pickAccountForSend(overrideAccountId);
     const provider = account.provider === 'gmail' ? this.gmailSender : this.sesSender;
 
-    const result = await provider.send({ ...params, from: account.email, senderAccountId: account.id });
+    const displayName = fromName || account.displayName;
+    const from = displayName ? `"${displayName.replace(/"/g, "'")}" <${account.email}>` : account.email;
+
+    const result = await provider.send({ ...rest, from, senderAccountId: account.id });
     await this.senderAccounts.recordSend(account.id);
     return result;
   }

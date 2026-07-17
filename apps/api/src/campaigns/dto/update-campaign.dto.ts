@@ -1,13 +1,16 @@
 import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { CAMPAIGN_AUDIENCE_TYPES } from './create-campaign.dto';
 
-export const CAMPAIGN_AUDIENCE_TYPES = ['list', 'tags', 'contacts'] as const;
-
-export class CreateCampaignDto {
+// Only ever applied to a still-'draft' campaign (CampaignsService.update())
+// — once sending has started, none of this can change out from under it.
+export class UpdateCampaignDto {
+  @IsOptional()
   @IsString()
-  name!: string;
+  name?: string;
 
+  @IsOptional()
   @IsUUID()
-  templateId!: string;
+  templateId?: string;
 
   @IsOptional()
   @IsIn(CAMPAIGN_AUDIENCE_TYPES)
@@ -41,9 +44,6 @@ export class CreateCampaignDto {
   @IsEmail()
   sendToEmail?: string;
 
-  // GC-125 — null/omitted keeps the existing quota-based auto-pick
-  // (invariant 7). When set, checked at send time and the send hard-fails
-  // if the account is inactive/exhausted rather than silently falling back.
   @IsOptional()
   @IsUUID()
   senderAccountId?: string;

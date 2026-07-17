@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
@@ -139,9 +139,33 @@ export class SenderAccountService {
   /** Picks the active account with the most remaining daily headroom
    * (dailySendLimit - sentToday) — the core of invariant 7's rotation.
    * Falls through to the next-best account automatically; only throws if
-   * every account (including SES) is exhausted or inactive. */
-  async pickAccountForSend(): Promise<typeof senderAccounts.$inferSelect> {
+   * every account (including SES) is exhausted or inactive.
+   *
+   * GC-125: `overrideAccountId` (a campaign's explicit sender pick) skips
+   * quota-based selection entirely, but is still checked for
+   * isActive/remaining quota — a picked-but-exhausted/inactive account hard
+   * fails the send with a clear error rather than silently falling back to
+   * auto-pick, per Sharifur's call on the ticket's flagged decision. */
+  async pickAccountForSend(overrideAccountId?: string): Promise<typeof senderAccounts.$inferSelect> {
     await this.ensureSesAccount();
+
+    if (overrideAccountId) {
+      const account = await this.findOne(overrideAccountId);
+      const fresh = await this.resetIfNewDay(account);
+      const headroom = fresh.dailySendLimit - fresh.sentToday;
+      if (!fresh.isActive) {
+        throw new BadRequestException(
+          `Sender account "${fresh.displayName ?? fresh.email}" is inactive — pick a different sender or reactivate it in Settings > Sender accounts.`,
+        );
+      }
+      if (headroom <= 0) {
+        throw new BadRequestException(
+          `Sender account "${fresh.displayName ?? fresh.email}" has exhausted its daily send limit — pick a different sender or wait for quota reset.`,
+        );
+      }
+      return fresh;
+    }
+
     const candidates = await this.drizzle.db.query.senderAccounts.findMany({
       where: eq(senderAccounts.isActive, true),
     });

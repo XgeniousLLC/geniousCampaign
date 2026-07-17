@@ -75,6 +75,7 @@ export class SesSenderProvider implements EmailSenderProvider {
       const info = await config.transporter.sendMail({
         from: params.from,
         to: params.to,
+        replyTo: params.replyTo,
         subject: params.subject,
         html: params.html,
         text: params.text,

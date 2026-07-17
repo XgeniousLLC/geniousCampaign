@@ -12,6 +12,7 @@ import { CampaignsService } from './campaigns.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
+import { SenderAccountService } from '../sending/sender-account.service';
 import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
 
@@ -26,6 +27,7 @@ export class CampaignSendProcessor extends WorkerHost {
     private readonly suppression: SuppressionService,
     private readonly tracking: TrackingService,
     private readonly sendDispatcher: SendDispatcherService,
+    private readonly senderAccounts: SenderAccountService,
     private readonly events: EventEmitter2,
   ) {
     super();
@@ -43,6 +45,20 @@ export class CampaignSendProcessor extends WorkerHost {
     if (!template) {
       await this.drizzle.db.update(campaigns).set({ status: 'failed', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
       return { error: `Template ${campaign.templateId} not found` };
+    }
+
+    // GC-125 — an explicit sender pick is validated once, up front: if it's
+    // inactive/exhausted the whole send hard-fails with one clear error
+    // rather than every recipient failing individually with the same cause.
+    if (!campaign.isDryRun && campaign.senderAccountId) {
+      try {
+        await this.senderAccounts.pickAccountForSend(campaign.senderAccountId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.drizzle.db.update(campaigns).set({ status: 'failed', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
+        this.logger.error(`Campaign "${campaign.name}" (${campaign.id}) failed: ${message}`);
+        return { error: message };
+      }
     }
 
     await this.drizzle.db.update(campaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
@@ -139,6 +155,9 @@ export class CampaignSendProcessor extends WorkerHost {
           text: resolvedBodyText,
           unsubscribeUrl,
           messageTags: { campaignId: campaign.id },
+          senderAccountId: campaign.senderAccountId ?? undefined,
+          fromName: campaign.fromName ?? undefined,
+          replyTo: campaign.replyTo ?? undefined,
         });
         await this.drizzle.db
           .update(sends)

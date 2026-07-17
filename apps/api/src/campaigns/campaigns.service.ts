@@ -6,9 +6,10 @@ import { Queue } from 'bullmq';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { campaigns, sends, templates, lists, contacts, contactTags, emailEvents } from '../db/schema';
+import { campaigns, sends, templates, lists, contacts, contactTags, emailEvents, senderAccounts } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { UpdateCampaignDto } from './dto/update-campaign.dto';
 
 const DEFAULT_LARGE_SEND_THRESHOLD = 5000;
 
@@ -51,6 +52,7 @@ export class CampaignsService {
       const found = await db.query.lists.findMany({ where: inArray(lists.id, dto.excludeListIds) });
       if (found.length !== dto.excludeListIds.length) throw new NotFoundException('One or more excluded lists were not found');
     }
+    if (dto.senderAccountId) await this.assertSenderAccountExists(dto.senderAccountId, db);
 
     const [created] = await db
       .insert(campaigns)
@@ -64,9 +66,77 @@ export class CampaignsService {
         excludeListIds: dto.excludeListIds?.length ? dto.excludeListIds : undefined,
         isDryRun: dto.isDryRun ?? false,
         sendToEmail: dto.sendToEmail,
+        senderAccountId: dto.senderAccountId,
+        fromName: dto.fromName,
+        replyTo: dto.replyTo,
       })
       .returning();
     return created;
+  }
+
+  private async assertSenderAccountExists(id: string, db: DbOrTx) {
+    const account = await db.query.senderAccounts.findFirst({ where: eq(senderAccounts.id, id) });
+    if (!account) throw new NotFoundException(`Sender account ${id} not found`);
+  }
+
+  /** GC-125 — lets a still-unsent draft be corrected (audience, template,
+   * sender/from-name/reply-to, etc.) without deleting and recreating it.
+   * Only ever valid while status is still 'draft' — once send() has fired
+   * (status flips to 'sending'/'sent'/'failed') the campaign is a record of
+   * what actually went out, not something to keep editing. */
+  async update(id: string, dto: UpdateCampaignDto, db: DbOrTx = this.drizzle.db) {
+    const campaign = await this.findOne(id);
+    if (campaign.status !== 'draft') {
+      throw new BadRequestException(`Campaign ${id} is already ${campaign.status} — cannot edit`);
+    }
+
+    if (dto.templateId) {
+      const template = await db.query.templates.findFirst({ where: eq(templates.id, dto.templateId) });
+      if (!template) throw new NotFoundException(`Template ${dto.templateId} not found`);
+    }
+
+    const audienceType = dto.audienceType ?? campaign.audienceType;
+    if (dto.audienceType) {
+      if (audienceType === 'list') {
+        if (!dto.listIds?.length) throw new BadRequestException('listIds is required when audienceType is "list"');
+        const found = await db.query.lists.findMany({ where: inArray(lists.id, dto.listIds) });
+        if (found.length !== dto.listIds.length) throw new NotFoundException('One or more selected lists were not found');
+      } else if (audienceType === 'tags') {
+        if (!dto.tagIds?.length) throw new BadRequestException('tagIds is required when audienceType is "tags"');
+      } else if (audienceType === 'contacts') {
+        if (!dto.contactIds?.length) throw new BadRequestException('contactIds is required when audienceType is "contacts"');
+      }
+    }
+    if (dto.excludeListIds?.length) {
+      const found = await db.query.lists.findMany({ where: inArray(lists.id, dto.excludeListIds) });
+      if (found.length !== dto.excludeListIds.length) throw new NotFoundException('One or more excluded lists were not found');
+    }
+    if (dto.senderAccountId) await this.assertSenderAccountExists(dto.senderAccountId, db);
+
+    const [updated] = await db
+      .update(campaigns)
+      .set({
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.templateId !== undefined ? { templateId: dto.templateId } : {}),
+        ...(dto.audienceType !== undefined
+          ? {
+              audienceType,
+              listIds: audienceType === 'list' ? dto.listIds : null,
+              tagIds: audienceType === 'tags' ? dto.tagIds : null,
+              contactIds: audienceType === 'contacts' ? dto.contactIds : null,
+            }
+          : {}),
+        ...(dto.excludeListIds !== undefined ? { excludeListIds: dto.excludeListIds.length ? dto.excludeListIds : null } : {}),
+        ...(dto.isDryRun !== undefined ? { isDryRun: dto.isDryRun } : {}),
+        ...(dto.sendToEmail !== undefined ? { sendToEmail: dto.sendToEmail } : {}),
+        ...(dto.senderAccountId !== undefined ? { senderAccountId: dto.senderAccountId || null } : {}),
+        ...(dto.fromName !== undefined ? { fromName: dto.fromName || null } : {}),
+        ...(dto.replyTo !== undefined ? { replyTo: dto.replyTo || null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(campaigns.id, id))
+      .returning();
+    return updated;
   }
 
   /** Resolves the real recipient set for any audience type — the one place

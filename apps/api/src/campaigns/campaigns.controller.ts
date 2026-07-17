@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -6,6 +6,7 @@ import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decora
 import { AuditLogService } from '../auth/audit-log.service';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { SendCampaignDto } from './dto/send-campaign.dto';
 import { DrizzleService } from '../db/drizzle.service';
 
@@ -36,6 +37,14 @@ export class CampaignsController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.campaigns.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles('owner', 'editor')
+  async update(@Param('id') id: string, @Body() dto: UpdateCampaignDto, @CurrentUser() user: AuthenticatedUser) {
+    const updated = await this.campaigns.update(id, dto);
+    await this.auditLog.record(user, 'campaign.update', 'campaign', id, { fields: Object.keys(dto) });
+    return updated;
   }
 
   @Get(':id/sends')

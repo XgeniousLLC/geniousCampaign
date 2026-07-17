@@ -49,6 +49,7 @@ function App() {
             <Route path="sequences/:id" element={<SequenceBuilder />} />
             <Route path="campaigns" element={<CampaignsList />} />
             <Route path="campaigns/new" element={<CampaignCompose />} />
+            <Route path="campaigns/:id/edit" element={<CampaignCompose />} />
             <Route path="campaigns/:id" element={<CampaignDetail />} />
             <Route path="settings/sender-accounts" element={<SenderAccountsSettings />} />
             <Route path="email-log" element={<EmailLog />} />

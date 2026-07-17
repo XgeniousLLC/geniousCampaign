@@ -184,6 +184,8 @@ export function CampaignDetail() {
         {new Date(campaign.createdAt).toLocaleDateString()} · {template?.name ?? '—'} · {stats.total} recipients
         {dominantProvider && <> · via {dominantProvider.toUpperCase()}</>}
         {campaignLists.length > 0 && <> · {campaignLists.map((l) => l.name).join(', ')}</>}
+        {campaign.fromName && <> · from "{campaign.fromName}"</>}
+        {campaign.replyTo && <> · reply-to {campaign.replyTo}</>}
       </p>
 
       {campaign.status === 'draft' && (
@@ -207,6 +209,13 @@ export function CampaignDetail() {
               Cancel schedule
             </button>
           )}
+          <button
+            onClick={() => navigate(`/campaigns/${campaign.id}/edit`)}
+            disabled={actionBusy}
+            className="h-8 rounded-md border border-border-subtle px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Edit
+          </button>
           <button
             onClick={() => handleSendNow(false)}
             disabled={actionBusy || !!pendingConfirm}
