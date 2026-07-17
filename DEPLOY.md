@@ -90,6 +90,8 @@ In the resource's **Build** settings:
 - Start Command: `npm run db:migrate --workspace apps/api && npm run start:prod --workspace apps/api`
 - Port: `3000`
 
+`apps/api`'s own `build` script already runs `nest build` (i.e. `tsc`) with `NODE_OPTIONS=--max-old-space-size=4096` — the plain default heap (~2GB) can OOM mid-compile on a memory-constrained build container (`FATAL ERROR: Ineffective mark-compacts near heap limit`, exit code 134). If it still OOMs at 4096MB, the build container itself doesn't have enough RAM — raise the resource's build container memory limit in Coolify (Advanced tab), not just the Node flag.
+
 Migration is chained into the Start Command, not left to the Post-deployment Command alone — on a fresh database the app crashes on boot querying tables that don't exist yet (`SettingsService` reads `app_settings` in `onModuleInit`), which crash-loops the container before it's ever healthy enough for Coolify's Post-deployment step to `exec` into it. Running migrate first, in the same command, guarantees the schema exists before Nest touches the DB at all. `drizzle-kit migrate` is idempotent, so this is safe on every restart, not just the first.
 
 Set these in the resource's **Environment Variables** tab (runtime, not build-time — the API reads them via `process.env` at startup/request time):
