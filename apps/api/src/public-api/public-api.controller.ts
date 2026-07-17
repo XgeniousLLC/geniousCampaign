@@ -4,19 +4,23 @@ import { ListsService } from '../lists/lists.service';
 import { TagsService } from '../tags/tags.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { ApiKeyAuthGuard } from '../api-keys/api-key-auth.guard';
+import { PublicApiThrottlerGuard } from './public-api-throttler.guard';
 import { CurrentApiKey, type AuthenticatedApiKey } from '../api-keys/current-api-key.decorator';
 import { CreatePublicContactDto } from './dto/create-public-contact.dto';
 
 // External-facing surface for form/automation tools (Zapier, a website
 // contact form, a custom script) to push a contact in — auth is the bearer
-// key from Settings > Webhooks > API keys, not a user's JWT. Distinct from
-// the HMAC-signed inbound webhook framework (CLAUDE.md invariant 4): that's
-// a generic payload-relay + trigger-firing mechanism, this is a purpose-
-// built "create a contact" REST endpoint with a simpler auth story that's
-// easier for arbitrary external tools to call (a static header value,
-// no per-request signature to compute).
+// key from Settings > API keys, not a user's JWT. Distinct from the
+// HMAC-signed inbound webhook framework (CLAUDE.md invariant 4): that's a
+// generic payload-relay + trigger-firing mechanism, this is a purpose-built
+// "create a contact" REST endpoint with a simpler auth story that's easier
+// for arbitrary external tools to call (a static header value, no
+// per-request signature to compute).
+// Throttler guard runs first so it also caps floods of invalid keys, not
+// just valid ones (ApiKeyAuthGuard would otherwise 401 and short-circuit
+// before any rate limit ever applied).
 @Controller('api/v1')
-@UseGuards(ApiKeyAuthGuard)
+@UseGuards(PublicApiThrottlerGuard, ApiKeyAuthGuard)
 export class PublicApiController {
   constructor(
     private readonly contacts: ContactsService,

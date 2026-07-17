@@ -23,6 +23,10 @@ export const apiKeys = pgTable(
     defaultTagIds: jsonb('default_tag_ids').notNull().default([]),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    // Null = never expires. UI defaults new keys to +1 year and warns when a
+    // user explicitly picks never-expire, but the column itself stays
+    // nullable so that choice is representable.
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('api_keys_key_hash_unique_idx').on(table.keyHash)],

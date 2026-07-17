@@ -11,8 +11,9 @@ import {
   clearVerificationCache,
   type SettingCategory,
 } from '../lib/settingsApi';
+import { listApiKeys, createApiKey, rotateApiKey, revokeApiKey, type ApiKey, type CreatedApiKey } from '../lib/apiKeysApi';
 import { useAuthStore } from '../stores/useAuthStore';
-import { InfoIcon, CloseIcon } from '../components/icons';
+import { InfoIcon, CloseIcon, CopyIcon, CheckCircleIcon } from '../components/icons';
 import { PaginationBar } from '../components/PaginationBar';
 import { AddMemberModal } from '../components/AddMemberModal';
 import { TrackingDomainField } from '../components/TrackingDomainField';
@@ -20,8 +21,11 @@ import { SesSnsWebhookUrlField } from '../components/SesSnsWebhookUrlField';
 
 const LOG_PAGE_SIZE = 20;
 
-const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'AI usage', 'Integrations'] as const;
+const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'AI usage', 'API keys', 'Integrations'] as const;
 type Tab = (typeof TABS)[number];
+
+// Keys default to a 1-year expiry — see ApiKeysPanel's create form.
+const DEFAULT_KEY_LIFETIME_DAYS = 365;
 
 // Selectable models per LLM provider for Settings > Integrations > AI-assisted
 // copy — keep in sync with apps/api/src/ai-assist/ai-assist.service.ts's
@@ -113,7 +117,7 @@ export function Settings() {
       </div>
 
       <div className="mb-[18px] flex gap-5 border-b border-border-default">
-        {TABS.filter((t) => (t !== 'Integrations' && t !== 'Debug log' && t !== 'AI usage') || isOwner).map((t) => (
+        {TABS.filter((t) => (t !== 'Integrations' && t !== 'Debug log' && t !== 'AI usage' && t !== 'API keys') || isOwner).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -331,7 +335,159 @@ export function Settings() {
         </div>
       )}
 
+      {tab === 'API keys' && isOwner && <ApiKeysPanel />}
+
       {tab === 'Integrations' && isOwner && <IntegrationsPanel />}
+    </div>
+  );
+}
+
+function defaultExpiryDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + DEFAULT_KEY_LIFETIME_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
+function ApiKeysPanel() {
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyExpiry, setNewKeyExpiry] = useState(defaultExpiryDate());
+  const [neverExpire, setNeverExpire] = useState(false);
+  const [revealedKey, setRevealedKey] = useState<CreatedApiKey | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function load() {
+    return listApiKeys().then(setApiKeys);
+  }
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, []);
+
+  async function handleCreate() {
+    if (!newKeyName.trim()) return;
+    const created = await createApiKey({
+      name: newKeyName.trim(),
+      expiresAt: neverExpire ? undefined : new Date(newKeyExpiry).toISOString(),
+    });
+    setRevealedKey(created);
+    setNewKeyName('');
+    setNewKeyExpiry(defaultExpiryDate());
+    setNeverExpire(false);
+    load();
+  }
+
+  async function handleRotate(id: string) {
+    const rotated = await rotateApiKey(id);
+    setRevealedKey(rotated);
+    load();
+  }
+
+  async function handleRevoke(id: string) {
+    await revokeApiKey(id);
+    load();
+  }
+
+  function handleCopyKey() {
+    if (!revealedKey) return;
+    navigator.clipboard.writeText(revealedKey.key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  function expiryLabel(k: ApiKey): { text: string; warn: boolean } {
+    if (!k.expiresAt) return { text: 'Never expires', warn: true };
+    const expired = new Date(k.expiresAt).getTime() < Date.now();
+    return { text: `${expired ? 'Expired' : 'Expires'} ${new Date(k.expiresAt).toLocaleDateString()}`, warn: expired };
+  }
+
+  return (
+    <div className="max-w-3xl overflow-hidden rounded-md border border-border-default bg-panel">
+      <div className="border-b border-border-default px-4 py-3">
+        <div className="text-sm font-semibold text-text-primary">API keys</div>
+        <div className="mt-0.5 text-[11.5px] text-text-faint">
+          For external forms/automation tools to push contacts in — endpoint reference, payload/response examples in{' '}
+          <code className="rounded bg-field px-1 py-0.5 font-mono text-[10.5px]">docs/PUBLIC_API.md</code>.
+        </div>
+      </div>
+
+      {revealedKey && (
+        <div className="m-3 rounded-md border border-warning/25 bg-warning/10 p-3 text-[11.5px] text-text-secondary">
+          <div className="mb-1.5 font-medium text-warning">Copy this now — "{revealedKey.name}" won't be shown again.</div>
+          <div className="flex items-center gap-2 rounded-md border border-border-default bg-field px-2.5 py-2">
+            <span className="flex-1 truncate font-mono text-[11.5px] text-text-secondary">{revealedKey.key}</span>
+            <button onClick={handleCopyKey} title="Copy" className="shrink-0 text-text-faint hover:text-text-secondary">
+              {copied ? <CheckCircleIcon className="text-success" /> : <CopyIcon />}
+            </button>
+          </div>
+          <button onClick={() => setRevealedKey(null)} className="mt-2 text-[11px] text-text-faint hover:text-text-secondary">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="p-4 text-center text-xs text-text-muted">Loading…</div>
+      ) : (
+        <div className="p-1.5">
+          {apiKeys.map((k) => {
+            const expiry = expiryLabel(k);
+            return (
+              <div key={k.id} className="flex items-center justify-between rounded-md px-2.5 py-2.5 hover:bg-raised">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary">{k.name}</div>
+                  <div className="mt-1 font-mono text-[11.5px] text-text-faint">{k.keyPrefix}••••</div>
+                  <div className="mt-1 text-[11px] text-text-faint">
+                    <span className={expiry.warn ? 'text-warning' : undefined}>{expiry.text}</span>
+                    {' · '}
+                    {k.lastUsedAt ? `last used ${new Date(k.lastUsedAt).toLocaleString()}` : 'never used'}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <button onClick={() => handleRotate(k.id)} className="text-[11px] text-text-faint hover:text-text-secondary">
+                    Rotate
+                  </button>
+                  <button onClick={() => handleRevoke(k.id)} className="text-[11px] text-text-faint hover:text-danger">
+                    Revoke
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {apiKeys.length === 0 && <div className="px-2.5 py-4 text-center text-xs text-text-faint">No API keys yet.</div>}
+        </div>
+      )}
+
+      <div className="border-t border-border-subtle p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            placeholder="Name (e.g. Website contact form)"
+            className="h-7 flex-1 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint"
+          />
+          <input
+            type="date"
+            value={newKeyExpiry}
+            disabled={neverExpire}
+            onChange={(e) => setNewKeyExpiry(e.target.value)}
+            className="h-7 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary disabled:opacity-40"
+          />
+          <label className="flex items-center gap-1.5 text-[11px] text-text-faint">
+            <input type="checkbox" checked={neverExpire} onChange={(e) => setNeverExpire(e.target.checked)} />
+            Never expire
+          </label>
+          <button onClick={handleCreate} className="h-7 rounded-md border border-border-subtle bg-surface px-2.5 text-xs font-medium text-text-secondary hover:bg-raised">
+            Create key
+          </button>
+        </div>
+        {neverExpire && (
+          <div className="mt-2 text-[11px] text-warning">
+            Warning: this key will never expire. A leaked or forgotten key stays valid forever — prefer setting an expiry date.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

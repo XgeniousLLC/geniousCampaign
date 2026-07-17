@@ -5,26 +5,14 @@ import { apiKeys } from '../db/schema';
 import { generateApiKey } from './api-key.util';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import type { AuthenticatedUser } from '../auth/current-user.decorator';
-import { ListsService } from '../lists/lists.service';
-import { TagsService } from '../tags/tags.service';
 
 @Injectable()
 export class ApiKeysService {
-  constructor(
-    private readonly drizzle: DrizzleService,
-    private readonly lists: ListsService,
-    private readonly tags: TagsService,
-  ) {}
+  constructor(private readonly drizzle: DrizzleService) {}
 
   /** The raw key is only ever returned here, at creation time — every other
-   * read (findAll, the auth guard's lookup) only ever sees the hash.
-   * defaultListId/defaultTagIds are validated here (a typo'd id would
-   * otherwise only surface as a foreign-key error on the first real public
-   * API call using this key, long after creation). */
+   * read (findAll, the auth guard's lookup) only ever sees the hash. */
   async create(dto: CreateApiKeyDto, actor: AuthenticatedUser) {
-    if (dto.defaultListId) await this.lists.findOne(dto.defaultListId);
-    for (const tagId of dto.defaultTagIds ?? []) await this.tags.findOne(tagId);
-
     const { raw, prefix, hash } = generateApiKey();
     const [created] = await this.drizzle.db
       .insert(apiKeys)
@@ -32,8 +20,7 @@ export class ApiKeysService {
         name: dto.name,
         keyPrefix: prefix,
         keyHash: hash,
-        defaultListId: dto.defaultListId,
-        defaultTagIds: dto.defaultTagIds ?? [],
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         createdByUserId: actor.id,
       })
       .returning();
@@ -45,6 +32,23 @@ export class ApiKeysService {
       orderBy: (k, { desc }) => desc(k.createdAt),
       columns: { keyHash: false },
     });
+  }
+
+  /** Issues a fresh key value for an existing row (same id/name/expiry),
+   * invalidating the old one immediately — the old hash is overwritten, not
+   * kept alongside the new one. Same reveal-once shape as create(). */
+  async rotate(id: string) {
+    const existing = await this.drizzle.db.query.apiKeys.findFirst({ where: eq(apiKeys.id, id) });
+    if (!existing) {
+      throw new NotFoundException(`API key ${id} not found`);
+    }
+    const { raw, prefix, hash } = generateApiKey();
+    const [updated] = await this.drizzle.db
+      .update(apiKeys)
+      .set({ keyPrefix: prefix, keyHash: hash, lastUsedAt: null })
+      .where(eq(apiKeys.id, id))
+      .returning();
+    return { ...updated, key: raw };
   }
 
   async remove(id: string) {

@@ -30,6 +30,13 @@ export class ApiKeysController {
     return created;
   }
 
+  @Post(':id/rotate')
+  async rotate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    const rotated = await this.apiKeys.rotate(id);
+    await this.auditLog.record(user, 'api_keys.rotate', 'api_key', id, { name: rotated.name });
+    return rotated;
+  }
+
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     const result = await this.apiKeys.remove(id);

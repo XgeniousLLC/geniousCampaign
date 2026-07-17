@@ -1,15 +1,12 @@
-import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsISO8601, IsOptional, IsString } from 'class-validator';
 
 export class CreateApiKeyDto {
   @IsString()
   name!: string;
 
+  // Omit/null = never expires. Frontend defaults this to +1 year and warns
+  // when the user explicitly clears it.
   @IsOptional()
-  @IsUUID()
-  defaultListId?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsUUID('4', { each: true })
-  defaultTagIds?: string[];
+  @IsISO8601()
+  expiresAt?: string;
 }
