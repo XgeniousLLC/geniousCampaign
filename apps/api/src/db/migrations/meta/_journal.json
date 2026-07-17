@@ -225,6 +225,13 @@
       "when": 1784271619987,
       "tag": "0031_wakeful_marvel_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784278421087,
+      "tag": "0032_dry_warstar",
+      "breakpoints": true
     }
   ]
 }

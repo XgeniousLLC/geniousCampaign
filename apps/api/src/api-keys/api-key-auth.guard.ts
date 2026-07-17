@@ -23,6 +23,9 @@ export class ApiKeyAuthGuard implements CanActivate {
     if (!key) {
       throw new UnauthorizedException('Invalid API key');
     }
+    if (key.expiresAt && key.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('API key expired');
+    }
 
     request.apiKey = key;
     await this.apiKeys.touchLastUsed(key.id);
