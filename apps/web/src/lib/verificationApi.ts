@@ -41,7 +41,7 @@ export interface BulkVerifyJobStatus {
   jobId: string;
   state: string;
   progress: number | object;
-  result?: { totalContacts: number; checked: number; failed: number; lastError?: string };
+  result?: { totalContacts: number; checked: number; failed: number; rateLimited: number; lastError?: string };
   failedReason?: string;
 }
 

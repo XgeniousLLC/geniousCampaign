@@ -78,11 +78,27 @@ export function Verification() {
       {job && (
         <div className="mb-3.5 rounded-md border border-border-default bg-panel px-3.5 py-2.5 text-xs">
           {job.state === 'completed' && job.result ? (
-            <span className="text-text-secondary">
-              Done — checked {job.result.checked} of {job.result.totalContacts}
-              {job.result.failed > 0 && `, ${job.result.failed} failed`}
-              {job.result.lastError && <span className="ml-1 text-danger">({job.result.lastError})</span>}
-            </span>
+            <div className="text-text-secondary">
+              <div>
+                Done — checked {job.result.checked} of {job.result.totalContacts}
+                {job.result.failed > 0 && `, ${job.result.failed} failed`}
+                {job.result.lastError && <span className="ml-1 text-danger">({job.result.lastError})</span>}
+              </div>
+              {job.result.rateLimited > 0 && (
+                <div className="mt-1.5 rounded-md border border-warning/25 bg-warning/10 px-2.5 py-2 text-warning">
+                  {job.result.rateLimited} of {job.result.failed} failure{job.result.failed === 1 ? '' : 's'} were the
+                  verification provider rate-limiting requests (already retried automatically) — these will resolve on
+                  their own. Click <span className="font-semibold">Bulk verify</span> again in a few minutes to pick
+                  them back up; no action needed otherwise.
+                </div>
+              )}
+              {job.result.failed > job.result.rateLimited && (
+                <div className="mt-1.5 rounded-md border border-danger/25 bg-danger/10 px-2.5 py-2 text-danger">
+                  {job.result.failed - job.result.rateLimited} failure{job.result.failed - job.result.rateLimited === 1 ? '' : 's'} were
+                  not rate-limit related — check Settings &gt; Email verification (API key/quota) if this repeats.
+                </div>
+              )}
+            </div>
           ) : job.state === 'failed' ? (
             <span className="text-danger">Bulk verify job failed{job.failedReason ? `: ${job.failedReason}` : ''}</span>
           ) : (
