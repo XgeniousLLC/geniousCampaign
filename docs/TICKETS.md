@@ -120,6 +120,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-122 | Public API: stop all sequence enrollments for a contact by email | 4 | S | Done | GC-121, GC-041 |
 | GC-123 | API key mgmt rework: move to Settings > API keys tab, expiry (default 1yr, warn on never-expire), rotate, public API rate limit | 4 | M | Done | GC-121 |
 | GC-124 | Fix Coolify deploy OOM: `nest build` heap crash (exit 134) on the build container | 4 | S | Done | — |
+| GC-125 | Campaign compose: sender-account picker (From name/email) + optional reply-to override | 4 | M | TODO | GC-047, GC-077 |
 
 ---
 
@@ -1266,3 +1267,12 @@ Coolify's Nixpacks build of `apps/api:main` failed mid-build: `npm ci` and the `
 **Fix**: `apps/api/package.json`'s `build` script now runs `NODE_OPTIONS=--max-old-space-size=4096 nest build` instead of bare `nest build` — since `apps/api/Dockerfile`'s Docker path and Coolify's Nixpacks Build Command (`npm run build --workspace apps/api`, per `DEPLOY.md`) both just invoke this npm script, the fix applies to both deploy paths without touching either config. `DEPLOY.md`'s Coolify section gets a note explaining the flag and the fallback if 4096MB still isn't enough (the build *container's* memory limit itself needs raising in Coolify's Advanced tab — a Node flag can't manufacture RAM the container doesn't have).
 
 Verified locally: `npm run build --workspace apps/api` completes clean with the new script (confirms the flag doesn't break the build itself). Could not reproduce the OOM locally (dev machine has more available memory than the constrained build container) — this is a build-environment-memory fix, not something a local `tsc --noEmit` pass can validate; confirming it actually resolves the Coolify deploy requires watching the next real deploy after this merges.
+
+### GC-125 — Campaign compose: sender-account picker + reply-to override (not started)
+Gap found 2026-07-17: `CampaignCompose.tsx` has no field to choose which sender account (SES or Gmail, from GC-047/077's Sender Accounts page) a campaign sends from — `SenderAccountService.pickAccountForSend()` auto-picks by remaining daily quota at send time (invariant 7), with no per-campaign override. From name/email is whatever `sender_accounts.displayName`/`email` the auto-pick lands on. There is also no reply-to concept anywhere in the schema — not on `campaigns`, not on `sender_accounts` — so replies currently go wherever the From address defaults to.
+
+**Scope**: add `campaigns.senderAccountId` (nullable uuid FK to `sender_accounts`, null = keep current auto-pick behavior) and `campaigns.replyTo` (nullable text, validated email) via Drizzle migration. `CampaignCompose.tsx` gets a new panel: sender-account dropdown (active accounts only, labeled `displayName <email>` with provider badge) defaulting to "Auto (best available)", plus an optional reply-to input. `CreateCampaignDto` gains `senderAccountId?`/`replyTo?`. `CampaignSendProcessor`/`SendDispatcherService` pass the campaign's `senderAccountId` through to `pickAccountForSend()` as a hard override when set (skip quota-based selection, still checked for `isActive`/remaining quota — a picked-but-exhausted account should still block the send with a clear error, not silently fall back), and set the `Reply-To` header from `campaigns.replyTo` when present.
+
+**Decision needed before Sharifur builds this un-blocked**: whether an exhausted/inactive explicitly-picked sender should hard-fail the send or silently fall back to auto-pick — the invariants don't specify this and it changes user-visible behavior, so flag it rather than guessing.
+
+Not started — no credential/account blocker, just needs to be picked up in ticket order.
