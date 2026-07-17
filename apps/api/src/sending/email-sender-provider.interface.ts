@@ -6,6 +6,9 @@ export interface SendEmailParams {
   text: string;
   unsubscribeUrl: string;
   messageTags?: Record<string, string>;
+  /** GC-125 — per-campaign reply-to override; when unset, replies go to
+   * `from` as normal. */
+  replyTo?: string;
   /** Which SenderAccount row to send as — required by GmailSenderProvider
    * (each Gmail mailbox has its own OAuth credentials); ignored by
    * SesSenderProvider (single identity for now, per GC-017). */

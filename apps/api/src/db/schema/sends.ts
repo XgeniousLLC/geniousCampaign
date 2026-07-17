@@ -3,6 +3,7 @@ import { contacts } from './contacts';
 import { templates } from './templates';
 import { sequences, sequenceSteps } from './sequences';
 import { sequenceEnrollments } from './enrollments';
+import { senderAccounts } from './sender-accounts';
 
 export const campaignStatusEnum = pgEnum('campaign_status', ['draft', 'sending', 'sent', 'failed']);
 // GC-070 — a campaign targets exactly one of these; which id column(s) are
@@ -47,6 +48,17 @@ export const campaigns = pgTable('campaigns', {
   // uses to tell "not yet sent" apart from "scheduled, waiting to fire".
   // Cleared by CampaignsService.cancelSchedule() when a schedule is cancelled.
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  // GC-125 — null keeps the existing quota-based auto-pick (invariant 7);
+  // when set, this is a hard override checked at send time
+  // (SenderAccountService.pickAccountForSend()) and the send fails outright
+  // if that account is inactive/exhausted rather than silently falling back
+  // — a picked-but-unusable sender should never surprise the caller with a
+  // different From address than what they configured.
+  senderAccountId: uuid('sender_account_id').references(() => senderAccounts.id, { onDelete: 'set null' }),
+  // Per-campaign From display name override — falls back to the picked
+  // sender account's own displayName when unset.
+  fromName: text('from_name'),
+  replyTo: text('reply_to'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

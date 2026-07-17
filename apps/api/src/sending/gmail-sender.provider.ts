@@ -12,6 +12,7 @@ function buildRawMessage(params: SendEmailParams): string {
   const headers = [
     `From: ${params.from}`,
     `To: ${params.to}`,
+    ...(params.replyTo ? [`Reply-To: ${params.replyTo}`] : []),
     `Subject: ${params.subject}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,

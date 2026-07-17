@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createCampaign, sendCampaign, type Campaign, type CampaignAudienceType } from '../lib/campaignsApi';
+import { useNavigate, useParams } from 'react-router-dom';
+import { createCampaign, updateCampaign, getCampaign, sendCampaign, type Campaign, type CampaignAudienceType } from '../lib/campaignsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, listContactsForList, listContactsForTag, createList, createTag, listTags, listContacts, type List, type Tag, type Contact } from '../lib/contactsApi';
+import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi';
 import { DateTimePicker } from '../components/DateTimePicker';
 
 const AUDIENCE_TABS: { value: CampaignAudienceType; label: string }[] = [
@@ -23,10 +24,13 @@ async function uniqueContactCountAcrossLists(listIds: string[]): Promise<Set<str
 
 export function CampaignCompose() {
   const navigate = useNavigate();
+  const { id: editId } = useParams<{ id: string }>();
+  const isEditing = !!editId;
   const [templates, setTemplates] = useState<Template[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
+  const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
   const [name, setName] = useState(defaultCampaignName);
   const [templateId, setTemplateId] = useState('');
   const [audienceType, setAudienceType] = useState<CampaignAudienceType>('list');
@@ -41,10 +45,14 @@ export function CampaignCompose() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [sendToEmail, setSendToEmail] = useState('');
+  const [senderAccountId, setSenderAccountId] = useState('');
+  const [fromName, setFromName] = useState('');
+  const [replyTo, setReplyTo] = useState('');
   const [newListName, setNewListName] = useState('');
   const [newTagName, setNewTagName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [loaded, setLoaded] = useState(!isEditing);
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     campaign: Campaign;
     recipientCount: number;
@@ -55,16 +63,47 @@ export function CampaignCompose() {
   useEffect(() => {
     listTemplates({ includeVariants: true }).then((t) => {
       setTemplates(t);
-      const topLevel = t.find((x) => !x.parentTemplateId);
-      if (topLevel) setTemplateId(topLevel.id);
+      if (!isEditing) {
+        const topLevel = t.find((x) => !x.parentTemplateId);
+        if (topLevel) setTemplateId(topLevel.id);
+      }
     });
     listLists().then((l) => {
       setLists(l);
-      if (l.length > 0) setListIds([l[0].id]);
+      if (!isEditing && l.length > 0) setListIds([l[0].id]);
     });
     listTags().then(setTags);
     listContacts().then(setAllContacts);
+    listSenderAccounts().then(setSenderAccounts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Edit mode: only a still-'draft' campaign can be loaded for editing —
+  // matches the backend's own guard in CampaignsService.update().
+  useEffect(() => {
+    if (!editId) return;
+    getCampaign(editId).then((c) => {
+      if (c.status !== 'draft') {
+        navigate(`/campaigns/${c.id}`);
+        return;
+      }
+      setName(c.name);
+      setTemplateId(c.templateId);
+      setAudienceType(c.audienceType);
+      setListIds(c.listIds ?? []);
+      setExcludeListIds(c.excludeListIds ?? []);
+      setSelectedTagIds(c.tagIds ?? []);
+      setSelectedContactIds(c.contactIds ?? []);
+      setIsDryRun(c.isDryRun);
+      setIsScheduled(!!c.scheduledAt);
+      setScheduleDate(c.scheduledAt ? new Date(c.scheduledAt) : null);
+      setSendToEmail(c.sendToEmail ?? '');
+      setSenderAccountId(c.senderAccountId ?? '');
+      setFromName(c.fromName ?? '');
+      setReplyTo(c.replyTo ?? '');
+      setLoaded(true);
+    });
+  }, [editId, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,14 +212,21 @@ export function CampaignCompose() {
       contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
       isDryRun,
       sendToEmail: sendToEmail.trim() || undefined,
+      senderAccountId: senderAccountId || undefined,
+      fromName: fromName.trim() || undefined,
+      replyTo: replyTo.trim() || undefined,
     };
+  }
+
+  async function saveCampaign(): Promise<Campaign> {
+    return isEditing ? updateCampaign(editId!, buildCreateInput()) : createCampaign(buildCreateInput());
   }
 
   async function handleSaveDraft() {
     if (!requireBasics()) return;
     setSending(true);
     try {
-      const campaign = await createCampaign(buildCreateInput());
+      const campaign = await saveCampaign();
       navigate(`/campaigns/${campaign.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -204,7 +250,7 @@ export function CampaignCompose() {
     }
     setSending(true);
     try {
-      const campaign = await createCampaign(buildCreateInput());
+      const campaign = await saveCampaign();
       const result = await sendCampaign(campaign.id, undefined, scheduledAtIso);
       if (result.status === 'confirmation_required') {
         setPendingConfirmation({ campaign, recipientCount: result.recipientCount!, threshold: result.threshold!, scheduledAt: scheduledAtIso });
@@ -232,6 +278,8 @@ export function CampaignCompose() {
 
   const sendLabel = sending ? (isScheduled ? 'Scheduling…' : 'Sending…') : isScheduled ? 'Schedule send' : isDryRun ? 'Send dry run' : 'Send campaign';
 
+  if (!loaded) return null;
+
   return (
     <div>
       <button
@@ -240,7 +288,7 @@ export function CampaignCompose() {
       >
         ← Campaigns
       </button>
-      <h1 className="mb-5 text-lg font-semibold text-text-heading">New campaign</h1>
+      <h1 className="mb-5 text-lg font-semibold text-text-heading">{isEditing ? 'Edit campaign' : 'New campaign'}</h1>
 
       <div className="grid max-w-3xl grid-cols-[1fr_320px] items-start gap-5">
         <div className="flex flex-col gap-4">
@@ -450,6 +498,47 @@ export function CampaignCompose() {
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-4">
+            <label className="mb-2 block text-xs font-semibold text-text-secondary">Sender</label>
+            <select
+              value={senderAccountId}
+              onChange={(e) => setSenderAccountId(e.target.value)}
+              className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
+            >
+              <option value="">Auto (best available)</option>
+              {senderAccounts.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.isActive}>
+                  {(a.displayName ? `${a.displayName} <${a.email}>` : a.email) + ` — ${a.provider.toUpperCase()}`}
+                  {!a.isActive ? ' (inactive)' : ''}
+                </option>
+              ))}
+            </select>
+            <div className="mt-1.5 text-[11px] text-text-faint">
+              Auto picks whichever account has the most daily quota left. A specific pick that later runs out of quota or is
+              deactivated will block the send with an error rather than silently switching senders.
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium text-text-tertiary">From name (optional)</label>
+                <input
+                  value={fromName}
+                  onChange={(e) => setFromName(e.target.value)}
+                  placeholder="e.g. Genius Campaign Team"
+                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium text-text-tertiary">Reply-to (optional)</label>
+                <input
+                  value={replyTo}
+                  onChange={(e) => setReplyTo(e.target.value)}
+                  placeholder="replies@company.com"
+                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border-default bg-panel p-4">
             <label className="mb-2 block text-xs font-semibold text-text-secondary">Send-to-self (optional)</label>
             <input
               value={sendToEmail}
@@ -520,7 +609,7 @@ export function CampaignCompose() {
               disabled={sending || !!pendingConfirmation}
               className="h-9 flex-1 rounded-md border border-border-subtle text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Save as draft
+              {isEditing ? 'Save changes' : 'Save as draft'}
             </button>
             <button
               onClick={handleSend}

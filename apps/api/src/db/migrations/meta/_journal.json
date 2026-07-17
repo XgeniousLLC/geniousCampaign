@@ -232,6 +232,13 @@
       "when": 1784278421087,
       "tag": "0032_dry_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784285730435,
+      "tag": "0033_demonic_infant_terrible",
+      "breakpoints": true
     }
   ]
 }
