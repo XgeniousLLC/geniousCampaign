@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './api';
+import { apiGet, apiPost, apiDelete } from './api';
 
 export interface WebhookEndpoint {
   id: string;
@@ -45,4 +45,31 @@ export function listOutboundSubscriptions() {
 
 export function createOutboundSubscription(input: { name: string; url: string; eventTypes: string[] }) {
   return apiPost<OutboundSubscription>('/outbound-webhook-subscriptions', input);
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  defaultListId: string | null;
+  defaultTagIds: string[];
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedApiKey extends ApiKey {
+  // Only present in the create response — never returned again after this.
+  key: string;
+}
+
+export function listApiKeys() {
+  return apiGet<ApiKey[]>('/api-keys');
+}
+
+export function createApiKey(input: { name: string; defaultListId?: string; defaultTagIds?: string[] }) {
+  return apiPost<CreatedApiKey>('/api-keys', input);
+}
+
+export function revokeApiKey(id: string) {
+  return apiDelete<{ id: string }>(`/api-keys/${id}`);
 }

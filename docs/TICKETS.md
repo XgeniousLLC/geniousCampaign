@@ -116,6 +116,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-118 | Contacts page performance: missing indexes, real server-side pagination/filter/sort (was fetch-everything, 10s+ at 7k+ contacts) | 4 | L | Done | GC-066, GC-115 |
 | GC-119 | Settings page + doc for configuring SES→SNS bounce/complaint webhook | 4 | M | Done | GC-018 |
 | GC-120 | Fix email verification always using NeverBounce despite Reoon key set; add default-provider select | 4 | S | Done | GC-018 |
+| GC-121 | Public API: create API keys, POST contact-create endpoint (auto list/tag attach) for external form/automation integration | 4 | L | Done | GC-010, GC-011 |
 
 ---
 
@@ -1212,3 +1213,20 @@ Reported: Reoon API key saved in Settings > Integrations, but verification behav
 **Cache-clear action**: new `EmailVerificationService.clearCache()` + `DELETE /verification/cache` (owner-only, audit-logged) truncates `verification_results` so already-cached emails re-check against the current default provider next time instead of waiting out the TTL. Surfaced as a "Clear cached results" button under the Email verification panel.
 
 Verified live: cleared the (real, non-seeded) dev DB's cache via the UI button — toast read "Cleared 9 cached verification results," confirmed `verification_results` was actually empty via `psql` afterward. Toggled Default provider to `neverbounce`, saved, confirmed the `VERIFICATION_PROVIDER` row persisted in `app_settings`; switched back to `reoon` (the real working default, since only a Reoon key is configured) and saved again. Ran a real single-contact verify (dvrobin4@gmail.com, via the contacts-list verify icon) post-cache-clear — got a live "Verified — deliverable" result, and `psql` confirmed the fresh `verification_results` row has `provider: 'reoon'`, closing the loop end-to-end on real infrastructure, not a mock. `tsc --noEmit` clean on API, `tsc -b` clean on web.
+
+### GC-121 — Public API: API keys + POST /api/v1/contacts (auto list/tag attach) (2026-07-17)
+Ask: a way to connect external tools (a website contact form, Zapier, a custom script) into geniusCampaign so a submitted contact lands in a specific list with specific tags, without the caller needing to log in.
+
+Deliberately built as a **second, separate auth mechanism** from the existing HMAC-signed inbound webhook framework (CLAUDE.md invariant 4) rather than extending it — recorded as new invariant 14. The webhook framework is a generic payload-relay + trigger-firing mechanism aimed at tools that can compute a per-request HMAC signature; most simple form backends (a plain HTML form + fetch, a Google Apps Script, a no-code tool without a custom-code step) can only send a static header value, so a bearer API key is the right fit for "push a contact in" specifically.
+
+**Schema**: new `api_keys` table (migration `0031`) — `keyPrefix`/`keyHash` (sha256, raw value never stored), `defaultListId`/`defaultTagIds` (applied to every contact submitted through that key, in addition to anything the request itself specifies), `createdByUserId`, `lastUsedAt`.
+
+**Key management** — `apps/api/src/api-keys/`: `POST/GET/DELETE /api-keys` (JWT + owner-only, audit-logged). `defaultListId`/`defaultTagIds` are validated to actually exist at creation time (`ListsService.findOne`/`TagsService.findOne`) rather than only surfacing as a foreign-key error on the first real public-API call using the key. The raw key is returned exactly once, in the create response only.
+
+**Public endpoint** — `apps/api/src/public-api/`: `POST /api/v1/contacts`, guarded by a new `ApiKeyAuthGuard` (`X-Api-Key` header → sha256 → lookup, populates `request.apiKey`, touches `lastUsedAt`). Upserts the contact by email (reuses `ContactsService.upsertByEmail`, so a repeat submission never errors), then attaches `dto.listId ?? apiKey.defaultListId` and `[...dto.tagIds, ...apiKey.defaultTagIds]` (deduped) via the existing `ListsService`/`TagsService` `addContactSilent()` — no new attach logic, just composing what CSV import already uses. Request-supplied `listId`/`tagIds` are validated to exist (404 on a bad id) since this is genuinely external-caller input, unlike the key's own already-validated defaults.
+
+**Frontend**: new "API keys" card on the Webhooks page (`apps/web/src/routes/Webhooks.tsx`) — create form (name + default-list select + default-tags multi-select), reveal-once key banner with copy button (same shape as `TrackingDomainField`/`SesSnsWebhookUrlField`), list with prefix/defaults/last-used/Revoke. Owner-gated to match the backend guard.
+
+**Docs**: `docs/PUBLIC_API.md` — auth, default-list/tags behavior, full request/response schema for `POST /api/v1/contacts`, error table, and the `/api-keys` management endpoints. Linked from `README.md` (new Features bullet + a "Public API" section) and referenced inline in the Webhooks page UI. New architectural decision recorded as CLAUDE.md invariant 14.
+
+Verified live end-to-end against the real dev DB/API (not mocked): created a key from the browser UI with a default tag ("Investor") and no default list, copied the real revealed value, then `curl -X POST /api/v1/contacts` with that key created a real contact — response and `psql` both confirmed the `Investor` tag was actually attached via `contact_tags`. Confirmed error paths live: no key → `401`, invalid email → `400` with the class-validator message, a well-formed but nonexistent `listId` → `404`. Confirmed `lastUsedAt` updated in the UI after the real call ("last used 7/17/2026, 1:09:00 PM"). Revoked the key from the UI and confirmed the same curl call immediately started 401ing. Cleaned up both test contacts afterward via `psql`. `tsc --noEmit` clean on API, `tsc -b` clean on web.

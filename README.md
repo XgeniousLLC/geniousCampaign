@@ -12,6 +12,7 @@ Bring your own AWS SES / Gmail Workspace / Cloudflare R2 / verification-provider
 - **Campaigns** — one-off sends targeted by list, by tag, or by hand-picked contacts, with open/click tracking and engagement analytics
 - **Email verification** — bulk deliverability checks (Reoon primary, NeverBounce fallback) before you send
 - **Triggers & webhooks** — auto-enroll contacts on events (tag added, field changed, list joined, or an inbound HMAC-signed webhook)
+- **Public API** — API-key-authenticated endpoint for external forms/automation tools to push contacts in, with automatic list/tag attachment (see [docs/PUBLIC_API.md](docs/PUBLIC_API.md))
 - **Sender rotation** — AWS SES and Gmail Workspace accounts, quota-aware, rotated automatically
 - **Team & audit** — role-based access (owner/editor/viewer), a full audit log, and a global suppression list checked before every send
 
@@ -66,6 +67,10 @@ geniusCampaign/
   CLAUDE.md       Architecture decisions and conventions
   DEPLOY.md       Deployment guide (Docker + manual)
 ```
+
+## Public API
+
+Push contacts in from an external form or automation tool (Zapier, a custom script, a website contact form) — see **[docs/PUBLIC_API.md](docs/PUBLIC_API.md)** for authentication, the full endpoint reference, and request/response examples. Keys are created and managed from the Webhooks page in the app.
 
 ## Contributing / architecture notes
 
