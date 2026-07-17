@@ -47,7 +47,7 @@ curl -X POST https://your-api-host/api/v1/contacts \
   }'
 ```
 
-### Response — `200 OK`
+### Response — `201 Created`
 
 ```json
 {
@@ -70,6 +70,43 @@ curl -X POST https://your-api-host/api/v1/contacts \
 | `400` | `email` missing/invalid, or a malformed field (e.g. `tagIds` not an array of UUIDs). |
 | `401` | Missing or invalid `X-Api-Key`. |
 | `404` | `listId` or one of `tagIds` was included in the request but doesn't exist. |
+
+## `POST /api/v1/contacts/{email}/stop-sequences`
+
+Stops every **active or paused** sequence enrollment for the contact with this email — across every sequence they're enrolled in, in one call. Enrollment is per-(sequence, contact) with no shared clock (see `CLAUDE.md` invariant 1), so this loops over each of the contact's enrollments and stops each one individually, the same state transition as stopping one manually from the sequence's enrollment list.
+
+The contact must already exist — this endpoint never creates one as a side effect (unlike `POST /api/v1/contacts` above, which upserts).
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/stop-sequences \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "stopped": [
+    { "enrollmentId": "d4e2...-enr-1", "sequenceId": "a1b2...-seq-1" },
+    { "enrollmentId": "f6a7...-enr-2", "sequenceId": "c3d4...-seq-2" }
+  ]
+}
+```
+
+`stopped` is empty if the contact had no active/paused enrollments — this is not an error, it's the correct "nothing to stop" outcome. Already-`completed`/already-`stopped` enrollments are left untouched (not re-included).
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `401` | Missing or invalid `X-Api-Key`. |
+| `404` | No contact exists with that email. |
 
 ## Managing keys — `/api-keys` (JWT-authenticated, owner only)
 
