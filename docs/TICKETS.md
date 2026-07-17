@@ -121,6 +121,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-123 | API key mgmt rework: move to Settings > API keys tab, expiry (default 1yr, warn on never-expire), rotate, public API rate limit | 4 | M | Done | GC-121 |
 | GC-124 | Fix Coolify deploy OOM: `nest build` heap crash (exit 134) on the build container | 4 | S | Done | — |
 | GC-125 | Campaign compose: sender-account picker (From name/email) + optional reply-to override | 4 | M | TODO | GC-047, GC-077 |
+| GC-126 | Fix verify() masking real primary-provider error behind unconfigured-fallback error; cache failures with short cooldown so repeat bulk-verify doesn't re-hammer the same batch | 4 | S | Done | GC-120 |
 
 ---
 
@@ -1276,3 +1277,12 @@ Gap found 2026-07-17: `CampaignCompose.tsx` has no field to choose which sender 
 **Decision needed before Sharifur builds this un-blocked**: whether an exhausted/inactive explicitly-picked sender should hard-fail the send or silently fall back to auto-pick — the invariants don't specify this and it changes user-visible behavior, so flag it rather than guessing.
 
 Not started — no credential/account blocker, just needs to be picked up in ticket order.
+
+### GC-126 — Fix verify() masking real primary-provider error + failure retry storm (2026-07-17)
+Reported: Reoon set as `VERIFICATION_PROVIDER` default (confirmed via `psql` — only `REOON_API_KEY`/`VERIFICATION_PROVIDER` rows exist in `app_settings`, no `NEVERBOUNCE_API_KEY` row at all), yet a bulk-verify run showed "Done — checked 812 of 6616, 5804 failed (NEVERBOUNCE_API_KEY is not configured — cannot call NeverBounce for real.)".
+
+**Root cause**: `EmailVerificationService.verify()` always tried the fallback provider on *any* primary error and only ever surfaced the fallback's error — so once Reoon started failing partway through the batch (rate-limited/quota exhausted after ~812 real calls — exact reason not visible from our side, only diagnosable from the Reoon dashboard now that the real error will surface), every remaining contact's true Reoon failure got silently replaced with an unrelated "NeverBounce not configured" message, wasting a network round-trip per contact along the way. Second issue: a failed `verify()` call was never cached, so a repeat "Bulk verify" click immediately re-attempted the exact same already-failed batch against the still-broken provider — same wall of errors, every click.
+
+**Fix** (`email-verification.service.ts`): fallback is now only actually called if it has an API key configured (`isConfigured()`) — when it isn't, the primary's real error is thrown as-is instead of a substitute config error. When both attempts genuinely fail (or fallback isn't configured), a short-TTL (`FAILURE_COOLDOWN_MS`, 1 hour) placeholder row is cached in `verification_results` with `status: 'unknown'` — `'unknown'` is excluded from the Valid/Invalid/Risky stats query (`verification-stats.service.ts`'s `inArray(status, ['valid','invalid','risky'])`), so this can't misrepresent deliverability, but it does make `listUnverifiedActiveContacts()` skip the email until the cooldown expires — a repeat bulk-verify click now picks up genuinely-never-checked contacts instead of re-hammering the same recently-failed ones every time.
+
+Verified: `tsc --noEmit` clean, existing `email-verification.service.spec.ts` suite green (3/3) after the change. Could not do a full live click-through — no known login credential for the single seeded owner account in this dev DB — so the actual Reoon failure reason (now that it'll surface correctly) still needs a real "Bulk verify" click from Sharifur to observe.

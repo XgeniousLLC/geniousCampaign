@@ -10,6 +10,12 @@ import { SettingsService } from '../settings/settings.service';
 import type { EmailVerificationProvider, VerificationProviderResult } from './verification-provider.interface';
 
 const TTL_DAYS = 180; // 6 months — within GC-049's 6-12 month window
+// A provider failure (rate-limited, quota exhausted, transient outage) is
+// cached this briefly so a repeat "Bulk verify" click doesn't immediately
+// re-hammer the same already-attempted batch — long enough to skip an
+// instant retry loop, short enough to pick the contact back up well before
+// TTL_DAYS's real cache would.
+const FAILURE_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
 export interface VerificationOutcome extends VerificationProviderResult {
   provider: 'local' | 'reoon' | 'neverbounce';
@@ -61,22 +67,65 @@ export class EmailVerificationService {
     }
 
     const [primary, fallback] = this.providerOrder();
-    let result: VerificationProviderResult;
-    let provider: 'reoon' | 'neverbounce';
+    let result: VerificationProviderResult | undefined;
+    let provider: 'reoon' | 'neverbounce' = primary.name;
+    let primaryErr: unknown;
     try {
       result = await primary.provider.verify(email);
-      provider = primary.name;
-    } catch (primaryErr) {
-      this.logger.warn(
-        `${primary.name} failed for ${email}, falling back to ${fallback.name}: ${primaryErr instanceof Error ? primaryErr.message : primaryErr}`,
-      );
-      result = await fallback.provider.verify(email);
-      provider = fallback.name;
+    } catch (err) {
+      primaryErr = err;
+      this.logger.warn(`${primary.name} failed for ${email}: ${this.errMessage(err)}`);
+    }
+
+    if (!result) {
+      // Only actually call the fallback if it has an API key configured —
+      // otherwise this just replaces a real, diagnosable primary error (e.g.
+      // Reoon rate-limited/quota exhausted) with a useless "<fallback> is
+      // not configured" error that has nothing to do with what broke, and
+      // wastes a network round-trip getting there.
+      if (this.isConfigured(fallback.name)) {
+        try {
+          result = await fallback.provider.verify(email);
+          provider = fallback.name;
+        } catch (fallbackErr) {
+          await this.cacheFailure(email, primary.name);
+          throw new Error(
+            `${primary.name} failed (${this.errMessage(primaryErr)}); fallback ${fallback.name} also failed (${this.errMessage(fallbackErr)})`,
+          );
+        }
+      } else {
+        await this.cacheFailure(email, primary.name);
+        throw primaryErr instanceof Error ? primaryErr : new Error(this.errMessage(primaryErr));
+      }
     }
 
     await this.cacheResult(email, result, provider);
     await this.maybeAutoSuppress(email, result.status);
     return { ...result, provider, cached: false };
+  }
+
+  private isConfigured(name: 'reoon' | 'neverbounce'): boolean {
+    return !!this.settings.get(name === 'reoon' ? 'REOON_API_KEY' : 'NEVERBOUNCE_API_KEY');
+  }
+
+  private errMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  /** Short-TTL placeholder so listUnverifiedActiveContacts() (bulk verify's
+   * work queue) skips this email until the cooldown expires, instead of
+   * retrying it on every single click while the provider is still down. Not
+   * a real result — status 'unknown' is excluded from the Valid/Invalid/Risky
+   * stats, so this can't misrepresent deliverability. */
+  private async cacheFailure(email: string, attemptedProvider: 'reoon' | 'neverbounce') {
+    const expiresAt = new Date(Date.now() + FAILURE_COOLDOWN_MS);
+    await this.drizzle.db
+      .insert(verificationResults)
+      .values({ email, status: 'unknown', isDeliverable: false, provider: attemptedProvider, expiresAt })
+      .onConflictDoUpdate({
+        target: verificationResults.email,
+        set: { status: 'unknown', isDeliverable: false, provider: attemptedProvider, checkedAt: new Date(), expiresAt },
+      });
   }
 
   /** Contacts.CLAUDE.md invariant 8: suppression is checked before every
