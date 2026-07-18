@@ -4,6 +4,8 @@ Free, open-source, self-hosted email marketing and outreach platform. Contacts, 
 
 Bring your own AWS SES / Gmail Workspace / Cloudflare R2 / verification-provider credentials. Nothing routes through a third-party server.
 
+**Documentation:** [xgeniousllc.github.io/geniousCampaign](https://xgeniousllc.github.io/geniousCampaign/) — deployment guide (VPS, Coolify, AWS, DigitalOcean, Docker + no-Docker) and a feature-by-feature user manual.
+
 ## Features
 
 - **Contacts, lists & tags** — CSV import with arbitrary column mapping, real-time import progress, and pick-or-create lists/tags at import time
