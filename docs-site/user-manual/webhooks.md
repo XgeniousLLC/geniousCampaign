@@ -1,6 +1,6 @@
 ## Webhooks
 
-What this page is for: managing two independent, opposite-direction integrations — **inbound endpoints** that let external systems push events into geniusCampaign (e.g. to fire a trigger), and **outbound subscriptions** that push geniusCampaign's own events out to your other tools.
+What this page is for: managing two independent, opposite-direction integrations — **inbound endpoints** that let external systems push events into Genius Campaign (e.g. to fire a trigger), and **outbound subscriptions** that push Genius Campaign's own events out to your other tools.
 
 **Where to find it:** sidebar > **Webhooks** (`/webhooks`).
 
@@ -25,7 +25,7 @@ This page is *not* where you manage the separate public API used for simple "pus
 ### Creating an outbound subscription
 
 1. Under **Outbound subscriptions**, enter a **Name** and the destination **URL**, then click **Add**.
-2. geniusCampaign will POST its own event payloads (e.g. `contact.created`) to that URL whenever a matching internal event fires — this is the direction for pushing your data *out* to another system, the mirror image of the inbound endpoints above.
+2. Genius Campaign will POST its own event payloads (e.g. `contact.created`) to that URL whenever a matching internal event fires — this is the direction for pushing your data *out* to another system, the mirror image of the inbound endpoints above.
 3. Each subscription shows its subscribed event type(s) and an active/inactive status.
 
 ### Reading the delivery log
@@ -36,4 +36,4 @@ The delivery log table shows the most recently created endpoint's inbound delive
 
 - An inbound request with a bad or missing signature is rejected before any processing happens — it is still logged to the delivery log (marked invalid) so you can see the attempt, but nothing downstream (trigger evaluation, contact updates) ever runs for it.
 - Never put a secret token in the URL itself for an inbound integration — the HMAC signature is the whole point of this framework's security model; a bare-token URL is what the separate API-key-based public API pattern is for instead.
-- Outbound subscriptions are signed with a separate shared HMAC secret (`OUTBOUND_WEBHOOK_HMAC_SECRET`, configured in Settings > Integrations) so your receiving system can verify a payload really came from geniusCampaign.
+- Outbound subscriptions are signed with a separate shared HMAC secret (`OUTBOUND_WEBHOOK_HMAC_SECRET`, configured in Settings > Integrations) so your receiving system can verify a payload really came from Genius Campaign.

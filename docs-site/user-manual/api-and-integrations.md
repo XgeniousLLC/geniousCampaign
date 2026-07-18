@@ -1,6 +1,6 @@
 ## API keys & the public API
 
-What this page is for: giving an external tool you don't control the code for — a website contact form, Zapier, Make, a simple script — a straightforward way to push contacts into geniusCampaign, without needing them to compute a webhook signature.
+What this page is for: giving an external tool you don't control the code for — a website contact form, Zapier, Make, a simple script — a straightforward way to push contacts into Genius Campaign, without needing them to compute a webhook signature.
 
 **Where to find it:** **Settings > API keys** tab (owner role only) for key management; the actual API endpoints are called by whatever external tool you hand the key to, not from inside this app.
 
