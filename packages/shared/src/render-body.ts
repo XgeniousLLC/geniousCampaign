@@ -45,8 +45,11 @@ function textAlignStyle(node: ProseMirrorNode): string {
   return typeof align === 'string' && align !== 'left' ? ` style="text-align:${align}"` : '';
 }
 
-const BUTTON_STYLE =
-  'display:inline-block;padding:10px 22px;background:#6366F1;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px';
+const DEFAULT_BUTTON_COLOR = '#6366F1';
+
+function buttonStyle(color: string): string {
+  return `display:inline-block;padding:10px 22px;background:${color};color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px`;
+}
 
 function renderNodeHtml(node: ProseMirrorNode): string {
   switch (node.type) {
@@ -78,7 +81,9 @@ function renderNodeHtml(node: ProseMirrorNode): string {
     case 'ctaButton': {
       const href = typeof node.attrs?.href === 'string' ? node.attrs.href : '#';
       const text = typeof node.attrs?.text === 'string' ? node.attrs.text : '';
-      return `<a href="${escapeHtml(href)}" style="${BUTTON_STYLE}">${escapeHtml(text)}</a>`;
+      const rawColor = typeof node.attrs?.color === 'string' ? node.attrs.color : DEFAULT_BUTTON_COLOR;
+      const color = /^#[0-9a-fA-F]{3,8}$/.test(rawColor) ? rawColor : DEFAULT_BUTTON_COLOR;
+      return `<a href="${escapeHtml(href)}" style="${buttonStyle(color)}">${escapeHtml(text)}</a>`;
     }
     case 'text':
       return applyMarks(escapeHtml(node.text ?? ''), node.marks);

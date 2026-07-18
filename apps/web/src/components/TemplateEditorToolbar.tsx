@@ -262,10 +262,11 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
           fields={[
             { key: 'text', label: 'Button text', defaultValue: 'Click here' },
             { key: 'href', label: 'Button URL', placeholder: 'https://' },
+            { key: 'color', label: 'Button color', type: 'color', defaultValue: '#6366F1' },
           ]}
           onClose={() => setButtonDialogOpen(false)}
-          onSubmit={({ text, href }) => {
-            editor.chain().focus().insertCtaButton({ text, href }).run();
+          onSubmit={({ text, href, color }) => {
+            editor.chain().focus().insertCtaButton({ text, href, color }).run();
             setButtonDialogOpen(false);
           }}
         />

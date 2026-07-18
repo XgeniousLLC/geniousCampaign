@@ -5,6 +5,7 @@ export interface PromptField {
   label: string;
   placeholder?: string;
   defaultValue?: string;
+  type?: 'text' | 'color';
 }
 
 // In-app replacement for window.prompt() — native browser prompts block all
@@ -55,13 +56,29 @@ export function PromptDialog({
           {fields.map((f, i) => (
             <div key={f.key}>
               <label className="mb-1.5 block text-xs font-semibold text-text-secondary">{f.label}</label>
-              <input
-                autoFocus={i === 0}
-                value={values[f.key]}
-                placeholder={f.placeholder}
-                onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
-              />
+              {f.type === 'color' ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={values[f.key]}
+                    onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                    className="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-border-subtle bg-surface p-1"
+                  />
+                  <input
+                    value={values[f.key]}
+                    onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                    className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 font-mono text-sm text-text-primary outline-none focus:border-accent"
+                  />
+                </div>
+              ) : (
+                <input
+                  autoFocus={i === 0}
+                  value={values[f.key]}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                  className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
+                />
+              )}
             </div>
           ))}
         </div>
