@@ -1,0 +1,18 @@
+- [Home](/)
+- [Deployment](deployment.md)
+
+- **User Manual**
+- [Getting started](user-manual/getting-started.md)
+- [Dashboard](user-manual/dashboard.md)
+- [Contacts](user-manual/contacts.md)
+- [Lists & tags](user-manual/lists-and-tags.md)
+- [Templates](user-manual/templates.md)
+- [Campaigns](user-manual/campaigns.md)
+- [Sequences](user-manual/sequences.md)
+- [Triggers](user-manual/triggers.md)
+- [Sender accounts](user-manual/sender-accounts.md)
+- [Email verification](user-manual/verification.md)
+- [Email log](user-manual/email-log.md)
+- [Webhooks](user-manual/webhooks.md)
+- [API & integrations](user-manual/api-and-integrations.md)
+- [Settings & members](user-manual/settings-and-members.md)
