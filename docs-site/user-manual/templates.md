@@ -4,7 +4,7 @@ What this page is for: writing and managing the reusable email content (subject 
 
 **Where to find it:** sidebar > **Templates** (`/templates`) for the list; **New template** or clicking a template opens the editor (`/templates/new` or `/templates/:id`).
 
-![Template editor](../../docs/screenshots/template-editor.png)
+![Template editor](../assets/screenshots/template-editor.png)
 
 ### Creating a template
 

@@ -4,7 +4,7 @@ What this page is for: sending a one-off broadcast email to a list, a set of tag
 
 **Where to find it:** sidebar > **Campaigns** (`/campaigns`) for the list; **New campaign** opens the composer (`/campaigns/new`), and clicking a campaign opens its detail page (`/campaigns/:id`).
 
-![Campaign detail](../../docs/screenshots/campaign-detail.png)
+![Campaign detail](../assets/screenshots/campaign-detail.png)
 
 ### Composing a new campaign
 
