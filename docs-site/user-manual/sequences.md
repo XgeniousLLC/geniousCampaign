@@ -4,7 +4,7 @@ What this page is for: building a multi-step automated email drip (e.g. Day 0 in
 
 **Where to find it:** sidebar > **Sequences** (`/sequences`) for the list; clicking a sequence (or **New sequence**) opens the builder (`/sequences/:id`).
 
-![Sequence builder](../../docs/screenshots/sequence-builder.png)
+![Sequence builder](../assets/screenshots/sequence-builder.png)
 
 ### The most important concept: a sequence is a template, not a clock
 

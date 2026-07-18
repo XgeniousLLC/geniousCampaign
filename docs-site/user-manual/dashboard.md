@@ -4,7 +4,7 @@ What this page is for: a 30-day, at-a-glance view of how your sending is perform
 
 **Where to find it:** click **Dashboard** at the top of the sidebar, or it's simply the home page (`/`).
 
-![Dashboard](../../docs/screenshots/dashboard.png)
+![Dashboard](../assets/screenshots/dashboard.png)
 
 ### What you'll see
 

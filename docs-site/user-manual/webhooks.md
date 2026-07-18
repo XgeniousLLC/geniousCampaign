@@ -4,7 +4,7 @@ What this page is for: managing two independent, opposite-direction integrations
 
 **Where to find it:** sidebar > **Webhooks** (`/webhooks`).
 
-![Webhooks](../../docs/screenshots/webhooks.png)
+![Webhooks](../assets/screenshots/webhooks.png)
 
 This page is *not* where you manage the separate public API used for simple "push a contact in" integrations (website forms, Zapier) — that lives in **Settings > API keys**, uses a different auth model, and is covered in `api-and-integrations.md`. The distinction matters:
 

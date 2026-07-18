@@ -4,7 +4,7 @@ What this page is for: managing every contact in your outreach database — impo
 
 **Where to find it:** sidebar > **Contacts** (`/contacts`). A single contact's own page is reached by clicking their name/email anywhere in the app (`/contacts/:id`).
 
-![Contacts](../../docs/screenshots/contacts.png)
+![Contacts](../assets/screenshots/contacts.png)
 
 ### Importing contacts from a CSV
 
