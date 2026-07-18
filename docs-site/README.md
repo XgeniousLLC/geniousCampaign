@@ -1,4 +1,6 @@
-## geniusCampaign
+<img src="assets/logo.svg" alt="Genius Campaign" width="56" height="56" />
+
+## Genius Campaign
 
 Internal email marketing / outreach platform — contacts, spintax templates, one-off campaigns, drip sequences, triggers, and multi-provider sending (AWS SES + Gmail), all in one admin app.
 

@@ -6,7 +6,7 @@ What this page is for: signing in, setting up the very first account, recovering
 
 ### First-time setup (one-time only)
 
-geniusCampaign is an internal tool with no public sign-up. Exactly one account — the workspace **owner** — is created through a one-time setup form; every account after that is added by an owner from **Settings > Members**, not through this form.
+Genius Campaign is an internal tool with no public sign-up. Exactly one account — the workspace **owner** — is created through a one-time setup form; every account after that is added by an owner from **Settings > Members**, not through this form.
 
 1. Open the app. If no account exists yet, you're sent straight to the **Create account** screen instead of a login form (there's nothing to log into yet).
 2. Enter a work email, a password (at least 8 characters), and confirm the password.

@@ -1,6 +1,6 @@
-## Deploying geniusCampaign
+## Deploying Genius Campaign
 
-geniusCampaign is a two-app monorepo (NestJS API + React SPA) backed by PostgreSQL and Redis. This page covers four hosting targets — **plain VPS**, **Coolify**, **AWS**, **DigitalOcean** — each with a Docker and a no-Docker path, plus the environment variables every path needs.
+Genius Campaign is a two-app monorepo (NestJS API + React SPA) backed by PostgreSQL and Redis. This page covers four hosting targets — **plain VPS**, **Coolify**, **AWS**, **DigitalOcean** — each with a Docker and a no-Docker path, plus the environment variables every path needs.
 
 > Nothing works with placeholder credentials. Every send/verify/upload call hits the real provider (AWS SES, Cloudflare R2, Reoon, Gmail, etc.) — fill in real values for whatever features you plan to use, or leave them blank and configure later from the running app's **Settings > Integrations** / **Sender Accounts** pages (most integrations are DB-backed, not env-only — see the [environment variable table](#environment-variables) below).
 
@@ -84,7 +84,7 @@ Same as [Plain VPS → Docker path](#1a-docker-path) above, just on an EC2 insta
 3. Install Docker, clone the repo, follow the Docker steps above.
 4. Point a Route 53 record (or your DNS provider) at the instance's Elastic IP, terminate TLS with Caddy/nginx + Let's Encrypt, or put an Application Load Balancer with an ACM certificate in front if you want managed TLS.
 
-**Use AWS SES itself as your sending provider here regardless of where you host** — geniusCampaign's `SenderAccountService` already assumes SES as the primary provider (see the root `CLAUDE.md`, invariant 7). Running on AWS makes this natural: same-region SES calls avoid any cross-cloud latency, and you can attach an IAM instance role to the EC2 instance instead of long-lived `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — the AWS SDK's default credential chain (which this app relies on, see `.env.example`'s comment) picks up instance-role credentials automatically, no keys in `.env` at all.
+**Use AWS SES itself as your sending provider here regardless of where you host** — Genius Campaign's `SenderAccountService` already assumes SES as the primary provider (see the root `CLAUDE.md`, invariant 7). Running on AWS makes this natural: same-region SES calls avoid any cross-cloud latency, and you can attach an IAM instance role to the EC2 instance instead of long-lived `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — the AWS SDK's default credential chain (which this app relies on, see `.env.example`'s comment) picks up instance-role credentials automatically, no keys in `.env` at all.
 
 ### 3b. RDS + ElastiCache + ECS/Fargate (managed, more moving parts)
 
@@ -146,7 +146,7 @@ See `docs/SES_SNS_SETUP.md` (in the main repo, not published to this site) if yo
 
 ## Database migrations
 
-geniusCampaign uses Drizzle ORM migrations (`apps/api/src/db/migrations`) — never hand-edit the schema in production. Run after every deploy that adds new migrations:
+Genius Campaign uses Drizzle ORM migrations (`apps/api/src/db/migrations`) — never hand-edit the schema in production. Run after every deploy that adds new migrations:
 
 ```bash
 # Docker
