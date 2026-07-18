@@ -14,6 +14,8 @@ import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
 import { SendTestEmailModal } from '../components/SendTestEmailModal';
+import { LinkClickPopover } from '../components/LinkClickPopover';
+import { PromptDialog } from '../components/PromptDialog';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
@@ -35,6 +37,8 @@ export function TemplateEditor() {
   const [showLibrary, setShowLibrary] = useState(isNew);
   const [showPreview, setShowPreview] = useState(false);
   const [showSendTest, setShowSendTest] = useState(false);
+  const [linkPopup, setLinkPopup] = useState<{ pos: number; href: string; x: number; y: number } | null>(null);
+  const [linkEditOpen, setLinkEditOpen] = useState(false);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
   const currentUserEmail = useAuthStore((s) => s.user?.email ?? '');
 
@@ -50,6 +54,23 @@ export function TemplateEditor() {
     ],
     content: EMPTY_DOC,
     editable: canWrite,
+    editorProps: {
+      // Clicking a link inside the template body should never navigate the
+      // admin app away — show a small popover to open/edit it instead. The
+      // CTA button node handles its own click (data-cta-button), so skip it here.
+      handleClick(_view, pos, event) {
+        const target = event.target as HTMLElement;
+        const anchor = target.closest('a');
+        if (anchor && anchor.getAttribute('href') && !anchor.hasAttribute('data-cta-button')) {
+          event.preventDefault();
+          const rect = anchor.getBoundingClientRect();
+          setLinkPopup({ pos, href: anchor.getAttribute('href') ?? '', x: rect.left, y: rect.bottom + 6 });
+          return true;
+        }
+        setLinkPopup(null);
+        return false;
+      },
+    },
   });
 
   useEffect(() => {
@@ -192,6 +213,41 @@ export function TemplateEditor() {
           bodyText={currentBody().bodyText}
           defaultTestEmail={currentUserEmail}
           onClose={() => setShowPreview(false)}
+        />
+      )}
+
+      {linkPopup && (
+        <LinkClickPopover
+          href={linkPopup.href}
+          x={linkPopup.x}
+          y={linkPopup.y}
+          onOpen={() => {
+            window.open(linkPopup.href, '_blank', 'noopener,noreferrer');
+            setLinkPopup(null);
+          }}
+          onEdit={() => {
+            editor?.chain().setTextSelection(linkPopup.pos).extendMarkRange('link').run();
+            setLinkEditOpen(true);
+            setLinkPopup(null);
+          }}
+          onClose={() => setLinkPopup(null)}
+        />
+      )}
+
+      {linkEditOpen && editor && (
+        <PromptDialog
+          title="Edit link"
+          submitLabel="Update"
+          fields={[{ key: 'url', label: 'URL', placeholder: 'https://', defaultValue: (editor.getAttributes('link').href as string) ?? '' }]}
+          onClose={() => setLinkEditOpen(false)}
+          onSubmit={({ url }) => {
+            if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+            setLinkEditOpen(false);
+          }}
+          onRemove={() => {
+            editor.chain().focus().extendMarkRange('link').unsetLink().run();
+            setLinkEditOpen(false);
+          }}
         />
       )}
     </div>
