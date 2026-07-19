@@ -19,3 +19,4 @@ export * from './trigger-evaluations';
 export * from './error-logs';
 export * from './ai-usage';
 export * from './api-keys';
+export * from './custom-field-defs';
