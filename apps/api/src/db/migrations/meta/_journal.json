@@ -239,6 +239,13 @@
       "when": 1784285730435,
       "tag": "0033_demonic_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784451460335,
+      "tag": "0034_daily_thing",
+      "breakpoints": true
     }
   ]
 }

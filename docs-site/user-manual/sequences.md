@@ -33,7 +33,13 @@ You can act on an individual enrollment from either the sequence's **Enrolled co
 - **Pause** — the enrollment stops advancing; its next scheduled step won't fire while paused. Pausing takes effect immediately, even if a step was already queued to run — the system re-checks the enrollment's live status right before actually sending, so a pause is never "too late."
 - **Resume** — picks back up from wherever it left off (same current step, same remaining delay logic).
 - **Stop** — permanently ends this contact's enrollment; it can't be resumed afterward (you'd re-enroll them from scratch, which restarts at step 1).
-- **Pause sequence** (top of the builder) pauses every currently-active enrollment in that sequence at once — it's a bulk convenience, not a sequence-level switch; each enrollment is still paused individually under the hood.
+- **Pause sequence** (top of the builder) pauses every currently-active enrollment in that sequence at once — it's a bulk convenience over the per-enrollment pause above, not the on/off switch described next; each enrollment is still paused individually under the hood.
+
+### Enabling / disabling a sequence
+
+Separate from pausing individual enrollments, every sequence has an on/off switch — **Enable sequence** / **Disable sequence** on the builder page, or the same toggle from the Sequences list. Disabling a sequence blocks **all new enrollments** into it — manual (Enroll contacts button, Contacts list bulk action, contact profile), the [public API](../api-reference.md#post-apiv1contactsemailenroll), and trigger-driven auto-enrollment alike, since all three go through the same enrollment check. Attempting to enroll into a disabled sequence fails with a clear error.
+
+Disabling does **not** touch contacts already enrolled — they keep progressing through their remaining steps exactly as before. Use disable when you want to stop a sequence from picking up *new* people (e.g. retiring an old campaign) without interrupting anyone mid-flight; use Pause sequence or per-enrollment pause when you want to halt people who are already in it.
 
 ### Reading the Enrolled contacts tab
 

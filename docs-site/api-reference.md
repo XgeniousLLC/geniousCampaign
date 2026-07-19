@@ -80,11 +80,13 @@ curl -X POST https://your-api-host/api/v1/contacts \
 
 Enrolls an existing contact into a sequence — the same state transition as enrolling from the sequence's UI or an inbound webhook trigger, just reached with a bearer key. The contact must already exist — this endpoint never creates one as a side effect.
 
+Every sequence has an on/off switch (the "Enable/Disable sequence" button on its page, or the toggle on the Sequences list). A disabled sequence rejects all new enrollments — manual, this API, and trigger-driven alike — with a `409`; it doesn't affect contacts already enrolled.
+
 **Request body**
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `sequenceId` | string (UUID) | yes | Existing sequence id. `404` if it doesn't exist |
+| `sequenceId` | string (UUID) | yes | Existing, enabled sequence id. `404` if it doesn't exist, `409` if disabled |
 
 **Request example**
 
@@ -119,7 +121,7 @@ URL-encode the email in the path (`@` → `%40`).
 | `400` | `sequenceId` missing or not a valid UUID |
 | `401` | Missing, invalid, or expired `X-Api-Key` |
 | `404` | No contact exists with that email, or `sequenceId` doesn't exist |
-| `409` | The contact already has an active or paused enrollment in that sequence |
+| `409` | The contact already has an active or paused enrollment in that sequence, or the sequence is disabled |
 | `429` | Rate limit exceeded — see [Rate limiting](#rate-limiting) |
 
 ---

@@ -80,11 +80,13 @@ Enrolls an existing contact into a sequence. Reuses the same `EnrollmentService.
 
 The contact must already exist — this endpoint never creates one as a side effect (unlike `POST /api/v1/contacts` above, which upserts).
 
+Every sequence has an on/off switch — "Enable sequence"/"Disable sequence" on the sequence's own page, or the toggle on the Sequences list. A disabled sequence rejects **all** new enrollments — manual, this API, and trigger-driven alike, since they all funnel through the same enrollment check — with a `409`. It does not affect contacts already enrolled; pause/resume/stop those individually from the sequence's Enrolled contacts tab.
+
 ### Request body
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `sequenceId` | string (UUID) | yes | An existing sequence's id. `404` if it doesn't exist. |
+| `sequenceId` | string (UUID) | yes | An existing, **enabled** sequence's id. `404` if it doesn't exist, `409` if the sequence is disabled. |
 
 ### Example
 
@@ -119,7 +121,7 @@ URL-encode the email in the path (`@` → `%40`).
 | `400` | `sequenceId` missing or not a valid UUID. |
 | `401` | Missing, invalid, or expired `X-Api-Key`. |
 | `404` | No contact exists with that email, or `sequenceId` doesn't exist. |
-| `409` | The contact already has an active or paused enrollment in that sequence. |
+| `409` | The contact already has an active or paused enrollment in that sequence, or the sequence itself is disabled (see below). |
 | `429` | Rate limit exceeded — see **Rate limiting** below. |
 
 ## `POST /api/v1/contacts/{email}/stop-sequences`

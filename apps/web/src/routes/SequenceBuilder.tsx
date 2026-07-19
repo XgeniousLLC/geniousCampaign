@@ -268,6 +268,17 @@ export function SequenceBuilder() {
     }
   }
 
+  async function handleToggleActive() {
+    if (!id || !sequence) return;
+    setBusy('toggle-active');
+    try {
+      await updateSequence(id, { isActive: !sequence.isActive });
+      reload();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleEnrollmentAction(action: 'pause' | 'resume' | 'stop', e: Enrollment) {
     if (!id) return;
     setBusy(e.id + action);
@@ -352,6 +363,14 @@ export function SequenceBuilder() {
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
               {activeEnrolledCount > 0 ? 'Active' : 'Idle'}
             </span>
+            {!sequence.isActive && (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning"
+                title="New enrollments (manual, public API, or trigger-driven) are blocked while disabled. Already-enrolled contacts keep running."
+              >
+                Disabled — not accepting new enrollments
+              </span>
+            )}
             {savingName && <span className="text-xs text-text-faint">Saving…</span>}
           </div>
           <p className="mt-1 text-xs text-text-muted">{enrollments.length} enrolled · {openCount} open</p>
@@ -398,6 +417,14 @@ export function SequenceBuilder() {
               className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
             >
               Pause sequence
+            </button>
+            <button
+              onClick={handleToggleActive}
+              disabled={busy === 'toggle-active'}
+              title={sequence.isActive ? 'Stop accepting new enrollments (manual, public API, and trigger-driven)' : 'Resume accepting new enrollments'}
+              className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {sequence.isActive ? 'Disable sequence' : 'Enable sequence'}
             </button>
           </div>
         )}

@@ -88,4 +88,13 @@ describe('EnrollmentService (integration, real DB)', () => {
     expect(enrollment.status).toBe('completed');
     await drizzle.db.delete(sequences).where(eq(sequences.id, emptySeq.id));
   });
+
+  it('rejects enrollment into a disabled sequence', async () => {
+    const [disabledSeq] = await drizzle.db
+      .insert(sequences)
+      .values({ name: 'Disabled sequence', webhookSecret: 'test-secret', isActive: false })
+      .returning();
+    await expect(service.enroll(disabledSeq.id, contactId)).rejects.toThrow(/not active/);
+    await drizzle.db.delete(sequences).where(eq(sequences.id, disabledSeq.id));
+  });
 });

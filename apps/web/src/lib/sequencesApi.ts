@@ -7,6 +7,10 @@ export interface Sequence {
   id: string;
   name: string;
   description: string | null;
+  // Sequence-level on/off switch — blocks new enrollments (manual, public
+  // API, and trigger-driven) when false. Doesn't affect contacts already
+  // enrolled; that's the separate per-enrollment pause/resume/stop control.
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
   // Present on list responses only (GET /sequences) — computed server-side.
@@ -38,7 +42,7 @@ export function createSequence(input: { name: string; description?: string }) {
   return apiPost<Sequence>('/sequences', input);
 }
 
-export function updateSequence(id: string, input: { name?: string; description?: string }) {
+export function updateSequence(id: string, input: { name?: string; description?: string; isActive?: boolean }) {
   return apiPatch<Sequence>(`/sequences/${id}`, input);
 }
 

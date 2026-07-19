@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createSequence, listSequences, type Sequence } from '../lib/sequencesApi';
+import { createSequence, listSequences, updateSequence, type Sequence } from '../lib/sequencesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { TableSkeleton } from '../components/skeletons';
 
@@ -10,15 +10,26 @@ export function SequencesList() {
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
-  useEffect(() => {
-    listSequences()
+  function load() {
+    return listSequences()
       .then(setSequences)
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load();
   }, []);
 
   async function handleNew() {
     const created = await createSequence({ name: 'Untitled sequence' });
     navigate(`/sequences/${created.id}`);
+  }
+
+  async function toggleActive(s: Sequence, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    await updateSequence(s.id, { isActive: !s.isActive });
+    load();
   }
 
   return (
@@ -50,6 +61,7 @@ export function SequencesList() {
               <th className="px-3 py-2 text-right font-medium">Steps</th>
               <th className="px-3 py-2 text-right font-medium">Enrolled</th>
               <th className="px-3 py-2 text-right font-medium">Open</th>
+              <th className="px-3 py-2 text-right font-medium">Activity</th>
               <th className="px-3 py-2 text-right font-medium">Status</th>
             </tr>
           </thead>
@@ -80,11 +92,32 @@ export function SequencesList() {
                     {s.hasActiveEnrollments ? 'Active' : 'Idle'}
                   </span>
                 </td>
+                <td className="px-3 py-2.5 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                        s.isActive ? 'border-success/25 bg-success/10 text-success' : 'border-text-muted/25 bg-text-muted/10 text-text-muted'
+                      }`}
+                      title={s.isActive ? 'Accepting new enrollments' : 'Not accepting new enrollments (manual, public API, or trigger-driven)'}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      {s.isActive ? 'enabled' : 'disabled'}
+                    </span>
+                    {canWrite && (
+                      <button
+                        onClick={(e) => toggleActive(s, e)}
+                        className="text-xs font-medium text-text-tertiary hover:text-text-primary"
+                      >
+                        {s.isActive ? 'Disable' : 'Enable'}
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
             {sequences.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-text-muted">
+                <td colSpan={6} className="px-3 py-8 text-center text-text-muted">
                   No sequences yet.
                 </td>
               </tr>

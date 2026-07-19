@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, uuid, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { templates } from './templates';
 
 export const sequenceStepTypeEnum = pgEnum('sequence_step_type', ['send_email', 'wait', 'condition', 'exit']);
@@ -11,6 +11,12 @@ export const sequences = pgTable('sequences', {
   // Per-sequence HMAC secret for its inbound enroll/pause/resume/stop
   // webhook (CLAUDE.md invariant 4 — never a bare token in the URL).
   webhookSecret: text('webhook_secret').notNull(),
+  // Sequence-level on/off switch, same shape as triggers.isActive — blocks
+  // NEW enrollments (manual, public API, and trigger-driven, since all three
+  // funnel through EnrollmentService.enroll()) when false. Does not touch
+  // already-running enrollments; that's the existing per-enrollment
+  // pause/resume/stop path (invariant 1 — no shared sequence-wide clock).
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -28,6 +28,6 @@ Open a trigger to see:
 
 ### Things to know
 
-- A trigger firing and matching a contact who's already actively/paused-enrolled in the target sequence counts as "skipped," not an error — it's the expected, safe behavior rather than a duplicate enrollment.
+- A trigger firing and matching a contact who's already actively/paused-enrolled in the target sequence counts as "skipped," not an error — it's the expected, safe behavior rather than a duplicate enrollment. The same applies if the target sequence itself has been [disabled](sequences.md#enabling--disabling-a-sequence) — the trigger still fires and logs the attempt, it just can't create a new enrollment until the sequence is re-enabled.
 - Webhook-based triggers depend on the same HMAC-signed inbound webhook mechanism described in `webhooks.md` — the payload has to actually reach and pass signature verification at that endpoint before any trigger condition is evaluated against it.
 - Deleting a trigger doesn't affect contacts it already enrolled — their enrollments keep running/pausing/stopping independently, per the sequence enrollment model in `sequences.md`.
