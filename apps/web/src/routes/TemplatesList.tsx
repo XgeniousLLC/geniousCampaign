@@ -34,7 +34,7 @@ export function TemplatesList() {
       </div>
 
       {loading ? (
-        <TableSkeleton cols={5} />
+        <TableSkeleton cols={6} />
       ) : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
@@ -65,6 +65,7 @@ export function TemplatesList() {
                 <th className="px-3.5 py-2 text-left font-medium">Template</th>
                 <th className="px-3 py-2 text-left font-medium">Folder</th>
                 <th className="px-3 py-2 text-right font-medium">Uses</th>
+                <th className="px-3 py-2 text-right font-medium">Used in</th>
                 <th className="px-3 py-2 text-right font-medium">Open rate</th>
                 <th className="px-3.5 py-2 text-right font-medium">Updated</th>
               </tr>
@@ -86,6 +87,9 @@ export function TemplatesList() {
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{t.uses ?? 0}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">
+                    {t.usedInCount ? `${t.usedInCount} seq${t.usedInCount === 1 ? '' : 's'}` : '—'}
+                  </td>
                   <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{(t.openRatePct ?? 0).toFixed(1)}%</td>
                   <td className="px-3.5 py-2.5 text-right text-text-muted">{new Date(t.updatedAt).toLocaleDateString()}</td>
                 </tr>

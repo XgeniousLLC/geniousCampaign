@@ -16,6 +16,7 @@ import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
 import { SendTestEmailModal } from '../components/SendTestEmailModal';
 import { LinkClickPopover } from '../components/LinkClickPopover';
 import { PromptDialog } from '../components/PromptDialog';
+import { CheckCircleIcon, XCircleIcon } from '../components/icons';
 import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
@@ -132,10 +133,11 @@ export function TemplateEditor() {
       )}
       {notice && (
         <div
-          className={`fixed right-5 top-5 z-[80] rounded-md border px-3.5 py-2.5 text-xs shadow-lg ${
-            notice.tone === 'success' ? 'border-success/25 bg-panel2 text-success' : 'border-danger/25 bg-panel2 text-danger'
+          className={`fixed left-1/2 top-16 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium shadow-2xl ${
+            notice.tone === 'success' ? 'border-success/30 bg-panel2 text-success' : 'border-danger/30 bg-panel2 text-danger'
           }`}
         >
+          {notice.tone === 'success' ? <CheckCircleIcon className="shrink-0" /> : <XCircleIcon className="shrink-0" />}
           {notice.text}
         </div>
       )}

@@ -154,12 +154,6 @@ function formatCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-const NEW_ACTIONS = [
-  { label: 'New campaign', to: '/campaigns/new' },
-  { label: 'New template', to: '/templates/new' },
-  { label: 'New sequence', to: '/sequences' },
-];
-
 export function Layout() {
   const { sidebarOpen, toggleSidebar } = useUiStore();
   const { user, logout } = useAuthStore();
@@ -167,7 +161,6 @@ export function Layout() {
   const location = useLocation();
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [senderWarn, setSenderWarn] = useState(false);
-  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -290,36 +283,6 @@ export function Layout() {
           </button>
 
           <div className="flex-1" />
-
-          <div className="relative">
-            <button
-              onClick={() => setNewMenuOpen((o) => !o)}
-              className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[12.5px] font-semibold text-white shadow-sm hover:bg-accent-hover"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14" />
-                <path d="M12 5v14" />
-              </svg>
-              New
-            </button>
-            {newMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setNewMenuOpen(false)} />
-                <div className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border border-border-modal bg-panel2 py-1 shadow-[0_20px_50px_rgba(0,0,0,.55)]">
-                  {NEW_ACTIONS.map((a) => (
-                    <NavLink
-                      key={a.to}
-                      to={a.to}
-                      onClick={() => setNewMenuOpen(false)}
-                      className="block px-3 py-2 text-xs text-text-secondary hover:bg-raised hover:text-text-primary"
-                    >
-                      {a.label}
-                    </NavLink>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
 
           {user && (
             <div className="relative">

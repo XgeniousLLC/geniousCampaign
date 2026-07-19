@@ -100,7 +100,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
       'In Google Cloud Console (https://console.developers.google.com/), create (or pick) a project, then open "APIs & Services" > "Enabled APIs" and enable the Gmail API.',
       'Under "APIs & Services" > "OAuth consent screen", set the app to Internal user type (or Testing, if this is a personal Google account without Workspace) and add the mailboxes you plan to connect as test users.',
       'Under "APIs & Services" > "Credentials", create an OAuth client ID of type "Web application".',
-      'Add an Authorized redirect URI of exactly "<your API\'s public URL>/sender-accounts/gmail/callback" (e.g. http://localhost:3002/sender-accounts/gmail/callback in local dev). Paste that same value into the Redirect URI field here — it must match exactly, including http vs https.',
+      'Add an Authorized redirect URI of exactly "<your API\'s public URL>/sender-accounts/gmail/callback" — for this deployment that value is {{REDIRECT_URI}} — paste it into the Redirect URI field here; it must match exactly, including http vs https.',
       'Copy the Client ID and Client secret shown after creation into the two fields here, then Save.',
       'Once saved, "Connect Gmail account" on the Sender Accounts page will open a real Google consent popup for each mailbox you add — no further setup needed per mailbox.',
     ],
