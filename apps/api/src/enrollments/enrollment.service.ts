@@ -20,6 +20,12 @@ export class EnrollmentService {
     if (!sequence) {
       throw new NotFoundException(`Sequence ${sequenceId} not found`);
     }
+    if (!sequence.isActive) {
+      // Single choke point (this method) covers manual enroll, the public
+      // API, and trigger-driven auto-enroll (TriggerEvaluationService calls
+      // this same method) — an inactive sequence rejects all three alike.
+      throw new ConflictException(`Sequence ${sequenceId} is not active`);
+    }
     const contact = await db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
