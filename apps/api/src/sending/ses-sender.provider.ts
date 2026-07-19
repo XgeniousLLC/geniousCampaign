@@ -94,7 +94,9 @@ export class SesSenderProvider implements EmailSenderProvider {
       return { provider: 'ses', providerMessageId: info.messageId };
     } catch (err) {
       this.logger.error(`SES send failed: ${err instanceof Error ? err.message : err}`);
-      throw err;
+      throw new InternalServerErrorException(
+        `SES send failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }

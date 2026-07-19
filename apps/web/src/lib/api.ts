@@ -48,7 +48,17 @@ async function handle<T>(res: Response, method: string, path: string): Promise<T
     if (res.status !== 401) {
       reportApiError(res.status, res.statusText, method, path, body);
     }
-    throw new Error(`API request failed: ${res.status} ${res.statusText} ${body}`);
+    // Try to extract the structured error message from the JSON body
+    // (NestJS returns {statusCode, message} for HttpExceptions) rather
+    // than surfacing the raw JSON blob to the user.
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.message) detail = Array.isArray(parsed.message) ? parsed.message.join('; ') : String(parsed.message);
+    } catch {
+      // Not JSON — use the raw text.
+    }
+    throw new Error(detail);
   }
   return res.json() as Promise<T>;
 }

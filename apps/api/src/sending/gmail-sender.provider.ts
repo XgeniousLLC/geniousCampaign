@@ -81,7 +81,9 @@ export class GmailSenderProvider implements EmailSenderProvider {
       return { provider: 'gmail', providerMessageId: res.data.id };
     } catch (err) {
       this.logger.error(`Gmail send failed for account ${account.email}: ${err instanceof Error ? err.message : err}`);
-      throw err;
+      throw new InternalServerErrorException(
+        `Gmail send failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }
