@@ -1,18 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listTemplates, type Template } from '../lib/templatesApi';
+import { listTemplates, deleteTemplate, type Template } from '../lib/templatesApi';
 import { TableSkeleton } from '../components/skeletons';
+import { CloseIcon } from '../components/icons';
+import { useAuthStore } from '../stores/useAuthStore';
 
 export function TemplatesList() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const navigate = useNavigate();
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
     listTemplates()
       .then(setTemplates)
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleDelete(e: React.MouseEvent, id: string, name: string) {
+    e.stopPropagation();
+    if (!confirm(`Delete "${name}"? This also removes all its variants.`)) return;
+    setDeleting(id);
+    try {
+      await deleteTemplate(id);
+      setTemplates((prev) => prev.filter((t) => t.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   return (
     <div>
@@ -68,6 +86,7 @@ export function TemplatesList() {
                 <th className="px-3 py-2 text-right font-medium">Used in</th>
                 <th className="px-3 py-2 text-right font-medium">Open rate</th>
                 <th className="px-3.5 py-2 text-right font-medium">Updated</th>
+                {canWrite && <th className="w-10 px-2 py-2" />}
               </tr>
             </thead>
             <tbody>
@@ -92,6 +111,22 @@ export function TemplatesList() {
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-text-tertiary">{(t.openRatePct ?? 0).toFixed(1)}%</td>
                   <td className="px-3.5 py-2.5 text-right text-text-muted">{new Date(t.updatedAt).toLocaleDateString()}</td>
+                  {canWrite && (
+                    <td className="px-2 py-2.5 text-right">
+                      <button
+                        onClick={(e) => handleDelete(e, t.id, t.name)}
+                        disabled={deleting === t.id}
+                        title="Delete template"
+                        className="rounded p-1 text-text-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                      >
+                        {deleting === t.id ? (
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : (
+                          <CloseIcon className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -67,6 +67,20 @@ export class TemplatesController {
     });
   }
 
+  @Patch(':id/variant')
+  @Roles('owner', 'editor')
+  async setVariant(
+    @Param('id') id: string,
+    @Body('parentTemplateId') parentTemplateId: string | null,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.templatesService.setVariant(id, parentTemplateId ?? null, tx);
+      await this.auditLog.record(user, 'template.set_variant', 'template', id, { parentTemplateId: parentTemplateId ?? null }, tx);
+      return updated;
+    });
+  }
+
   @Get(':id/versions')
   listVersions(@Param('id') id: string, @Query('limit') limit?: string) {
     return this.templatesService.listVersions(id, limit ? parseInt(limit, 10) : undefined);

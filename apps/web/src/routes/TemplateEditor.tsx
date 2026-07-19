@@ -17,7 +17,7 @@ import { SendTestEmailModal } from '../components/SendTestEmailModal';
 import { LinkClickPopover } from '../components/LinkClickPopover';
 import { PromptDialog } from '../components/PromptDialog';
 import { CheckCircleIcon, XCircleIcon } from '../components/icons';
-import { createTemplate, getTemplate, updateTemplate } from '../lib/templatesApi';
+import { createTemplate, getTemplate, updateTemplate, deleteTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
 
@@ -38,6 +38,7 @@ export function TemplateEditor() {
   const [showLibrary, setShowLibrary] = useState(isNew);
   const [showPreview, setShowPreview] = useState(false);
   const [showSendTest, setShowSendTest] = useState(false);
+  const [parentTemplateId, setParentTemplateId] = useState<string | null>(null);
   const [linkPopup, setLinkPopup] = useState<{ pos: number; href: string; x: number; y: number } | null>(null);
   const [linkEditOpen, setLinkEditOpen] = useState(false);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
@@ -79,6 +80,7 @@ export function TemplateEditor() {
     getTemplate(id).then((template) => {
       setName(template.name);
       setSubject(template.subject);
+      setParentTemplateId(template.parentTemplateId ?? null);
       editor.commands.setContent(template.bodyJson);
       setLoaded(true);
     });
@@ -117,6 +119,17 @@ export function TemplateEditor() {
     setShowLibrary(false);
   }
 
+  async function handleDelete() {
+    if (!id) return;
+    if (!confirm('Delete this template? This also removes all its variants.')) return;
+    try {
+      await deleteTemplate(id);
+      navigate('/templates');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Delete failed.', 'error');
+    }
+  }
+
   function currentBody() {
     const bodyJson = (editor?.getJSON() ?? EMPTY_DOC) as ProseMirrorNode;
     return { bodyHtml: renderBodyHtml(bodyJson), bodyText: renderBodyText(bodyJson) };
@@ -149,6 +162,19 @@ export function TemplateEditor() {
             className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-text-heading outline-none"
           />
           <div className="flex shrink-0 items-center gap-2">
+            {!isNew && canWrite && (
+              <button
+                onClick={handleDelete}
+                title="Delete template"
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border-strong bg-field text-text-faint hover:border-danger/40 hover:bg-danger/10 hover:text-danger"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={() => setShowPreview(true)}
               className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
@@ -206,7 +232,7 @@ export function TemplateEditor() {
         {savedAt && <div className="px-6 pb-4 text-xs text-text-faint">Saved {savedAt.toLocaleTimeString()}</div>}
       </div>
 
-      <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} />
+      <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} parentTemplateId={parentTemplateId} />
 
       {showPreview && (
         <TemplatePreviewModal
