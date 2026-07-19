@@ -12,6 +12,13 @@ import {
   type SettingCategory,
 } from '../lib/settingsApi';
 import { listApiKeys, createApiKey, rotateApiKey, revokeApiKey, type ApiKey, type CreatedApiKey } from '../lib/apiKeysApi';
+import {
+  listCustomFieldDefs,
+  createCustomFieldDef,
+  deleteCustomFieldDef,
+  type CustomFieldDef,
+  type CustomFieldInputType,
+} from '../lib/customFieldsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon, CopyIcon, CheckCircleIcon } from '../components/icons';
 import { PaginationBar } from '../components/PaginationBar';
@@ -21,8 +28,17 @@ import { SesSnsWebhookUrlField } from '../components/SesSnsWebhookUrlField';
 
 const LOG_PAGE_SIZE = 20;
 
-const TABS = ['Members', 'Audit log', 'Suppression list', 'Debug log', 'AI usage', 'API keys', 'Integrations'] as const;
+const TABS = ['Members', 'Audit log', 'Suppression list', 'Custom fields', 'Debug log', 'AI usage', 'API keys', 'Integrations'] as const;
 type Tab = (typeof TABS)[number];
+
+const INPUT_TYPE_LABELS: Record<CustomFieldInputType, string> = {
+  text: 'Text',
+  number: 'Number',
+  date: 'Date',
+  url: 'URL',
+  boolean: 'Yes / no',
+  select: 'Dropdown',
+};
 
 // Keys default to a 1-year expiry — see ApiKeysPanel's create form.
 const DEFAULT_KEY_LIFETIME_DAYS = 365;
@@ -241,6 +257,8 @@ export function Settings() {
           )}
         </div>
       )}
+
+      {tab === 'Custom fields' && <CustomFieldsPanel isOwner={isOwner} />}
 
       {tab === 'Debug log' && isOwner && (
         <div className="max-w-3xl overflow-hidden rounded-md border border-border-default bg-panel">
@@ -488,6 +506,130 @@ function ApiKeysPanel() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CustomFieldsPanel({ isOwner }: { isOwner: boolean }) {
+  const [fields, setFields] = useState<CustomFieldDef[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [label, setLabel] = useState('');
+  const [inputType, setInputType] = useState<CustomFieldInputType>('text');
+  const [optionsText, setOptionsText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    return listCustomFieldDefs().then(setFields);
+  }
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, []);
+
+  async function handleCreate() {
+    setError(null);
+    if (!label.trim()) {
+      setError('Label is required.');
+      return;
+    }
+    const options = optionsText
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+    if (inputType === 'select' && options.length === 0) {
+      setError('Add at least one option (comma-separated).');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createCustomFieldDef({ label: label.trim(), inputType, options: inputType === 'select' ? options : undefined });
+      setLabel('');
+      setInputType('text');
+      setOptionsText('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create custom field.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await deleteCustomFieldDef(id);
+    load();
+  }
+
+  return (
+    <div className="max-w-3xl overflow-hidden rounded-md border border-border-default bg-panel">
+      <div className="border-b border-border-default px-4 py-3">
+        <div className="text-sm font-semibold text-text-primary">Custom fields</div>
+        <div className="mt-0.5 text-[11.5px] text-text-faint">Extra fields available on every contact, shown on the Add contact form.</div>
+      </div>
+
+      {loading ? (
+        <div className="p-4 text-center text-xs text-text-muted">Loading…</div>
+      ) : (
+        <div className="p-1.5">
+          {fields.map((f) => (
+            <div key={f.id} className="flex items-center justify-between rounded-md px-2.5 py-2.5 hover:bg-raised">
+              <div>
+                <div className="text-sm font-medium text-text-secondary">{f.label}</div>
+                <div className="mt-1 text-[11px] text-text-faint">
+                  <code className="rounded bg-field px-1 py-0.5 font-mono text-[10.5px]">{f.key}</code> · {INPUT_TYPE_LABELS[f.inputType]}
+                  {f.inputType === 'select' && f.options && <> · {f.options.join(', ')}</>}
+                </div>
+              </div>
+              {isOwner && (
+                <button onClick={() => handleDelete(f.id)} className="shrink-0 text-[11px] text-text-faint hover:text-danger">
+                  Delete
+                </button>
+              )}
+            </div>
+          ))}
+          {fields.length === 0 && <div className="px-2.5 py-4 text-center text-xs text-text-faint">No custom fields yet.</div>}
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="border-t border-border-subtle p-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Field label (e.g. Company size)"
+              className="h-7 flex-1 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint"
+            />
+            <select
+              value={inputType}
+              onChange={(e) => setInputType(e.target.value as CustomFieldInputType)}
+              className="h-7 rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary"
+            >
+              {(Object.keys(INPUT_TYPE_LABELS) as CustomFieldInputType[]).map((t) => (
+                <option key={t} value={t}>
+                  {INPUT_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleCreate}
+              disabled={saving}
+              className="h-7 rounded-md border border-border-subtle bg-surface px-2.5 text-xs font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
+            >
+              {saving ? 'Creating…' : 'Create field'}
+            </button>
+          </div>
+          {inputType === 'select' && (
+            <input
+              value={optionsText}
+              onChange={(e) => setOptionsText(e.target.value)}
+              placeholder="Options, comma-separated (e.g. Small, Medium, Large)"
+              className="mt-1.5 h-7 w-full rounded-md border border-border-subtle bg-surface px-2 text-xs text-text-primary placeholder:text-text-faint"
+            />
+          )}
+          {error && <div className="mt-2 text-[11px] text-danger">{error}</div>}
+        </div>
+      )}
     </div>
   );
 }

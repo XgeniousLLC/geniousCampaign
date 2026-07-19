@@ -15,6 +15,7 @@ import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
 import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
 import { manualSuppress, manualUnsubscribe } from '../lib/suppressionApi';
+import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi';
 import { CsvImportModal } from '../components/CsvImportModal';
 import { SpinnerIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon, HelpCircleIcon } from '../components/icons';
 
@@ -801,6 +802,48 @@ function FormField({
   );
 }
 
+function CustomFieldInput({
+  def,
+  value,
+  onChange,
+}: {
+  def: CustomFieldDef;
+  value: string | boolean | undefined;
+  onChange: (v: string | boolean) => void;
+}) {
+  if (def.inputType === 'boolean') {
+    return (
+      <label className="flex items-center gap-1.5 self-end pb-1.5 text-xs text-text-secondary">
+        <input type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
+        {def.label}
+      </label>
+    );
+  }
+
+  if (def.inputType === 'select') {
+    return (
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-medium text-text-muted">{def.label}</span>
+        <select
+          value={(value as string) ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-full rounded border border-border-default bg-field px-2 text-xs text-text-primary outline-none focus:border-border-emphasis"
+        >
+          <option value="">—</option>
+          {(def.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  const type = def.inputType === 'number' ? 'number' : def.inputType === 'date' ? 'date' : def.inputType === 'url' ? 'url' : 'text';
+  return <FormField label={def.label} value={(value as string) ?? ''} onChange={onChange} type={type} />;
+}
+
 function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () => void; label?: string }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -808,6 +851,8 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string | boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -817,7 +862,15 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
     setLastName('');
     setPhone('');
     setWebsite('');
+    setCustomFieldValues({});
     setError(null);
+  }
+
+  function openModal() {
+    setOpen(true);
+    listCustomFieldDefs()
+      .then(setCustomFieldDefs)
+      .catch(() => setCustomFieldDefs([]));
   }
 
   async function submit() {
@@ -829,9 +882,17 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
     setSaving(true);
     try {
       const { createContact } = await import('../lib/contactsApi');
-      const customFields: Record<string, string> = {};
+      const customFields: Record<string, string | boolean> = {};
       if (phone.trim()) customFields.phone = phone.trim();
       if (website.trim()) customFields.website = website.trim();
+      for (const def of customFieldDefs) {
+        const value = customFieldValues[def.key];
+        if (def.inputType === 'boolean') {
+          if (value) customFields[def.key] = true;
+        } else if (typeof value === 'string' && value.trim()) {
+          customFields[def.key] = value.trim();
+        }
+      }
       await createContact({
         email: email.trim(),
         firstName: firstName.trim() || undefined,
@@ -851,7 +912,7 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={openModal}
         className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover"
       >
         {label}
@@ -859,7 +920,7 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
       {open && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}>
           <div
-            className="w-[420px] rounded-lg border border-border-modal bg-panel2 p-5 shadow-2xl"
+            className="w-[420px] max-h-[85vh] overflow-y-auto rounded-lg border border-border-modal bg-panel2 p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="mb-4 text-sm font-semibold text-text-primary">Add contact</h3>
@@ -874,6 +935,18 @@ function NewContactButton({ onCreated, label = 'Add contact' }: { onCreated: () 
               <FormField label="Phone" value={phone} onChange={setPhone} placeholder="+1 555 0100" type="tel" />
               <FormField label="Website" value={website} onChange={setWebsite} placeholder="acme.com" />
             </div>
+            {customFieldDefs.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {customFieldDefs.map((def) => (
+                  <CustomFieldInput
+                    key={def.id}
+                    def={def}
+                    value={customFieldValues[def.key]}
+                    onChange={(v) => setCustomFieldValues((prev) => ({ ...prev, [def.key]: v }))}
+                  />
+                ))}
+              </div>
+            )}
             {error && <div className="mt-3 text-[11px] text-danger">{error}</div>}
             <div className="mt-5 flex justify-end gap-2">
               <button
