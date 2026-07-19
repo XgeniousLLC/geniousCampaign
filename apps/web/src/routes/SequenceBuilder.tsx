@@ -13,7 +13,7 @@ import {
   type Sequence,
   type SequenceStep,
 } from '../lib/sequencesApi';
-import { listTemplates, listTemplateVariants, type Template } from '../lib/templatesApi';
+import { listTemplates, type Template } from '../lib/templatesApi';
 import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
 import {
   enrollContact,
@@ -24,7 +24,7 @@ import {
   type Enrollment,
 } from '../lib/enrollmentsApi';
 import { useAuthStore } from '../stores/useAuthStore';
-import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
+import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon, SpinnerIcon } from '../components/icons';
 
 const TABS = ['Steps', 'Enrolled contacts'] as const;
 type Tab = (typeof TABS)[number];
@@ -98,7 +98,6 @@ export function SequenceBuilder() {
   const [sequence, setSequence] = useState<Sequence | null>(null);
   const [steps, setSteps] = useState<SequenceStep[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [variantsByParent, setVariantsByParent] = useState<Map<string, Template[]>>(new Map());
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [tab, setTab] = useState<Tab>('Steps');
@@ -108,6 +107,9 @@ export function SequenceBuilder() {
   const [enrollContactId, setEnrollContactId] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
+  const [mutatingSteps, setMutatingSteps] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [savingBlockKey, setSavingBlockKey] = useState<string | null>(null);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
@@ -127,10 +129,6 @@ export function SequenceBuilder() {
     setEnrollments(enr);
     setContacts(allContacts);
     setOpenCount(allSequences.find((s) => s.id === id)?.openCount ?? 0);
-
-    const templateIds = new Set(seqSteps.map((s) => s.templateId).filter((v): v is string => !!v));
-    const variantLists = await Promise.all([...templateIds].map((tid) => listTemplateVariants(tid)));
-    setVariantsByParent(new Map([...templateIds].map((tid, i) => [tid, variantLists[i]])));
   }
 
   useEffect(() => {
@@ -140,6 +138,17 @@ export function SequenceBuilder() {
 
   const blocks = useMemo(() => buildBlocks(steps), [steps]);
   const sendBlocks = blocks.filter((b) => b.sendStep);
+
+  const variantsByParent = useMemo(() => {
+    const map = new Map<string, Template[]>();
+    for (const t of templates) {
+      if (!t.parentTemplateId) continue;
+      const arr = map.get(t.parentTemplateId) ?? [];
+      arr.push(t);
+      map.set(t.parentTemplateId, arr);
+    }
+    return map;
+  }, [templates]);
 
   const totalDurationMinutes = useMemo(() => {
     return blocks.reduce((sum, b) => {
@@ -160,47 +169,78 @@ export function SequenceBuilder() {
   }
 
   async function handleAddStep() {
-    if (!id) return;
-    await addStep(id, { type: 'send_email' });
-    reload();
+    if (!id || mutatingSteps) return;
+    setMutatingSteps(true);
+    try {
+      await addStep(id, { type: 'send_email' });
+      await reload();
+    } finally {
+      setMutatingSteps(false);
+    }
   }
 
   async function handleRemoveBlock(block: Block) {
     if (!id) return;
-    if (block.delayStep) await removeStep(id, block.delayStep.id);
-    if (block.sendStep) await removeStep(id, block.sendStep.id);
-    else if (block.otherStep) await removeStep(id, block.otherStep.id);
-    reload();
+    const idsToRemove = new Set(
+      [block.delayStep?.id, block.sendStep?.id, block.otherStep?.id].filter((v): v is string => !!v),
+    );
+    const previousSteps = steps;
+    setSteps((prev) => prev.filter((s) => !idsToRemove.has(s.id)));
+    setStepError(null);
+    try {
+      if (block.delayStep) await removeStep(id, block.delayStep.id);
+      if (block.sendStep) await removeStep(id, block.sendStep.id);
+      else if (block.otherStep) await removeStep(id, block.otherStep.id);
+      reload();
+    } catch {
+      setSteps(previousSteps);
+      setStepError('Failed to remove step — please try again.');
+    }
   }
 
   async function moveBlock(index: number, direction: -1 | 1) {
-    if (!id) return;
+    if (!id || mutatingSteps) return;
     const target = index + direction;
     if (target < 0 || target >= blocks.length) return;
     const next = [...blocks];
     [next[index], next[target]] = [next[target], next[index]];
-    await reorderSteps(id, flattenBlockIds(next));
-    reload();
+    setMutatingSteps(true);
+    try {
+      await reorderSteps(id, flattenBlockIds(next));
+      await reload();
+    } finally {
+      setMutatingSteps(false);
+    }
   }
 
   async function handleTemplateChange(block: Block, templateId: string) {
     if (!id || !block.sendStep) return;
-    await updateStep(id, block.sendStep.id, { templateId });
-    reload();
+    setSavingBlockKey(block.key);
+    try {
+      await updateStep(id, block.sendStep.id, { templateId });
+      await reload();
+    } finally {
+      setSavingBlockKey(null);
+    }
   }
 
   async function handleDelayChange(block: Block, delayValue: number, delayUnit: DelayUnit) {
     if (!id || !block.sendStep) return;
-    if (block.delayStep) {
-      await updateStep(id, block.delayStep.id, { delayValue, delayUnit });
-    } else {
-      const created = await addStep(id, { type: 'wait', delayValue, delayUnit });
-      const ids = steps.map((s) => s.id);
-      const sendIdx = ids.indexOf(block.sendStep.id);
-      ids.splice(sendIdx, 0, created.id);
-      await reorderSteps(id, ids);
+    setSavingBlockKey(block.key);
+    try {
+      if (block.delayStep) {
+        await updateStep(id, block.delayStep.id, { delayValue, delayUnit });
+      } else {
+        const created = await addStep(id, { type: 'wait', delayValue, delayUnit });
+        const ids = steps.map((s) => s.id);
+        const sendIdx = ids.indexOf(block.sendStep.id);
+        ids.splice(sendIdx, 0, created.id);
+        await reorderSteps(id, ids);
+      }
+      await reload();
+    } finally {
+      setSavingBlockKey(null);
     }
-    reload();
   }
 
   async function handleEnroll() {
@@ -251,7 +291,42 @@ export function SequenceBuilder() {
     .map((e) => e.contactId);
   const availableContacts = contacts.filter((c) => !enrolledContacts.includes(c.id));
 
-  if (!sequence) return <div className="text-sm text-text-muted">Loading…</div>;
+  if (!sequence) {
+    return (
+      <div className="animate-pulse">
+        <div className="mb-3 h-3 w-20 rounded bg-surface" />
+        <div className="mb-[18px] flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="h-5 w-40 rounded bg-surface" />
+              <div className="h-5 w-14 rounded-full bg-surface" />
+            </div>
+            <div className="mt-2 h-3 w-28 rounded bg-surface" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-32 rounded-md bg-surface" />
+            <div className="h-8 w-28 rounded-md bg-surface" />
+          </div>
+        </div>
+        <div className="mb-5 flex gap-5 border-b border-border-default pb-2.5">
+          <div className="h-4 w-12 rounded bg-surface" />
+          <div className="h-4 w-28 rounded bg-surface" />
+        </div>
+        <div className="grid grid-cols-[1fr_280px] items-start gap-5">
+          <div className="max-w-[620px]">
+            <div className="mb-3.5 h-3 w-32 rounded bg-surface" />
+            {[0, 1, 2].map((n) => (
+              <div key={n}>
+                <div className="ml-4 h-4 w-0.5 bg-border-strong" />
+                <div className="h-[68px] rounded-md border border-border-default bg-panel" />
+              </div>
+            ))}
+          </div>
+          <div className="h-40 rounded-md border border-border-default bg-panel" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -371,14 +446,14 @@ export function SequenceBuilder() {
                       <span className="capitalize">{block.otherStep.type} step</span>
                       {canWrite && (
                         <div className="flex items-center gap-1">
-                          <button onClick={() => moveBlock(i, -1)} disabled={i === 0} className="text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronUpIcon /></button>
-                          <button onClick={() => moveBlock(i, 1)} disabled={i === blocks.length - 1} className="text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronDownIcon /></button>
+                          <button onClick={() => moveBlock(i, -1)} disabled={i === 0 || mutatingSteps} className="text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronUpIcon /></button>
+                          <button onClick={() => moveBlock(i, 1)} disabled={i === blocks.length - 1 || mutatingSteps} className="text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronDownIcon /></button>
                           <button onClick={() => handleRemoveBlock(block)} className="ml-1 text-text-faint hover:text-danger"><CloseIcon /></button>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="overflow-hidden rounded-md border border-border-default bg-panel">
+                    <div className={`overflow-hidden rounded-md border border-border-default bg-panel transition-opacity ${savingBlockKey === block.key ? 'opacity-60' : ''}`}>
                       {block.index > 1 && (
                         <div className="flex items-center gap-2 border-b border-border-subtle bg-surface px-3 py-2">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7B8290" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -390,13 +465,13 @@ export function SequenceBuilder() {
                             type="number"
                             min={0}
                             value={block.delayStep?.delayValue ?? 1}
-                            disabled={!canWrite}
+                            disabled={!canWrite || savingBlockKey === block.key}
                             onChange={(e) => handleDelayChange(block, Number(e.target.value), block.delayStep?.delayUnit ?? 'days')}
                             className="h-7 w-14 rounded border border-border-default bg-field px-2 font-mono text-xs text-text-primary disabled:opacity-60"
                           />
                           <select
                             value={block.delayStep?.delayUnit ?? 'days'}
-                            disabled={!canWrite}
+                            disabled={!canWrite || savingBlockKey === block.key}
                             onChange={(e) => handleDelayChange(block, block.delayStep?.delayValue ?? 1, e.target.value as DelayUnit)}
                             className="h-7 rounded border border-border-default bg-field px-2 text-xs text-text-primary disabled:opacity-60"
                           >
@@ -404,6 +479,7 @@ export function SequenceBuilder() {
                             <option value="hours">hours</option>
                             <option value="days">days</option>
                           </select>
+                          {savingBlockKey === block.key && <SpinnerIcon className="text-text-faint" />}
                         </div>
                       )}
                       <div className="flex items-center gap-2.5 p-3">
@@ -411,11 +487,14 @@ export function SequenceBuilder() {
                           {block.index}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">Send email</div>
+                          <div className="mb-1 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
+                            Send email
+                            {savingBlockKey === block.key && <SpinnerIcon className="text-accent-light" />}
+                          </div>
                           <select
                             value={block.sendStep!.templateId ?? ''}
                             onChange={(e) => handleTemplateChange(block, e.target.value)}
-                            disabled={!canWrite}
+                            disabled={!canWrite || savingBlockKey === block.key}
                             className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
                           >
                             <option value="">Select a template…</option>
@@ -431,8 +510,8 @@ export function SequenceBuilder() {
                         {canWrite && (
                           <>
                             <div className="flex flex-col gap-0.5">
-                              <button onClick={() => moveBlock(i, -1)} disabled={i === 0} className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronUpIcon /></button>
-                              <button onClick={() => moveBlock(i, 1)} disabled={i === blocks.length - 1} className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronDownIcon /></button>
+                              <button onClick={() => moveBlock(i, -1)} disabled={i === 0 || mutatingSteps} className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronUpIcon /></button>
+                              <button onClick={() => moveBlock(i, 1)} disabled={i === blocks.length - 1 || mutatingSteps} className="rounded px-1 text-text-faint hover:text-text-primary disabled:opacity-20"><ChevronDownIcon /></button>
                             </div>
                             <button onClick={() => handleRemoveBlock(block)} className="ml-1 text-text-faint hover:text-danger"><CloseIcon /></button>
                           </>
@@ -473,15 +552,21 @@ export function SequenceBuilder() {
             {canWrite && (
               <button
                 onClick={handleAddStep}
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border-emphasis bg-surface py-3 text-xs font-semibold text-accent-light hover:bg-raised"
+                disabled={mutatingSteps}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border-emphasis bg-surface py-3 text-xs font-semibold text-accent-light hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M5 12h14" />
-                  <path d="M12 5v14" />
-                </svg>
-                Add step
+                {mutatingSteps ? (
+                  <SpinnerIcon />
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M5 12h14" />
+                    <path d="M12 5v14" />
+                  </svg>
+                )}
+                {mutatingSteps ? 'Working…' : 'Add step'}
               </button>
             )}
+            {stepError && <p className="mt-2 text-xs text-danger">{stepError}</p>}
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-4">

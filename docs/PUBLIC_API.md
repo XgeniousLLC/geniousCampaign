@@ -74,6 +74,54 @@ curl -X POST https://your-api-host/api/v1/contacts \
 | `404` | `listId` or one of `tagIds` was included in the request but doesn't exist. |
 | `429` | Rate limit exceeded — see **Rate limiting** below. |
 
+## `POST /api/v1/contacts/{email}/enroll`
+
+Enrolls an existing contact into a sequence. Reuses the same `EnrollmentService.enroll()` call the admin UI and inbound webhook trigger framework use (`CLAUDE.md` invariant 2) — an API-triggered enrollment is the identical state transition, just reached with a bearer key instead of a session or HMAC signature.
+
+The contact must already exist — this endpoint never creates one as a side effect (unlike `POST /api/v1/contacts` above, which upserts).
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `sequenceId` | string (UUID) | yes | An existing sequence's id. `404` if it doesn't exist. |
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/enroll \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "sequenceId": "a1b2c3d4-...-seq-1" }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "enrollmentId": "d4e2...-enr-1",
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "sequenceId": "a1b2c3d4-...-seq-1",
+  "status": "active",
+  "currentStepId": "f6a7...-step-1"
+}
+```
+
+`status` is `"completed"` with `currentStepId: null` on the rare case of a zero-step or wait-only sequence — nothing to run, so the enrollment is created and immediately marked done, same as enrolling from the UI.
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `400` | `sequenceId` missing or not a valid UUID. |
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email, or `sequenceId` doesn't exist. |
+| `409` | The contact already has an active or paused enrollment in that sequence. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
 ## `POST /api/v1/contacts/{email}/stop-sequences`
 
 Stops every **active or paused** sequence enrollment for the contact with this email — across every sequence they're enrolled in, in one call. Enrollment is per-(sequence, contact) with no shared clock (see `CLAUDE.md` invariant 1), so this loops over each of the contact's enrollments and stops each one individually, the same state transition as stopping one manually from the sequence's enrollment list.

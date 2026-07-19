@@ -7,6 +7,7 @@ import { ApiKeyAuthGuard } from '../api-keys/api-key-auth.guard';
 import { PublicApiThrottlerGuard } from './public-api-throttler.guard';
 import { CurrentApiKey, type AuthenticatedApiKey } from '../api-keys/current-api-key.decorator';
 import { CreatePublicContactDto } from './dto/create-public-contact.dto';
+import { EnrollPublicContactDto } from './dto/enroll-public-contact.dto';
 
 // External-facing surface for form/automation tools (Zapier, a website
 // contact form, a custom script) to push a contact in — auth is the bearer
@@ -62,6 +63,27 @@ export class PublicApiController {
       status: contact.status,
       listId: listId ?? null,
       tagIds,
+    };
+  }
+
+  // Enrolls an existing contact into a sequence — reuses EnrollmentService.enroll()
+  // unchanged (invariant 2), so this is the identical state transition the
+  // admin UI and inbound webhook controller trigger, just reached via a
+  // bearer API key instead of a JWT session or HMAC signature. Contact must
+  // already exist (404 if not) — this endpoint never creates one as a side
+  // effect. EnrollmentService itself 404s on an unknown sequenceId and 409s
+  // if the contact already has an active/paused enrollment in it.
+  @Post('contacts/:email/enroll')
+  async enroll(@Param('email') email: string, @Body() dto: EnrollPublicContactDto) {
+    const contact = await this.contacts.findByEmail(email);
+    const enrollment = await this.enrollments.enroll(dto.sequenceId, contact.id);
+    return {
+      enrollmentId: enrollment.id,
+      contactId: contact.id,
+      email: contact.email,
+      sequenceId: enrollment.sequenceId,
+      status: enrollment.status,
+      currentStepId: enrollment.currentStepId,
     };
   }
 
