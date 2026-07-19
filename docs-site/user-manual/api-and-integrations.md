@@ -16,6 +16,7 @@ What this page is for: giving an external tool you don't control the code for �
 Hand whoever manages the external tool this summary (full technical detail — every endpoint, payload, and response format — is in the [API reference](../api-reference.md)):
 
 - **`POST /api/v1/contacts`** — creates a new contact, or updates one that already exists with that email (never errors on a duplicate — it's an upsert). Accepts `email` (required), `firstName`, `lastName`, `customFields` (any key/value pairs), and optionally `listId`/`tagIds` to add the contact to a specific list/tags on the way in.
+- **`POST /api/v1/contacts/{email}/enroll`** — puts an existing contact into a sequence, given its `sequenceId`. Same enrollment logic as clicking "Enroll contacts" on the sequence page. The contact must already exist; errors if they're already active/paused in that sequence.
 - **`POST /api/v1/contacts/{email}/stop-sequences`** — stops every active or paused sequence enrollment for that contact across every sequence at once (e.g. call this from a "customer replied" or "converted" automation so they stop receiving further sequence steps). The contact must already exist — this one never creates a contact as a side effect.
 - Every request needs the `X-Api-Key` header from step 3 above. Missing, wrong, or expired keys get rejected.
 

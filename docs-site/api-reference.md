@@ -76,6 +76,54 @@ curl -X POST https://your-api-host/api/v1/contacts \
 
 ---
 
+## `POST /api/v1/contacts/{email}/enroll`
+
+Enrolls an existing contact into a sequence — the same state transition as enrolling from the sequence's UI or an inbound webhook trigger, just reached with a bearer key. The contact must already exist — this endpoint never creates one as a side effect.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `sequenceId` | string (UUID) | yes | Existing sequence id. `404` if it doesn't exist |
+
+**Request example**
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/enroll \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "sequenceId": "a1b2c3d4-...-seq-1" }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+**Response — `201 Created`**
+
+```json
+{
+  "enrollmentId": "d4e2...-enr-1",
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "sequenceId": "a1b2c3d4-...-seq-1",
+  "status": "active",
+  "currentStepId": "f6a7...-step-1"
+}
+```
+
+`status` is `"completed"` with `currentStepId: null` for a zero-step or wait-only sequence — nothing to run, so the enrollment is created and immediately marked done.
+
+**Errors**
+
+| Status | When |
+|---|---|
+| `400` | `sequenceId` missing or not a valid UUID |
+| `401` | Missing, invalid, or expired `X-Api-Key` |
+| `404` | No contact exists with that email, or `sequenceId` doesn't exist |
+| `409` | The contact already has an active or paused enrollment in that sequence |
+| `429` | Rate limit exceeded — see [Rate limiting](#rate-limiting) |
+
+---
+
 ## `POST /api/v1/contacts/{email}/stop-sequences`
 
 Stops every **active or paused** sequence enrollment for the contact with this email, across every sequence they're enrolled in, in one call. The contact must already exist — this endpoint never creates one as a side effect (unlike `POST /api/v1/contacts`, which upserts).
