@@ -1,5 +1,6 @@
 - [Home](/)
 - [Deployment](deployment.md)
+- [API reference](api-reference.md)
 
 - **User Manual**
 - [Getting started](user-manual/getting-started.md)

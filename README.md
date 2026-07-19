@@ -72,7 +72,7 @@ geniusCampaign/
 
 ## Public API
 
-Push contacts in from an external form or automation tool (Zapier, a custom script, a website contact form) — see **[docs/PUBLIC_API.md](docs/PUBLIC_API.md)** for authentication, the full endpoint reference, and request/response examples. Keys are created and managed from Settings > API keys in the app.
+Push contacts in from an external form or automation tool (Zapier, a custom script, a website contact form) — see **[docs/PUBLIC_API.md](docs/PUBLIC_API.md)** (repo) or the published **[API reference](https://xgeniousllc.github.io/geniousCampaign/#/api-reference)** for authentication, the full endpoint reference, and request/response examples. Keys are created and managed from Settings > API keys in the app.
 
 ## Contributing / architecture notes
 
