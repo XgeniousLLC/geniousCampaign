@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Editor } from '@tiptap/react';
+import { getMarkRange } from '@tiptap/core';
 import { renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 import { useImageUpload } from '../lib/useImageUpload';
 import { AiAssistModal } from './AiAssistModal';
@@ -69,8 +70,26 @@ function ToolbarDivider() {
   return <div className="mx-1 h-4 w-px shrink-0 bg-border-strong" />;
 }
 
+// Selected text if there's a selection, otherwise the full text of the link
+// mark under the cursor (so editing an existing link prefills its current
+// text, not just its URL), otherwise an empty from===to range meaning
+// "insert new text at the cursor."
+function getLinkTextRange(editor: Editor) {
+  const { from, to, empty } = editor.state.selection;
+  if (!empty) return { from, to, text: editor.state.doc.textBetween(from, to, '') };
+  const range = getMarkRange(editor.state.selection.$from, editor.schema.marks.link);
+  if (range) return { from: range.from, to: range.to, text: editor.state.doc.textBetween(range.from, range.to, '') };
+  return { from, to, text: '' };
+}
+
 export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [tokenOpen, setTokenOpen] = useState(false);
+  const [customFieldKey, setCustomFieldKey] = useState('');
+  const customFieldValid = /^[a-zA-Z0-9_]+$/.test(customFieldKey.trim());
+  // Shared by both the fixed tokens and the custom field below — applies to
+  // whichever one gets inserted, so the contact having no value for that
+  // field/key resolves to this text instead of silently disappearing.
+  const [tokenFallback, setTokenFallback] = useState('');
   const [aiOpen, setAiOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [buttonDialogOpen, setButtonDialogOpen] = useState(false);
@@ -187,13 +206,85 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       >
         Spintax
       </button>
-      <button
-        type="button"
-        onClick={() => setTokenOpen((o) => !o)}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2.5 text-xs font-semibold text-accent-light hover:bg-accent/15"
-      >
-        Insert token ▾
-      </button>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setTokenOpen((o) => !o)}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2.5 text-xs font-semibold text-accent-light hover:bg-accent/15"
+        >
+          Insert token ▾
+        </button>
+        {tokenOpen && (
+          <div className="absolute left-0 top-9 z-20 w-60 rounded-md border border-border-modal bg-panel2 p-1 shadow-lg">
+            <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-text-meta">Personalization tokens</div>
+            {PERSONALIZATION_TOKENS.map((tk) => (
+              <button
+                key={tk.field}
+                type="button"
+                onClick={() => {
+                  const fallback = tokenFallback.trim() || undefined;
+                  editor.chain().focus().insertPersonalizationToken({ ...tk, fallback }).run();
+                  setTokenOpen(false);
+                }}
+                className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left font-mono text-xs text-text-tertiary hover:bg-raised"
+              >
+                <span className="text-accent-light">{'{{'}</span>
+                {tk.label}
+                <span className="text-accent-light">{'}}'}</span>
+              </button>
+            ))}
+            <div className="mt-1 border-t border-border-subtle p-2 pt-1.5">
+              <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Fallback if empty</div>
+              <input
+                value={tokenFallback}
+                onChange={(e) => setTokenFallback(e.target.value)}
+                placeholder="e.g. there (optional)"
+                className="h-7 w-full rounded border border-border-subtle bg-surface px-1.5 text-xs text-text-primary placeholder:text-text-faint"
+              />
+              <div className="mt-1 text-[10.5px] leading-snug text-text-faint">Used when the contact has no value for the token you insert below.</div>
+            </div>
+            <div className="mt-1 border-t border-border-subtle p-2 pt-2">
+              <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Custom field</div>
+              <div className="flex gap-1">
+                <input
+                  value={customFieldKey}
+                  onChange={(e) => setCustomFieldKey(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' || !customFieldValid) return;
+                    const key = customFieldKey.trim();
+                    const fallback = tokenFallback.trim() || undefined;
+                    editor.chain().focus().insertPersonalizationToken({ field: `contact.custom.${key}`, label: key, fallback }).run();
+                    setCustomFieldKey('');
+                    setTokenOpen(false);
+                  }}
+                  placeholder="field key"
+                  className="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-1.5 font-mono text-xs text-text-primary placeholder:text-text-faint"
+                />
+                <button
+                  type="button"
+                  disabled={!customFieldValid}
+                  onClick={() => {
+                    const key = customFieldKey.trim();
+                    const fallback = tokenFallback.trim() || undefined;
+                    editor.chain().focus().insertPersonalizationToken({ field: `contact.custom.${key}`, label: key, fallback }).run();
+                    setCustomFieldKey('');
+                    setTokenOpen(false);
+                  }}
+                  className="h-7 shrink-0 rounded border border-accent/25 bg-accent/10 px-2 text-xs font-semibold text-accent-light hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Insert
+                </button>
+              </div>
+              <div className="mt-1 font-mono text-[10.5px] text-text-faint">
+                {'{{contact.custom.'}
+                {customFieldKey.trim() || 'key'}
+                {tokenFallback.trim() ? `|${tokenFallback.trim()}` : ''}
+                {'}}'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => setAiOpen(true)}
@@ -201,26 +292,6 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       >
         ✦ AI Assist
       </button>
-      {tokenOpen && (
-        <div className="absolute top-10 left-32 z-20 w-56 rounded-md border border-border-modal bg-panel2 p-1 shadow-lg">
-          <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-text-meta">Personalization tokens</div>
-          {PERSONALIZATION_TOKENS.map((tk) => (
-            <button
-              key={tk.field}
-              type="button"
-              onClick={() => {
-                editor.chain().focus().insertPersonalizationToken(tk).run();
-                setTokenOpen(false);
-              }}
-              className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left font-mono text-xs text-text-tertiary hover:bg-raised"
-            >
-              <span className="text-accent-light">{'{{'}</span>
-              {tk.label}
-              <span className="text-accent-light">{'}}'}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {aiOpen && (
         <AiAssistModal
           onClose={() => setAiOpen(false)}
@@ -235,26 +306,42 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
           }}
         />
       )}
-      {linkDialogOpen && (
-        <PromptDialog
-          title="Link"
-          submitLabel={editor.isActive('link') ? 'Update' : 'Insert'}
-          fields={[{ key: 'url', label: 'URL', placeholder: 'https://', defaultValue: (editor.getAttributes('link').href as string) ?? '' }]}
-          onClose={() => setLinkDialogOpen(false)}
-          onSubmit={({ url }) => {
-            if (url) editor.chain().focus().setLink({ href: url }).run();
-            setLinkDialogOpen(false);
-          }}
-          onRemove={
-            editor.isActive('link')
-              ? () => {
-                  editor.chain().focus().unsetLink().run();
-                  setLinkDialogOpen(false);
+      {linkDialogOpen &&
+        (() => {
+          const linkRange = getLinkTextRange(editor);
+          return (
+            <PromptDialog
+              title="Link"
+              submitLabel={editor.isActive('link') ? 'Update' : 'Insert'}
+              fields={[
+                { key: 'url', label: 'URL', placeholder: 'https://', defaultValue: (editor.getAttributes('link').href as string) ?? '' },
+                { key: 'text', label: 'Link text', placeholder: 'Text to display', defaultValue: linkRange.text },
+              ]}
+              onClose={() => setLinkDialogOpen(false)}
+              onSubmit={({ url, text }) => {
+                if (url) {
+                  const label = text || url;
+                  editor
+                    .chain()
+                    .focus()
+                    .insertContentAt({ from: linkRange.from, to: linkRange.to }, [
+                      { type: 'text', text: label, marks: [{ type: 'link', attrs: { href: url } }] },
+                    ])
+                    .run();
                 }
-              : undefined
-          }
-        />
-      )}
+                setLinkDialogOpen(false);
+              }}
+              onRemove={
+                editor.isActive('link')
+                  ? () => {
+                      editor.chain().focus().unsetLink().run();
+                      setLinkDialogOpen(false);
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
       {buttonDialogOpen && (
         <PromptDialog
           title="Insert button"

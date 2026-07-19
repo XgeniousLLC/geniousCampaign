@@ -6,7 +6,7 @@
 // text the moment it round-trips through the AI.
 
 const BUTTON_LINE_RE = /^(.+?):\s*(https?:\/\/\S+|#)\s*$/;
-const TOKEN_FIELD_RE = /^contact\.(firstName|lastName|email)$/;
+const TOKEN_FIELD_RE = /^contact\.(firstName|lastName|email|custom\.[a-zA-Z0-9_]+)$/;
 
 const TOKEN_LABELS: Record<string, string> = {
   'contact.firstName': 'First name',
@@ -41,9 +41,15 @@ function lineToInlineContent(line: string): Array<Record<string, unknown>> {
     if (line.startsWith('{{', i)) {
       const end = line.indexOf('}}', i + 2);
       const inner = end !== -1 ? line.slice(i + 2, end) : '';
-      if (end !== -1 && TOKEN_FIELD_RE.test(inner)) {
+      // inner may carry a `|fallback text` suffix (e.g.
+      // "contact.firstName|there") — split it off before matching the
+      // field itself against the known-token pattern.
+      const pipeIdx = inner.indexOf('|');
+      const field = pipeIdx === -1 ? inner : inner.slice(0, pipeIdx);
+      const fallback = pipeIdx === -1 ? undefined : inner.slice(pipeIdx + 1);
+      if (end !== -1 && TOKEN_FIELD_RE.test(field)) {
         flush();
-        parts.push({ type: 'personalizationToken', attrs: { field: inner, label: TOKEN_LABELS[inner] ?? inner } });
+        parts.push({ type: 'personalizationToken', attrs: { field, label: TOKEN_LABELS[field] ?? field, fallback } });
         i = end + 2;
         continue;
       }

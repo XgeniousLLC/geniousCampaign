@@ -87,8 +87,11 @@ function renderNodeHtml(node: ProseMirrorNode): string {
     }
     case 'text':
       return applyMarks(escapeHtml(node.text ?? ''), node.marks);
-    case 'personalizationToken':
-      return `{{${String(node.attrs?.field ?? '')}}}`;
+    case 'personalizationToken': {
+      const field = String(node.attrs?.field ?? '');
+      const fallback = typeof node.attrs?.fallback === 'string' && node.attrs.fallback ? `|${escapeHtml(node.attrs.fallback)}` : '';
+      return `{{${field}${fallback}}}`;
+    }
     case 'spintaxBlock':
       return `{${((node.attrs?.options as string[]) ?? []).map(escapeHtml).join('|')}}`;
     default:
@@ -123,8 +126,11 @@ function renderNodeText(node: ProseMirrorNode): string {
     }
     case 'text':
       return node.text ?? '';
-    case 'personalizationToken':
-      return `{{${String(node.attrs?.field ?? '')}}}`;
+    case 'personalizationToken': {
+      const field = String(node.attrs?.field ?? '');
+      const fallback = typeof node.attrs?.fallback === 'string' && node.attrs.fallback ? `|${node.attrs.fallback}` : '';
+      return `{{${field}${fallback}}}`;
+    }
     case 'spintaxBlock':
       return `{${((node.attrs?.options as string[]) ?? []).join('|')}}`;
     default:
