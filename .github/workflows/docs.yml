@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'docs-site/**'
-      - '.github/workf
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -24,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - uses: actions/
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: docs-site
       - id: deployment
