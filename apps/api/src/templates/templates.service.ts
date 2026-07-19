@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { templates, templateVersions, sends, emailEvents } from '../db/schema';
+import { templates, templateVersions, sends, emailEvents, sequenceSteps } from '../db/schema';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SendTestEmailDto } from './dto/send-test-email.dto';
@@ -91,10 +91,27 @@ export class TemplatesService {
       .groupBy(sends.templateId);
     const opensByTemplate = new Map(openRows.map((r) => [r.templateId, r.opens]));
 
+    // Distinct sequences a template is wired into as a step — separate from
+    // "uses" (actual sent count) since a template can sit in a sequence step
+    // and never have fired a send yet.
+    const usedInRows = await this.drizzle.db
+      .select({
+        templateId: sequenceSteps.templateId,
+        usedInCount: sql<number>`count(distinct ${sequenceSteps.sequenceId})`.mapWith(Number),
+      })
+      .from(sequenceSteps)
+      .groupBy(sequenceSteps.templateId);
+    const usedInByTemplate = new Map(usedInRows.map((r) => [r.templateId, r.usedInCount]));
+
     return templateRows.map((t) => {
       const uses = usesByTemplate.get(t.id) ?? 0;
       const opens = opensByTemplate.get(t.id) ?? 0;
-      return { ...t, uses, openRatePct: uses > 0 ? (opens / uses) * 100 : 0 };
+      return {
+        ...t,
+        uses,
+        openRatePct: uses > 0 ? (opens / uses) * 100 : 0,
+        usedInCount: usedInByTemplate.get(t.id) ?? 0,
+      };
     });
   }
 

@@ -9,9 +9,14 @@ const COMPUTED_REDIRECT_URI = `${API_BASE_URL}/sender-accounts/gmail/callback`;
 const URL_PATTERN = /(https?:\/\/[^\s")]+)/g;
 
 // Instruction steps are plain text from the backend — turn bare URLs into
-// clickable links rather than leaving them as copy-pasteable text.
+// clickable links rather than leaving them as copy-pasteable text. The
+// backend can't know this deployment's actual API host, so it leaves a
+// {{REDIRECT_URI}} placeholder for the one step that needs it; substitute
+// in the real computed value (same one the input field defaults to) before
+// linkifying, so the instructions never show a stale example host.
 function linkifyStep(step: string) {
-  return step.split(URL_PATTERN).map((part, i) =>
+  const resolved = step.replaceAll('{{REDIRECT_URI}}', COMPUTED_REDIRECT_URI);
+  return resolved.split(URL_PATTERN).map((part, i) =>
     /^https?:\/\//.test(part) ? (
       <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-accent-light underline hover:text-accent">
         {part}

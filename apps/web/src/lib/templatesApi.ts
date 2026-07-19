@@ -15,6 +15,8 @@ export interface Template {
   // Present on list responses only (GET /templates) — computed server-side.
   uses?: number;
   openRatePct?: number;
+  // Distinct sequences that reference this template in a step.
+  usedInCount?: number;
 }
 
 export interface TemplateVersion {
