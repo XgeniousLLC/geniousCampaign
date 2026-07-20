@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 
 export interface Template {
   id: string;
@@ -64,4 +64,16 @@ export function listTemplateVariants(id: string) {
 
 export function sendTestEmail(input: { to: string; subject: string; bodyHtml: string; bodyText: string }) {
   return apiPost<{ sent: boolean; provider: 'ses' | 'gmail' }>('/templates/send-test', input);
+}
+
+export function deleteTemplate(id: string) {
+  return apiDelete<{ id: string }>(`/templates/${id}`);
+}
+
+export function deleteTemplates(ids: string[]) {
+  return apiPost<{ deletedCount: number }>('/templates/bulk-delete', { ids });
+}
+
+export function setTemplateVariant(id: string, parentTemplateId: string | null) {
+  return apiPatch<Template>(`/templates/${id}/variant`, { parentTemplateId });
 }

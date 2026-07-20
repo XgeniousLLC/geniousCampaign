@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
 import { templates, templateVersions, sends, emailEvents, sequenceSteps } from '../db/schema';
@@ -177,10 +177,37 @@ export class TemplatesService {
     });
   }
 
+  /** Sets or clears the parentTemplateId on an existing template — lets an
+   * admin retroactively designate any standalone template as a variant of
+   * another (or detach a variant back to top-level). */
+  async setVariant(id: string, parentTemplateId: string | null, db: DbOrTx = this.drizzle.db) {
+    const template = await this.findOne(id, db);
+    if (parentTemplateId) {
+      // Can't make a template a variant of itself.
+      if (parentTemplateId === id) {
+        return template;
+      }
+      // Verify the parent exists.
+      await this.findOne(parentTemplateId, db);
+    }
+    const [updated] = await db
+      .update(templates)
+      .set({ parentTemplateId, updatedAt: new Date() })
+      .where(eq(templates.id, id))
+      .returning();
+    return updated;
+  }
+
   async remove(id: string, db: DbOrTx = this.drizzle.db) {
     await this.findOne(id, db);
     await db.delete(templates).where(eq(templates.id, id));
     return { id };
+  }
+
+  async removeBulk(ids: string[], db: DbOrTx = this.drizzle.db) {
+    if (ids.length === 0) return { deletedCount: 0 };
+    await db.delete(templates).where(inArray(templates.id, ids));
+    return { deletedCount: ids.length };
   }
 
   async listVersions(id: string, limit = 20) {

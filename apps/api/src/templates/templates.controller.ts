@@ -3,6 +3,7 @@ import { TemplatesService } from './templates.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SendTestEmailDto } from './dto/send-test-email.dto';
+import { BulkDeleteTemplatesDto } from './dto/bulk-delete-templates.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -64,6 +65,32 @@ export class TemplatesController {
       const result = await this.templatesService.remove(id, tx);
       await this.auditLog.record(user, 'template.delete', 'template', id, undefined, tx);
       return result;
+    });
+  }
+
+  @Post('bulk-delete')
+  @Roles('owner', 'editor')
+  async removeBulk(@Body() dto: BulkDeleteTemplatesDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.templatesService.removeBulk(dto.ids, tx);
+      for (const id of dto.ids) {
+        await this.auditLog.record(user, 'template.delete', 'template', id, undefined, tx);
+      }
+      return result;
+    });
+  }
+
+  @Patch(':id/variant')
+  @Roles('owner', 'editor')
+  async setVariant(
+    @Param('id') id: string,
+    @Body('parentTemplateId') parentTemplateId: string | null,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.templatesService.setVariant(id, parentTemplateId ?? null, tx);
+      await this.auditLog.record(user, 'template.set_variant', 'template', id, { parentTemplateId: parentTemplateId ?? null }, tx);
+      return updated;
     });
   }
 

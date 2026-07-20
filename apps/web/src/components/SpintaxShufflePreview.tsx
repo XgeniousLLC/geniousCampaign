@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { renderBodyText, resolveSpintax, type ProseMirrorNode } from '@genius-campaign/shared';
-import { createTemplate, listTemplateVariants, type Template } from '../lib/templatesApi';
+import { createTemplate, listTemplateVariants, listTemplates, setTemplateVariant, type Template } from '../lib/templatesApi';
 import { generateAiCopy } from '../lib/aiAssistApi';
 import { aiTextToDoc } from '../lib/aiTextToDoc';
 
@@ -73,11 +73,13 @@ export function SpintaxShufflePreview({
   subject,
   templateId,
   templateName,
+  parentTemplateId,
 }: {
   editor: Editor | null;
   subject: string;
   templateId?: string;
   templateName: string;
+  parentTemplateId?: string | null;
 }) {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [aiVariant, setAiVariant] = useState<Variant | null>(null);
@@ -86,6 +88,12 @@ export function SpintaxShufflePreview({
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
   const [savedVariants, setSavedVariants] = useState<Template[]>([]);
+  // Variant linking state
+  const [allTemplates, setAllTemplates] = useState<Template[]>([]);
+  const [linkingParentId, setLinkingParentId] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [currentParentId, setCurrentParentId] = useState<string | null>(parentTemplateId ?? null);
+  const [parentName, setParentName] = useState<string | null>(null);
 
   // Variants saved earlier (this session or a prior one) are real template
   // rows — without this fetch, reloading the page loses them from view
@@ -99,6 +107,49 @@ export function SpintaxShufflePreview({
   useEffect(() => {
     loadSavedVariants();
   }, [templateId]);
+
+  // Load parent name if this template is a variant, and all templates for the dropdown.
+  useEffect(() => {
+    if (!templateId) return;
+    listTemplates().then((ts) => {
+      // Exclude self and own variants from the parent picker.
+      setAllTemplates(ts.filter((t) => t.id !== templateId));
+      if (currentParentId) {
+        const parent = ts.find((t) => t.id === currentParentId);
+        setParentName(parent?.name ?? null);
+      }
+    });
+  }, [templateId, currentParentId]);
+
+  async function handleSetVariant() {
+    if (!templateId || !linkingParentId) return;
+    setLinking(true);
+    try {
+      await setTemplateVariant(templateId, linkingParentId);
+      setCurrentParentId(linkingParentId);
+      const parent = allTemplates.find((t) => t.id === linkingParentId);
+      setParentName(parent?.name ?? null);
+      setLinkingParentId('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to set variant.');
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function handleDetachVariant() {
+    if (!templateId) return;
+    setLinking(true);
+    try {
+      await setTemplateVariant(templateId, null);
+      setCurrentParentId(null);
+      setParentName(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to detach.');
+    } finally {
+      setLinking(false);
+    }
+  }
 
   function currentBodyText() {
     if (!editor) return '';
@@ -220,6 +271,52 @@ export function SpintaxShufflePreview({
               </Link>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Variant linking — set any template as a variant of another */}
+      {templateId && (
+        <div className="border-t border-border-default p-3">
+          <div className="mb-2 px-1 text-[11px] uppercase tracking-wide text-text-meta">Variant of</div>
+          {currentParentId ? (
+            <div className="flex items-center justify-between rounded-md border border-border-subtle bg-panel px-3 py-2">
+              <div className="min-w-0 truncate text-xs font-medium text-text-secondary">
+                {parentName || 'Unknown template'}
+              </div>
+              <button
+                onClick={handleDetachVariant}
+                disabled={linking}
+                className="shrink-0 rounded border border-border-subtle bg-surface px-2 py-0.5 text-[10.5px] font-medium text-text-tertiary hover:bg-raised disabled:opacity-40"
+              >
+                {linking ? '…' : 'Detach'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <select
+                value={linkingParentId}
+                onChange={(e) => setLinkingParentId(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-secondary outline-none"
+              >
+                <option value="">Select a parent template…</option>
+                {allTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleSetVariant}
+                disabled={!linkingParentId || linking}
+                className="shrink-0 rounded-md border border-border-subtle bg-surface px-2.5 py-1.5 text-[11px] font-medium text-text-tertiary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {linking ? '…' : 'Link'}
+              </button>
+            </div>
+          )}
+          <p className="mt-1.5 px-1 text-[10.5px] text-text-faint">
+            Variant templates are hidden from the main list. Deleting the parent removes all variants.
+          </p>
         </div>
       )}
     </div>
