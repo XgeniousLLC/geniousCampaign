@@ -70,6 +70,10 @@ export function deleteTemplate(id: string) {
   return apiDelete<{ id: string }>(`/templates/${id}`);
 }
 
+export function deleteTemplates(ids: string[]) {
+  return apiPost<{ deletedCount: number }>('/templates/bulk-delete', { ids });
+}
+
 export function setTemplateVariant(id: string, parentTemplateId: string | null) {
   return apiPatch<Template>(`/templates/${id}/variant`, { parentTemplateId });
 }

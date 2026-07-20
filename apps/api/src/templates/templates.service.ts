@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
 import { templates, templateVersions, sends, emailEvents, sequenceSteps } from '../db/schema';
@@ -202,6 +202,12 @@ export class TemplatesService {
     await this.findOne(id, db);
     await db.delete(templates).where(eq(templates.id, id));
     return { id };
+  }
+
+  async removeBulk(ids: string[], db: DbOrTx = this.drizzle.db) {
+    if (ids.length === 0) return { deletedCount: 0 };
+    await db.delete(templates).where(inArray(templates.id, ids));
+    return { deletedCount: ids.length };
   }
 
   async listVersions(id: string, limit = 20) {

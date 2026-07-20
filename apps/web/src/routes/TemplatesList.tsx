@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listTemplates, deleteTemplate, type Template } from '../lib/templatesApi';
+import { listTemplates, deleteTemplate, deleteTemplates, type Template } from '../lib/templatesApi';
 import { TableSkeleton } from '../components/skeletons';
 import { CloseIcon } from '../components/icons';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -9,6 +9,8 @@ export function TemplatesList() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
@@ -32,6 +34,40 @@ export function TemplatesList() {
     }
   }
 
+  function handleSelectAll() {
+    if (selected.size === templates.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(templates.map((t) => t.id)));
+    }
+  }
+
+  function handleSelectOne(id: string) {
+    const newSelected = new Set(selected);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelected(newSelected);
+  }
+
+  async function handleBulkDelete() {
+    if (selected.size === 0) return;
+    const count = selected.size;
+    if (!confirm(`Delete ${count} template${count === 1 ? '' : 's'}? This also removes all their variants.`)) return;
+    setBulkDeleting(true);
+    try {
+      await deleteTemplates(Array.from(selected));
+      setTemplates((prev) => prev.filter((t) => !selected.has(t.id)));
+      setSelected(new Set());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Bulk delete failed.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
   return (
     <div>
       <div className="mb-[18px] flex items-start justify-between gap-4">
@@ -39,16 +75,34 @@ export function TemplatesList() {
           <h1 className="text-lg font-semibold text-text-heading">Templates</h1>
           <p className="mt-1 text-xs text-text-muted">Reusable email content with spintax and personalization tokens.</p>
         </div>
-        <button
-          onClick={() => navigate('/templates/new')}
-          className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
-          New template
-        </button>
+        <div className="flex gap-2">
+          {selected.size > 0 && canWrite && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="flex h-8 items-center gap-1.5 rounded-md bg-danger px-3 text-xs font-semibold text-white hover:bg-danger-hover disabled:opacity-40"
+            >
+              {bulkDeleting ? (
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6M5 6l1 14a2 2 0 002 2h8a2 2 0 002-2l1-14" />
+                </svg>
+              )}
+              Delete {selected.size}
+            </button>
+          )}
+          <button
+            onClick={() => navigate('/templates/new')}
+            className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
+            New template
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -80,6 +134,16 @@ export function TemplatesList() {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border-default bg-surface text-[11px] uppercase tracking-wide text-text-meta">
+                {canWrite && (
+                  <th className="w-10 px-2 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selected.size === templates.length && templates.length > 0}
+                      onChange={handleSelectAll}
+                      className="rounded border border-border-emphasis"
+                    />
+                  </th>
+                )}
                 <th className="px-3.5 py-2 text-left font-medium">Template</th>
                 <th className="px-3 py-2 text-left font-medium">Folder</th>
                 <th className="px-3 py-2 text-right font-medium">Uses</th>
@@ -92,6 +156,16 @@ export function TemplatesList() {
             <tbody>
               {templates.map((t) => (
                 <tr key={t.id} className="cursor-pointer border-t border-border-subtle hover:bg-raised" onClick={() => navigate(`/templates/${t.id}`)}>
+                  {canWrite && (
+                    <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(t.id)}
+                        onChange={() => handleSelectOne(t.id)}
+                        className="rounded border border-border-emphasis"
+                      />
+                    </td>
+                  )}
                   <td className="px-3.5 py-2.5">
                     <Link to={`/templates/${t.id}`} className="font-medium text-text-secondary hover:text-text-primary" onClick={(e) => e.stopPropagation()}>
                       {t.name}

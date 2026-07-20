@@ -124,6 +124,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-126 | Fix verify() masking real primary-provider error behind unconfigured-fallback error; cache failures with short cooldown so repeat bulk-verify doesn't re-hammer the same batch | 4 | S | Done | GC-120 |
 | GC-127 | Template editor: link click shows edit/go tooltip instead of navigating; button color picker | 4 | M | Done | GC-015 |
 | GC-128 | Custom contact fields: Settings > Custom fields (define by input type), dynamic fields on Add contact form | 4 | M | Done | GC-010 |
+| GC-129 | Template list: delete + bulk delete with checkboxes | 4 | S | In Progress | GC-021 |
 
 ---
 
