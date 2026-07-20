@@ -24,7 +24,7 @@ import {
   type Enrollment,
 } from '../lib/enrollmentsApi';
 import { useAuthStore } from '../stores/useAuthStore';
-import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon, SpinnerIcon } from '../components/icons';
+import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
 
 const TABS = ['Steps', 'Enrolled contacts'] as const;
 type Tab = (typeof TABS)[number];
@@ -251,7 +251,6 @@ export function SequenceBuilder() {
     setSaving(true);
     setStepError(null);
     try {
-      const originalIds = new Set(originalStepsRef.current.map((s) => s.id));
       const currentIds = new Set(steps.map((s) => s.id));
 
       // 1. Delete removed steps
