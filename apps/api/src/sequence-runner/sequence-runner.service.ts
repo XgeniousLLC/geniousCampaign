@@ -170,6 +170,9 @@ export class SequenceRunnerService {
         text: resolvedBodyText,
         unsubscribeUrl,
         messageTags: { sequenceId: enrollment.sequenceId, sequenceStepId: step.id },
+        senderAccountId: step.senderAccountId,
+        fromName: step.fromName,
+        replyTo: step.replyTo,
       });
       await this.drizzle.db
         .update(sends)

@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsUUID } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export const STEP_TYPES = ['send_email', 'wait', 'condition', 'exit'] as const;
 export const DELAY_UNITS = ['minutes', 'hours', 'days'] as const;
@@ -18,4 +18,16 @@ export class CreateStepDto {
   @IsOptional()
   @IsIn(DELAY_UNITS)
   delayUnit?: (typeof DELAY_UNITS)[number];
+
+  @IsOptional()
+  @IsUUID()
+  senderAccountId?: string;
+
+  @IsOptional()
+  @IsString()
+  fromName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  replyTo?: string;
 }
