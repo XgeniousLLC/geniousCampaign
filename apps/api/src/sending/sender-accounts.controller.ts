@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -8,14 +8,22 @@ import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decora
 import { AuditLogService } from '../auth/audit-log.service';
 import { SenderAccountService } from './sender-account.service';
 import { GmailOAuthService } from './gmail-oauth.service';
+import { SendDispatcherService } from './send-dispatcher.service';
 import { CreateSesAccountDto } from './dto/create-ses-account.dto';
 import { UpdateSenderAccountDto } from './dto/update-sender-account.dto';
+import { IsEmail, IsString } from 'class-validator';
+
+export class SendTestEmailDto {
+  @IsEmail()
+  to!: string;
+}
 
 @Controller('sender-accounts')
 export class SenderAccountsController {
   constructor(
     private readonly senderAccounts: SenderAccountService,
     private readonly gmailOAuth: GmailOAuthService,
+    private readonly sendDispatcher: SendDispatcherService,
     private readonly config: ConfigService,
     private readonly auditLog: AuditLogService,
   ) {}
@@ -54,6 +62,28 @@ export class SenderAccountsController {
     const result = await this.senderAccounts.remove(id);
     await this.auditLog.record(user, 'sender_account.delete', 'sender_account', id);
     return result;
+  }
+
+  // GC-131 — send a test email from the specified account to verify SMTP/OAuth works
+  @Post(':id/send-test')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'editor')
+  async sendTest(@Param('id') id: string, @Body() dto: SendTestEmailDto, @CurrentUser() user: AuthenticatedUser) {
+    const account = await this.senderAccounts.findOne(id);
+    try {
+      await this.sendDispatcher.send({
+        to: dto.to,
+        subject: `[Sender test from ${account.displayName || account.email}]`,
+        html: `<p>This is a test email from the sender account <strong>${account.displayName || account.email}</strong> (${account.provider.toUpperCase()}).</p>`,
+        text: `This is a test email from the sender account ${account.displayName || account.email} (${account.provider.toUpperCase()}).`,
+        senderAccountId: id,
+      });
+      await this.auditLog.record(user, 'sender_account.send_test', 'sender_account', id, { to: dto.to });
+      return { success: true, message: `Test email sent to ${dto.to}` };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, message };
+    }
   }
 
   @Get('gmail/connect')
