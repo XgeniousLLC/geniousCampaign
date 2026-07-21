@@ -125,9 +125,9 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-127 | Template editor: link click shows edit/go tooltip instead of navigating; button color picker | 4 | M | Done | GC-015 |
 | GC-128 | Custom contact fields: Settings > Custom fields (define by input type), dynamic fields on Add contact form | 4 | M | Done | GC-010 |
 | GC-129 | Template list: delete + bulk delete with checkboxes | 4 | S | Done | GC-021 |
-| GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Not Started | GC-030, GC-077 |
-| GC-131 | Sender Accounts: test email button per account | 4 | S | Not Started | GC-047 |
-| GC-132 | Email log: resend button on failed sends | 4 | M | Not Started | GC-060 |
+| GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Done | GC-030, GC-077 |
+| GC-131 | Sender Accounts: test email button per account | 4 | S | Done | GC-047 |
+| GC-132 | Email log: resend button on failed sends | 4 | M | Done | GC-060 |
 
 ---
 
@@ -1366,3 +1366,34 @@ Gap found 2026-07-21: the email log detail drawer (GC-060) shows the status, res
 - The button is hidden/disabled for sends that aren't `status='failed'`, and hidden for suppressed sends (suppressed emails shouldn't be resent — they're on the suppression list for a reason).
 
 ---
+
+### GC-130 — Sequences: sender-account picker + From name + reply-to override (2026-07-21)
+Requested after GC-125 campaign-level sender control: apply the same per-send-source overrides to sequence steps. Allow picking which sender account a sequence step sends from, plus custom From name and reply-to.
+
+**Schema** (migration `0036`): `sequence_steps.senderAccountId`, `fromName`, `replyTo` (nullable, same shape as campaigns). All three specific to `stepType: 'send_email'` conceptually, but columns exist on every step.
+
+**Backend**: `SequenceRunnerService.executeSendEmail()` threads the three fields through to `SendDispatcherService.send()` as `senderAccountId`, `fromName`, `replyTo` — exact same path GC-125 established for campaigns, reusing existing validation/quota/hard-fail logic.
+
+**Frontend** (`SequenceBuilder.tsx`): step editor grew a new "Sender" collapsible section below template picker — sender account dropdown (auto-pick or explicit), From name input (falls back to account displayName), reply-to email input. Fetches live sender account list on component load; all three fields optional; properly threaded through create/update save flow.
+
+Verified live: created a 3-step sequence, explicitly picked the "AWS SES" account on step 1 with From name "Sequence Test" and reply-to `test@example.com`, confirmed step detail shows the overrides, saved, reloaded, re-opened and confirmed all three persisted correctly. Backend: all existing sequence tests green, `tsc --noEmit` clean.
+
+### GC-131 — Sender Accounts: test email button per account (2026-07-21)
+Requested: verify connected SMTP/OAuth credentials actually work without waiting for a real send. Add a "Send test" button per account.
+
+**Backend**: `POST /sender-accounts/:id/send-test` (owner/editor only) — takes a `to` email, calls `SendDispatcherService.send()` directly with that account as override, subject prefixed `[Sender test from ...]`, returns `{ success: boolean; message: string }`. Respects circuit breaker and quota (a test send *is* a send). Audit-logged as `sender_account.send_test`.
+
+**Frontend** (`SenderAccountsSettings.tsx`): each account card got a "Send test" button (below Activate/Deactivate, alongside Edit/Delete). Modal pops up with a single email input, "Send" button, and inline success/failure feedback. Auto-closes after successful send.
+
+Verified live: clicked "Send test" on an AWS SES account, entered an email address, got back `{ success: true, message: "Test email sent to..." }`, modal closed after 2s. Confirmed the endpoint respects the circuit breaker (tried while breaker was already tripped from prior testing, got back a failure message as expected). `tsc --noEmit` clean.
+
+### GC-132 — Email log: resend button on failed sends (2026-07-21)
+Requested: retry transient failures without re-running entire campaign/sequence. Add "Resend" button to the email log detail drawer for `status='failed'` sends.
+
+**Backend**: `POST /email-log/:id/resend` (owner/editor only) — fetches the send row + contact email, validates `status='failed'`, calls `SendDispatcherService.send()` with the original resolved subject/body + recipient, returns result. Respects circuit breaker and quota. Audit-logged as `email.resend`.
+
+**Schema**: `EmailLogService.getDetail()` now joins `contact` to get the recipient email (previously the detail drawer had no way to access it).
+
+**Frontend** (`EmailLog.tsx`): detail drawer header now shows a "Resend" button when `status='failed'` (hidden for other statuses). Button triggers the resend, shows inline success/failure feedback, auto-reloads the detail row on success to reflect any status change.
+
+Verified live: opened an email log detail for a failed send, clicked "Resend", got back success message, detail reloaded. Backend: all existing email-log tests green, `tsc --noEmit` clean.
