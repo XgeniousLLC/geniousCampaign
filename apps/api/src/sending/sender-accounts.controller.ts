@@ -12,6 +12,9 @@ import { SendDispatcherService } from './send-dispatcher.service';
 import { CreateSesAccountDto } from './dto/create-ses-account.dto';
 import { UpdateSenderAccountDto } from './dto/update-sender-account.dto';
 import { IsEmail, IsString } from 'class-validator';
+import { SettingsService } from '../settings/settings.service';
+import { TrackingService } from '../tracking/tracking.service';
+import { signUnsubscribeToken } from './unsubscribe-token.util';
 
 export class SendTestEmailDto {
   @IsEmail()
@@ -26,6 +29,8 @@ export class SenderAccountsController {
     private readonly sendDispatcher: SendDispatcherService,
     private readonly config: ConfigService,
     private readonly auditLog: AuditLogService,
+    private readonly settings: SettingsService,
+    private readonly tracking: TrackingService,
   ) {}
 
   @Get()
@@ -70,6 +75,10 @@ export class SenderAccountsController {
   @Roles('owner', 'editor')
   async sendTest(@Param('id') id: string, @Body() dto: SendTestEmailDto, @CurrentUser() user: AuthenticatedUser) {
     const account = await this.senderAccounts.findOne(id);
+    const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
+    const unsubscribeUrl = trackingSecret
+      ? `${this.tracking.baseUrl}/unsubscribe/${signUnsubscribeToken(trackingSecret, dto.to)}`
+      : '#';
     try {
       await this.sendDispatcher.send({
         to: dto.to,
@@ -77,6 +86,7 @@ export class SenderAccountsController {
         html: `<p>This is a test email from the sender account <strong>${account.displayName || account.email}</strong> (${account.provider.toUpperCase()}).</p>`,
         text: `This is a test email from the sender account ${account.displayName || account.email} (${account.provider.toUpperCase()}).`,
         senderAccountId: id,
+        unsubscribeUrl,
       });
       await this.auditLog.record(user, 'sender_account.send_test', 'sender_account', id, { to: dto.to });
       return { success: true, message: `Test email sent to ${dto.to}` };

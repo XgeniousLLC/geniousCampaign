@@ -6,6 +6,9 @@ import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decora
 import { AuditLogService } from '../auth/audit-log.service';
 import { EmailLogService, type EmailLogFilter } from './email-log.service';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
+import { SettingsService } from '../settings/settings.service';
+import { TrackingService } from '../tracking/tracking.service';
+import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
 
 @Controller('email-log')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,6 +17,8 @@ export class EmailLogController {
     private readonly emailLog: EmailLogService,
     private readonly sendDispatcher: SendDispatcherService,
     private readonly auditLog: AuditLogService,
+    private readonly settings: SettingsService,
+    private readonly tracking: TrackingService,
   ) {}
 
   @Get()
@@ -49,12 +54,17 @@ export class EmailLogController {
     if (!detail.recipientEmail) {
       throw new BadRequestException('Cannot resend: recipient email not found');
     }
+    const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
+    const unsubscribeUrl = trackingSecret
+      ? `${this.tracking.baseUrl}/unsubscribe/${signUnsubscribeToken(trackingSecret, detail.recipientEmail)}`
+      : '#';
     try {
       await this.sendDispatcher.send({
         to: detail.recipientEmail,
         subject: detail.resolvedSubject,
         html: detail.resolvedBodyHtml,
         text: detail.resolvedBodyText,
+        unsubscribeUrl,
       });
       await this.auditLog.record(user, 'email.resend', 'send', id, { to: detail.recipientEmail });
       return { success: true, message: `Email resent to ${detail.recipientEmail}` };

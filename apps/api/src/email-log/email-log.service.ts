@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { sends, emailEvents, type sendStatusEnum } from '../db/schema';
+import { sends, emailEvents, contacts, type sendStatusEnum } from '../db/schema';
 
 export interface EmailLogFilter {
   status?: (typeof sendStatusEnum.enumValues)[number];
@@ -39,13 +39,12 @@ export class EmailLogService {
    * template) plus its real event history, plus the recipient email for
    * resending (GC-132). */
   async getDetail(sendId: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({
-      where: eq(sends.id, sendId),
-      with: {
-        contact: true,
-      },
-    });
-    if (!send) throw new NotFoundException(`Send ${sendId} not found`);
+    const [row] = await this.drizzle.db
+      .select({ send: sends, contactEmail: contacts.email })
+      .from(sends)
+      .leftJoin(contacts, eq(sends.contactId, contacts.id))
+      .where(eq(sends.id, sendId));
+    if (!row) throw new NotFoundException(`Send ${sendId} not found`);
 
     const events = await this.drizzle.db
       .select()
@@ -54,8 +53,8 @@ export class EmailLogService {
       .orderBy(desc(emailEvents.createdAt));
 
     return {
-      ...send,
-      recipientEmail: send.contact?.email || '',
+      ...row.send,
+      recipientEmail: row.contactEmail || '',
       events,
     };
   }
