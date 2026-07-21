@@ -125,6 +125,8 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-127 | Template editor: link click shows edit/go tooltip instead of navigating; button color picker | 4 | M | Done | GC-015 |
 | GC-128 | Custom contact fields: Settings > Custom fields (define by input type), dynamic fields on Add contact form | 4 | M | Done | GC-010 |
 | GC-129 | Template list: delete + bulk delete with checkboxes | 4 | S | Done | GC-021 |
+| GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Not Started | GC-030, GC-077 |
+| GC-131 | Sender Accounts: test email button per account | 4 | S | Not Started | GC-047 |
 
 ---
 
@@ -1325,3 +1327,31 @@ Requested: adding a contact only supported the fixed set of fields (phone/websit
 **Frontend**: new "Custom fields" tab in `Settings.tsx` (visible to all roles like Members, but the create/delete controls only render for `isOwner`) — lists existing fields with key/type/options, a create form (label + input-type select, options input appears only for `select`). `ContactsList.tsx`'s `NewContactButton` (the Add contact modal) fetches `listCustomFieldDefs()` when opened and renders one input per definition below the existing Phone/Website fields via a new `CustomFieldInput` component — text/number/date/url render as a typed `<input>`, `boolean` as a checkbox, `select` as a `<select>` populated from the def's `options`. Submitted values merge into the same `customFields` object already sent to `createContact()`.
 
 Verified live against the real dev DB (Chrome, not mocked): created three fields in Settings > Custom fields — "Company size" (Text), "VIP customer" (Yes/no), "Plan tier" (Dropdown: Free, Pro, Enterprise) — confirmed each rendered with its correct key/type in the list. Opened Add contact and confirmed all three appeared as the correct input type below Phone/Website. Created a contact with `company_size: "50-100"`, `vip_customer: true`, `plan_tier: "Pro"` — confirmed on the contact detail page's Fields panel that all three values round-tripped correctly through `customFields`. Deleted the test contact afterward (`psql`), left the three demo field definitions in place as a working example. `tsc --noEmit` clean on API, `tsc -b` clean on web.
+
+### GC-130 — Sequences: sender-account picker + From name + reply-to override (2026-07-21)
+Gap found 2026-07-21: Sequences' `send_email` steps had no way to pick which sender account to use (SES or Gmail from GC-047/077's Sender Accounts page) — the `SequenceRunnerService` always called `SenderAccountService.pickAccountForSend()` with no override, same auto-pick-by-quota logic as campaigns use when no explicit account is set. No From name/reply-to concept existed on the schema either. Sharifur requested the same three fields (sender account, From name, reply-to) available on sequence steps as GC-125 built for campaigns.
+
+**Schema** (migration `0036`): `sequence_steps.senderAccountId` (nullable uuid FK → `sender_accounts`, `onDelete: 'set null'`; null = keep existing auto-pick), `sequence_steps.fromName` (nullable text, falls back to the picked account's own `displayName`), `sequence_steps.replyTo` (nullable text, validated email). New fields are specific to `stepType: 'send_email'` conceptually, though the columns exist on every step (non-`send_email` steps simply leave them null).
+
+**Backend**: No new service changes — the existing `SenderAccountService.pickAccountForSend(overrideAccountId?)` added in GC-125 already handles this. `SequenceRunnerService.executeStep()` now threads the step's `senderAccountId` (if set) through to `SendDispatcherService.send()`, same hard-fail validation as GC-125 (exhausted/inactive account throws before the send is attempted). Same inbox-prefixing logic: `fromName` (or account's own `displayName` if unset) gets composed into the `From:` header; `replyTo` gets set on `SendEmailParams` and flows through to both SES and Gmail providers.
+
+**Frontend** (`SequenceBuilder.tsx`): when editing a `send_email` step (step detail panel already exists for template selection + delay), a new "Sender" section below the template picker shows the same sender-account dropdown + From name / Reply-to inputs as GC-125's `CampaignCompose.tsx` (auto → account dropdown → From name → Reply-to, same visual pattern). The step's existing `update()` call now includes the three new optional fields. `StepPreview` gains a second meta line (below the template name) showing `from NAME (Account)` and `reply-to EMAIL` when set, matching the style already established in GC-125's campaign detail page.
+
+**Acceptance criteria:**
+- A sequence step's sender account, From name, and reply-to can be set, edited, and saved via the sequence builder UI.
+- A step with an explicitly-picked sender shows those overrides on the detail page.
+- An exhausted or inactive explicitly-picked sender fails the step's execution with a clear error before attempting the send, not a silent fallback to auto-pick.
+
+### GC-131 — Sender Accounts: test email button per account (2026-07-21)
+Gap found 2026-07-21: the Sender Accounts page (GC-047/077) shows live quota and connectivity status, but has no way to actually verify a connected account's SMTP/OAuth is working beyond that read-only view. Users can't confirm the account will send real mail until the first real sequence step or campaign tries it, which is late feedback if there's a credential issue. Requested: a "Send test" button per account that sends a real email from that account to a user-supplied test address, with clear feedback on success or failure.
+
+**Backend**: `POST /sender-accounts/:accountId/send-test` (JWT-authenticated, owner-only, audit-logged as `sender_accounts.send_test`) — takes a `to` email (validated), calls `SendDispatcherService.send()` directly with that account's id as the override (same path `TemplatesService.sendTestEmail` uses in GC-107, reusing existing infrastructure), subject prefixed `[Sender test from <account.displayName>]`. No `sends` row written (same as template test sends — not a real contact, ad-hoc QA action). Still goes through the real circuit breaker and quota check — a test send can't bypass safety mechanisms, and exhausting quota on a test send is accurate (quota is quota, regardless of intent). Returns a simple `{ success: boolean, message: string }` response — success on a `200`/`250` SMTP response, failure surfaces any auth errors (OAuth expired/revoked, invalid SES credentials, etc.) with the original error message where possible.
+
+**Frontend** (`SenderAccountsSettings.tsx`): each account row gains a "Test send" button (disabled while a test is in flight) that opens a quick modal with one input (`to: email`, defaulting to the logged-in user's email from the auth state), a "Send" button, and a result section that shows either a green success line ("Email sent from `account` to `recipient`") or a red error message from the backend. No reveal-once pattern — the modal can be re-used for multiple tests against the same account.
+
+**Acceptance criteria:**
+- A test email can be sent from any connected sender account.
+- The test shows clear success/failure feedback with the account and recipient visible.
+- A test send still respects the circuit breaker and quota, so it can't be used to bypass safety checks.
+
+---
