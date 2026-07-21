@@ -28,6 +28,12 @@ export interface SequenceStep {
   templateId: string | null;
   delayValue: number | null;
   delayUnit: DelayUnit | null;
+  // GC-130 — sender account override for send_email steps
+  senderAccountId?: string | null;
+  // GC-130 — from name override
+  fromName?: string | null;
+  // GC-130 — reply-to override
+  replyTo?: string | null;
 }
 
 export function listSequences() {
@@ -52,7 +58,15 @@ export function listSteps(sequenceId: string) {
 
 export function addStep(
   sequenceId: string,
-  input: { type: StepType; templateId?: string; delayValue?: number; delayUnit?: DelayUnit },
+  input: {
+    type: StepType;
+    templateId?: string;
+    delayValue?: number;
+    delayUnit?: DelayUnit;
+    senderAccountId?: string;
+    fromName?: string;
+    replyTo?: string;
+  },
 ) {
   return apiPost<SequenceStep>(`/sequences/${sequenceId}/steps`, input);
 }
@@ -60,7 +74,15 @@ export function addStep(
 export function updateStep(
   sequenceId: string,
   stepId: string,
-  input: Partial<{ type: StepType; templateId: string; delayValue: number; delayUnit: DelayUnit }>,
+  input: Partial<{
+    type: StepType;
+    templateId: string;
+    delayValue: number;
+    delayUnit: DelayUnit;
+    senderAccountId: string | null;
+    fromName: string | null;
+    replyTo: string | null;
+  }>,
 ) {
   return apiPatch<SequenceStep>(`/sequences/${sequenceId}/steps/${stepId}`, input);
 }

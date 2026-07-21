@@ -1,5 +1,6 @@
 import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { templates } from './templates';
+import { senderAccounts } from './sender-accounts';
 
 export const sequenceStepTypeEnum = pgEnum('sequence_step_type', ['send_email', 'wait', 'condition', 'exit']);
 export const delayUnitEnum = pgEnum('delay_unit', ['minutes', 'hours', 'days']);
@@ -31,6 +32,12 @@ export const sequenceSteps = pgTable('sequence_steps', {
   templateId: uuid('template_id').references(() => templates.id, { onDelete: 'set null' }),
   delayValue: integer('delay_value'),
   delayUnit: delayUnitEnum('delay_unit'),
+  // GC-130 — sender account override for send_email steps; null = auto-pick
+  senderAccountId: uuid('sender_account_id').references(() => senderAccounts.id, { onDelete: 'set null' }),
+  // GC-130 — from name override; falls back to account's displayName when unset
+  fromName: text('from_name'),
+  // GC-130 — reply-to override; nullable email
+  replyTo: text('reply_to'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listEmailLog, getEmailLogDetail, type EmailLogRow, type EmailLogDetail } from '../lib/emailLogApi';
+import { listEmailLog, getEmailLogDetail, resendEmail, type EmailLogRow, type EmailLogDetail } from '../lib/emailLogApi';
 import { listContacts, type Contact } from '../lib/contactsApi';
 import type { SendStatus } from '../lib/campaignsApi';
 import { PaginationBar } from '../components/PaginationBar';
@@ -33,6 +33,8 @@ export function EmailLog() {
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<EmailLogDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resendResult, setResendResult] = useState<{ success: boolean; message: string } | null>(null);
 
   function load() {
     setLoading(true);
@@ -61,6 +63,26 @@ export function EmailLog() {
 
   async function openDetail(id: string) {
     setDetail(await getEmailLogDetail(id));
+    setResendResult(null);
+  }
+
+  async function handleResend(id: string) {
+    setResending(true);
+    setResendResult(null);
+    try {
+      const result = await resendEmail(id);
+      setResendResult(result);
+      if (result.success) {
+        // Reload detail to show updated status
+        const updated = await getEmailLogDetail(id);
+        setDetail(updated);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setResendResult({ success: false, message });
+    } finally {
+      setResending(false);
+    }
   }
 
   return (
@@ -150,14 +172,36 @@ export function EmailLog() {
             className="flex h-full w-[440px] max-w-full flex-col border-l border-border-modal bg-panel2"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-border-default px-4 py-3.5">
-              <div className="flex items-center gap-2.5">
-                <h3 className="text-sm font-semibold text-text-heading">Message detail</h3>
-                <span className={`text-xs font-semibold ${STATUS_STYLES[detail.send.status]}`}>{detail.send.status}</span>
+            <div className="border-b border-border-default px-4 py-3.5">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <h3 className="text-sm font-semibold text-text-heading">Message detail</h3>
+                  <span className={`text-xs font-semibold ${STATUS_STYLES[detail.send.status]}`}>{detail.send.status}</span>
+                </div>
+                <button onClick={() => setDetail(null)} className="text-text-muted hover:text-text-primary">
+                  ✕
+                </button>
               </div>
-              <button onClick={() => setDetail(null)} className="text-text-muted hover:text-text-primary">
-                ✕
-              </button>
+              {detail.send.status === 'failed' && (
+                <button
+                  onClick={() => handleResend(detail.send.id)}
+                  disabled={resending}
+                  className="h-7 w-full rounded border border-border-default px-2 text-xs font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
+                >
+                  {resending ? 'Resending...' : 'Resend'}
+                </button>
+              )}
+              {resendResult && (
+                <div
+                  className={`mt-2 rounded-md px-2 py-2 text-[11px] ${
+                    resendResult.success
+                      ? 'border border-success/25 bg-success/10 text-success'
+                      : 'border border-danger/25 bg-danger/10 text-danger'
+                  }`}
+                >
+                  {resendResult.message}
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-meta">Fields</div>

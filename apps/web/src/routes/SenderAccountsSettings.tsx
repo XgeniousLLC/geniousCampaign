@@ -5,6 +5,7 @@ import {
   getGmailConnectUrl,
   updateSenderAccount,
   deleteSenderAccount,
+  sendTestEmail,
   type SenderAccount,
 } from '../lib/senderAccountsApi';
 import { SesAccountModal } from '../components/SesAccountModal';
@@ -27,6 +28,10 @@ export function SenderAccountsSettings() {
   const [modalAccount, setModalAccount] = useState<SenderAccount | 'new' | null>(null);
   const [gmailConfigOpen, setGmailConfigOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [testEmailAccount, setTestEmailAccount] = useState<SenderAccount | null>(null);
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string } | null>(null);
   const [params] = useSearchParams();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
@@ -79,6 +84,27 @@ export function SenderAccountsSettings() {
       load();
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleSendTest(a: SenderAccount) {
+    if (!testEmailAddress || !testEmailAddress.includes('@')) {
+      setTestEmailResult({ success: false, message: 'Please enter a valid email address' });
+      return;
+    }
+    setTestEmailLoading(true);
+    setTestEmailResult(null);
+    try {
+      const result = await sendTestEmail(a.id, testEmailAddress);
+      setTestEmailResult(result);
+      if (result.success) {
+        setTimeout(() => setTestEmailAccount(null), 2000);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setTestEmailResult({ success: false, message });
+    } finally {
+      setTestEmailLoading(false);
     }
   }
 
@@ -185,6 +211,16 @@ export function SenderAccountsSettings() {
                     </button>
                   )}
                   <button
+                    onClick={() => {
+                      setTestEmailAccount(a);
+                      setTestEmailAddress('');
+                      setTestEmailResult(null);
+                    }}
+                    className="h-7 rounded border border-border-default px-2 text-[11px] text-text-tertiary hover:bg-raised"
+                  >
+                    Send test
+                  </button>
+                  <button
                     onClick={() => toggleActive(a)}
                     disabled={busy === a.id}
                     className="h-7 rounded border border-border-default px-2 text-[11px] text-text-tertiary hover:bg-raised disabled:opacity-50"
@@ -223,6 +259,55 @@ export function SenderAccountsSettings() {
 
       {gmailConfigOpen && (
         <GmailOAuthConfigModal onClose={() => setGmailConfigOpen(false)} onSaved={() => setError(null)} />
+      )}
+
+      {testEmailAccount && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-lg border border-border-default bg-panel p-4 shadow-lg">
+            <h2 className="mb-3 text-sm font-semibold text-text-primary">Send test email</h2>
+            <p className="mb-3 text-xs text-text-muted">
+              Send a test email from <span className="font-medium text-text-secondary">{testEmailAccount.displayName || testEmailAccount.email}</span>
+            </p>
+            <input
+              type="email"
+              placeholder="recipient@example.com"
+              value={testEmailAddress}
+              onChange={(e) => {
+                setTestEmailAddress(e.target.value);
+                setTestEmailResult(null);
+              }}
+              disabled={testEmailLoading}
+              className="mb-3 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
+            />
+            {testEmailResult && (
+              <div
+                className={`mb-3 rounded-md px-2 py-2 text-[11px] ${
+                  testEmailResult.success
+                    ? 'border border-success/25 bg-success/10 text-success'
+                    : 'border border-danger/25 bg-danger/10 text-danger'
+                }`}
+              >
+                {testEmailResult.message}
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setTestEmailAccount(null)}
+                disabled={testEmailLoading}
+                className="h-7 rounded border border-border-default px-3 text-[11px] text-text-tertiary hover:bg-raised disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSendTest(testEmailAccount)}
+                disabled={testEmailLoading || !testEmailAddress}
+                className="h-7 rounded border border-border-default px-3 text-[11px] text-text-tertiary hover:bg-raised disabled:opacity-50"
+              >
+                {testEmailLoading ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

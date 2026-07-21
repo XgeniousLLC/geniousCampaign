@@ -43,3 +43,7 @@ export function updateSenderAccount(id: string, input: Partial<SesAccountInput &
 export function deleteSenderAccount(id: string) {
   return apiDelete<{ id: string }>(`/sender-accounts/${id}`);
 }
+
+export function sendTestEmail(id: string, to: string) {
+  return apiPost<{ success: boolean; message: string }>(`/sender-accounts/${id}/send-test`, { to });
+}
