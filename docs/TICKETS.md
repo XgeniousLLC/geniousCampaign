@@ -127,6 +127,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-129 | Template list: delete + bulk delete with checkboxes | 4 | S | Done | GC-021 |
 | GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Not Started | GC-030, GC-077 |
 | GC-131 | Sender Accounts: test email button per account | 4 | S | Not Started | GC-047 |
+| GC-132 | Email log: resend button on failed sends | 4 | M | Not Started | GC-060 |
 
 ---
 
@@ -1353,5 +1354,15 @@ Gap found 2026-07-21: the Sender Accounts page (GC-047/077) shows live quota and
 - A test email can be sent from any connected sender account.
 - The test shows clear success/failure feedback with the account and recipient visible.
 - A test send still respects the circuit breaker and quota, so it can't be used to bypass safety checks.
+
+### GC-132 — Email log: resend button on failed sends (2026-07-21)
+Gap found 2026-07-21: the email log detail drawer (GC-060) shows the status, resolved subject/body, and event history for every send, but lacks a way to retry sends that failed — if a send failed due to a transient error (provider temporary outage, rate limit on first attempt, etc.), there's no way to resend without re-running the entire campaign or sequence, which could resend successful sends too. Requested: a "Resend" button on failed sends that re-sends to the same recipient with the same resolved subject/body, clearing the previous error.
+
+**Acceptance criteria:**
+- A send with `status='failed'` shows a "Resend" button in the email log detail drawer.
+- Clicking "Resend" creates a new `sends` row with the same `contactId`, `templateId`, `campaignId`/`sequenceId` chain, and resolved subject/body as the original, then enqueues it to be sent immediately (same path as a campaign/sequence send).
+- A successful resend updates the original `sends` row's `status` to a new state (e.g. `resent`) or overwrites it with the new attempt, at Sharifur's discretion (acceptable either way: track retries separately, or replace the failed row).
+- Resend respects the circuit breaker and quota, so it can't bypass safety checks — a resend that would exceed the quota fails with a clear "quota exhausted" error.
+- The button is hidden/disabled for sends that aren't `status='failed'`, and hidden for suppressed sends (suppressed emails shouldn't be resent — they're on the suppression list for a reason).
 
 ---
