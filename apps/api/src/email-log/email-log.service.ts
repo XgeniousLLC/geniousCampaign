@@ -36,9 +36,15 @@ export class EmailLogService {
 
   /** The detail drawer's data: the send row itself (real resolved
    * subject/body, per GC-060's acceptance criterion — never the live
-   * template) plus its real event history. */
+   * template) plus its real event history, plus the recipient email for
+   * resending (GC-132). */
   async getDetail(sendId: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
+    const send = await this.drizzle.db.query.sends.findFirst({
+      where: eq(sends.id, sendId),
+      with: {
+        contact: true,
+      },
+    });
     if (!send) throw new NotFoundException(`Send ${sendId} not found`);
 
     const events = await this.drizzle.db
@@ -47,6 +53,10 @@ export class EmailLogService {
       .where(eq(emailEvents.sendId, sendId))
       .orderBy(desc(emailEvents.createdAt));
 
-    return { send, events };
+    return {
+      ...send,
+      recipientEmail: send.contact?.email || '',
+      events,
+    };
   }
 }

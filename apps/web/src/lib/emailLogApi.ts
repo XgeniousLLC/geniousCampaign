@@ -1,4 +1,4 @@
-import { apiGet, type Page } from './api';
+import { apiGet, apiPost, type Page } from './api';
 import type { SendStatus } from './campaignsApi';
 
 export interface EmailLogRow {
@@ -39,4 +39,8 @@ export function listEmailLog(filter: { status?: SendStatus; campaignId?: string;
 
 export function getEmailLogDetail(id: string) {
   return apiGet<EmailLogDetail>(`/email-log/${id}`);
+}
+
+export function resendEmail(id: string) {
+  return apiPost<{ success: boolean; message: string }>(`/email-log/${id}/resend`, {});
 }
