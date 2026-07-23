@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiGet, type Page } from './api';
+import { API_BASE_URL, apiGet, apiDelete, type Page } from './api';
 
 export interface ErrorLogEntry {
   id: string;
@@ -12,6 +12,10 @@ export interface ErrorLogEntry {
 
 export function listDebugLog(page = 1, limit = 50) {
   return apiGet<Page<ErrorLogEntry>>(`/debug-log?page=${page}&limit=${limit}`);
+}
+
+export function clearDebugLog() {
+  return apiDelete<{ cleared: true }>('/debug-log');
 }
 
 // Deliberately bypasses apiPost — reporting an error must never throw (that

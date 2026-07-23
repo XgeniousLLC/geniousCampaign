@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { listUsers, updateUserRole, type User } from '../lib/usersApi';
 import { listAuditLog, type AuditLogEntry } from '../lib/auditLogApi';
 import { listSuppressionList, type SuppressionEntry } from '../lib/suppressionApi';
-import { listDebugLog, type ErrorLogEntry } from '../lib/debugLogApi';
+import { listDebugLog, clearDebugLog, type ErrorLogEntry } from '../lib/debugLogApi';
 import { getAiUsageSummary, type AiUsageSummary } from '../lib/aiAssistApi';
 import {
   getIntegrationSettings,
@@ -81,6 +81,8 @@ export function Settings() {
   const [debugTotal, setDebugTotal] = useState(0);
   const [aiUsage, setAiUsage] = useState<AiUsageSummary | null>(null);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [clearingDebugLog, setClearingDebugLog] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const isOwner = useAuthStore((s) => s.user?.role === 'owner');
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -123,6 +125,25 @@ export function Settings() {
   async function handleRoleChange(userId: string, role: User['role']) {
     await updateUserRole(userId, role);
     listUsers().then(setUsers);
+  }
+
+  function handleCopyError(e: ErrorLogEntry) {
+    navigator.clipboard.writeText(e.stack ? `${e.message}\n\n${e.stack}` : e.message);
+    setCopiedLogId(e.id);
+    setTimeout(() => setCopiedLogId((id) => (id === e.id ? null : id)), 1500);
+  }
+
+  async function handleClearDebugLog() {
+    if (!confirm('Clear all debug log entries? This cannot be undone.')) return;
+    setClearingDebugLog(true);
+    try {
+      await clearDebugLog();
+      setDebugLog([]);
+      setDebugTotal(0);
+      setDebugPage(1);
+    } finally {
+      setClearingDebugLog(false);
+    }
   }
 
   return (
@@ -208,7 +229,7 @@ export function Settings() {
             <div key={a.id} className="flex items-center gap-3 border-t border-border-subtle px-4 py-3 first:border-t-0">
               <span className="text-text-meta">◷</span>
               <div className="flex-1 text-xs text-text-tertiary">
-                <b className="font-semibold text-text-secondary">{a.actorEmail}</b> · {a.action} · {a.entityType}
+                <b className="font-semibold text-text-secondary">{a.actorName}</b> · {a.action} · {a.entityType}
               </div>
               <span className="whitespace-nowrap text-[11.5px] text-text-faint">{new Date(a.createdAt).toLocaleString()}</span>
             </div>
@@ -262,28 +283,46 @@ export function Settings() {
 
       {tab === 'Debug log' && isOwner && (
         <div className="max-w-3xl overflow-hidden rounded-md border border-border-default bg-panel">
-          <div className="border-b border-border-default px-4 py-3 text-sm font-semibold text-text-primary">
-            Debug log · {debugTotal} errors
+          <div className="flex items-center justify-between border-b border-border-default px-4 py-3">
+            <span className="text-sm font-semibold text-text-primary">Debug log · {debugTotal} errors</span>
+            {debugLog.length > 0 && (
+              <button
+                onClick={handleClearDebugLog}
+                disabled={clearingDebugLog}
+                className="h-7 rounded-md border border-border-default bg-panel px-2.5 text-xs font-medium text-text-secondary hover:border-danger/25 hover:text-danger disabled:opacity-50"
+              >
+                {clearingDebugLog ? 'Clearing…' : 'Clear logs'}
+              </button>
+            )}
           </div>
           {debugLog.map((e) => (
             <div key={e.id} className="border-t border-border-subtle first:border-t-0">
-              <button
-                onClick={() => setExpandedLogId((id) => (id === e.id ? null : e.id))}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-raised"
-              >
-                <span
-                  className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${
-                    e.source === 'backend' ? 'border-danger/25 bg-danger/10 text-danger' : 'border-warning/25 bg-warning/10 text-warning'
-                  }`}
+              <div className="flex w-full items-center gap-3 px-4 py-2.5 hover:bg-raised">
+                <button
+                  onClick={() => setExpandedLogId((id) => (id === e.id ? null : e.id))}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
-                  {e.source}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs text-text-secondary">{e.message}</div>
-                  {e.path && <div className="truncate font-mono text-[10.5px] text-text-faint">{e.path}</div>}
-                </div>
-                <span className="shrink-0 whitespace-nowrap text-[11px] text-text-faint">{new Date(e.createdAt).toLocaleString()}</span>
-              </button>
+                  <span
+                    className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold ${
+                      e.source === 'backend' ? 'border-danger/25 bg-danger/10 text-danger' : 'border-warning/25 bg-warning/10 text-warning'
+                    }`}
+                  >
+                    {e.source}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs text-text-secondary">{e.message}</div>
+                    {e.path && <div className="truncate font-mono text-[10.5px] text-text-faint">{e.path}</div>}
+                  </div>
+                  <span className="shrink-0 whitespace-nowrap text-[11px] text-text-faint">{new Date(e.createdAt).toLocaleString()}</span>
+                </button>
+                <button
+                  onClick={() => handleCopyError(e)}
+                  title="Copy error"
+                  className="shrink-0 text-[11px] text-text-faint hover:text-text-secondary"
+                >
+                  {copiedLogId === e.id ? 'Copied' : 'Copy'}
+                </button>
+              </div>
               {expandedLogId === e.id && e.stack && (
                 <pre className="overflow-x-auto whitespace-pre-wrap break-all border-t border-border-subtle bg-surface px-4 py-3 text-[10.5px] leading-relaxed text-text-faint">
                   {e.stack}

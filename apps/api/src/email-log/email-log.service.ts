@@ -53,7 +53,7 @@ export class EmailLogService {
       .orderBy(desc(emailEvents.createdAt));
 
     return {
-      ...row.send,
+      send: row.send,
       recipientEmail: row.contactEmail || '',
       events,
     };

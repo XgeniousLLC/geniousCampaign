@@ -3,6 +3,7 @@ import { apiGet, type Page } from './api';
 export interface AuditLogEntry {
   id: string;
   actorEmail: string;
+  actorName: string;
   action: string;
   entityType: string;
   entityId: string;

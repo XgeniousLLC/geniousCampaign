@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -23,5 +23,13 @@ export class DebugLogController {
   @Roles('owner')
   listAll(@Query('page') page?: string, @Query('limit') limit?: string) {
     return this.debugLog.listAll(page ? parseInt(page, 10) : undefined, limit ? parseInt(limit, 10) : undefined);
+  }
+
+  @Delete()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner')
+  async clearAll() {
+    await this.debugLog.clearAll();
+    return { cleared: true };
   }
 }
