@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { desc, eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { auditLog } from '../db/schema';
+import { auditLog, users } from '../db/schema';
 import type { AuthenticatedUser } from './current-user.decorator';
 
 @Injectable()
@@ -39,10 +39,19 @@ export class AuditLogService {
 
   async listAll(page = 1, limit = 50) {
     const offset = (page - 1) * limit;
-    const [data, [{ count }]] = await Promise.all([
-      this.drizzle.db.query.auditLog.findMany({ orderBy: desc(auditLog.createdAt), limit, offset }),
+    const [rows, [{ count }]] = await Promise.all([
+      this.drizzle.db
+        .select({ log: auditLog, actorName: users.name })
+        .from(auditLog)
+        .leftJoin(users, eq(auditLog.actorId, users.id))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit)
+        .offset(offset),
       this.drizzle.db.select({ count: sql<number>`count(*)::int` }).from(auditLog),
     ]);
+    // actorName falls back to the stored email — actor may have been
+    // deleted (actorId set null) or never had a display name set.
+    const data = rows.map((r) => ({ ...r.log, actorName: r.actorName || r.log.actorEmail }));
     return { data, total: count, page, limit };
   }
 }

@@ -33,4 +33,8 @@ export class DebugLogService {
     ]);
     return { data, total: count, page, limit };
   }
+
+  async clearAll() {
+    await this.drizzle.db.delete(errorLogs);
+  }
 }

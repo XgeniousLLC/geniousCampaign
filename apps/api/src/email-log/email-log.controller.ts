@@ -48,8 +48,8 @@ export class EmailLogController {
   @Roles('owner', 'editor')
   async resend(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     const detail = await this.emailLog.getDetail(id);
-    if (detail.status !== 'failed') {
-      throw new BadRequestException(`Can only resend failed sends; this send has status "${detail.status}"`);
+    if (detail.send.status !== 'failed') {
+      throw new BadRequestException(`Can only resend failed sends; this send has status "${detail.send.status}"`);
     }
     if (!detail.recipientEmail) {
       throw new BadRequestException('Cannot resend: recipient email not found');
@@ -61,9 +61,9 @@ export class EmailLogController {
     try {
       await this.sendDispatcher.send({
         to: detail.recipientEmail,
-        subject: detail.resolvedSubject,
-        html: detail.resolvedBodyHtml,
-        text: detail.resolvedBodyText,
+        subject: detail.send.resolvedSubject,
+        html: detail.send.resolvedBodyHtml,
+        text: detail.send.resolvedBodyText,
         unsubscribeUrl,
       });
       await this.auditLog.record(user, 'email.resend', 'send', id, { to: detail.recipientEmail });
