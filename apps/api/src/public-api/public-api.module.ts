@@ -7,6 +7,7 @@ import { ListsModule } from '../lists/lists.module';
 import { TagsModule } from '../tags/tags.module';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { EnrollmentsModule } from '../enrollments/enrollments.module';
+import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { EnrollmentsModule } from '../enrollments/enrollments.module';
     TagsModule,
     ApiKeysModule,
     EnrollmentsModule,
+    CustomFieldsModule,
   ],
   controllers: [PublicApiController],
   providers: [PublicApiThrottlerGuard],
