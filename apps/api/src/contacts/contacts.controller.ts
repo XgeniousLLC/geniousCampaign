@@ -1,17 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ContactsService, type ContactsPageQuery } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { BulkDeleteContactsDto } from './dto/bulk-delete-contacts.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 const CONTACT_STATUS_VALUES = ['active', 'unsubscribed', 'bounced', 'suppressed'] as const;
 const SORT_KEYS = ['name', 'status', 'lastActivityAt'] as const;
 
 @Controller('contacts')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ContactsController {
   constructor(private readonly contactsService: ContactsService) {}
 
   @Post()
+  @Roles('owner', 'editor')
   create(@Body() dto: CreateContactDto) {
     return this.contactsService.create(dto);
   }
@@ -55,6 +60,7 @@ export class ContactsController {
   // separately either way; kept here for readability alongside the other
   // literal-path route.
   @Post('bulk-delete')
+  @Roles('owner', 'editor')
   bulkRemove(@Body() dto: BulkDeleteContactsDto) {
     return this.contactsService.bulkRemove(dto.ids);
   }
@@ -65,11 +71,13 @@ export class ContactsController {
   }
 
   @Patch(':id')
+  @Roles('owner', 'editor')
   update(@Param('id') id: string, @Body() dto: UpdateContactDto) {
     return this.contactsService.update(id, dto);
   }
 
   @Delete(':id')
+  @Roles('owner', 'editor')
   remove(@Param('id') id: string) {
     return this.contactsService.remove(id);
   }

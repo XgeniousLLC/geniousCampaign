@@ -114,7 +114,10 @@ export function avatarColor(id: string): string {
   return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
 }
 
-export function updateContact(id: string, input: Partial<Pick<Contact, 'firstName' | 'lastName' | 'status'>>) {
+export function updateContact(
+  id: string,
+  input: Partial<Pick<Contact, 'firstName' | 'lastName' | 'status'>> & { customFields?: Record<string, unknown> },
+) {
   return apiPatch<Contact>(`/contacts/${id}`, input);
 }
 

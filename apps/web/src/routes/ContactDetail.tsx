@@ -11,26 +11,35 @@ import {
   listTags,
   removeContactList,
   removeContactTag,
+  updateContact,
   type Contact,
   type List,
   type Tag,
 } from '../lib/contactsApi';
+import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ContactEnrollments } from '../components/ContactEnrollments';
+import { CustomFieldInput } from './ContactsList';
 
 export function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const [contact, setContact] = useState<Contact | null>(null);
   const [tags, setTags] = useState<{ tag: Tag; has: boolean }[]>([]);
   const [lists, setLists] = useState<{ list: List; has: boolean }[]>([]);
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([]);
+  const [addingField, setAddingField] = useState(false);
+  const [newFieldDefId, setNewFieldDefId] = useState('');
+  const [newFieldValue, setNewFieldValue] = useState<string | boolean>('');
+  const [savingField, setSavingField] = useState(false);
   const canWriteLists = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
     if (!id) return;
-    const [c, allTags, allLists] = await Promise.all([getContact(id), listTags(), listLists()]);
+    const [c, allTags, allLists, allDefs] = await Promise.all([getContact(id), listTags(), listLists(), listCustomFieldDefs()]);
     setContact(c);
     setTags(await contactTags(id, allTags));
     setLists(await contactLists(id, allLists));
+    setCustomFieldDefs(allDefs);
   }
 
   useEffect(() => {
@@ -55,6 +64,23 @@ export function ContactDetail() {
     if (has) await removeContactList(listId, id);
     else await addContactList(listId, id);
     reload();
+  }
+
+  const availableFieldDefs = customFieldDefs.filter((def) => !(def.key in contact.customFields));
+  const selectedFieldDef = customFieldDefs.find((def) => def.id === newFieldDefId);
+
+  async function submitNewField() {
+    if (!id || !selectedFieldDef) return;
+    setSavingField(true);
+    try {
+      await updateContact(id, { customFields: { [selectedFieldDef.key]: newFieldValue } });
+      setAddingField(false);
+      setNewFieldDefId('');
+      setNewFieldValue('');
+      reload();
+    } finally {
+      setSavingField(false);
+    }
   }
 
   return (
@@ -87,6 +113,58 @@ export function ContactDetail() {
                 <Field key={k} label={k} value={String(v)} />
               ))}
             </div>
+
+            {canWriteLists &&
+              (addingField ? (
+                <div className="mt-3 flex flex-col gap-2 border-t border-border-default pt-3">
+                  <select
+                    value={newFieldDefId}
+                    onChange={(e) => {
+                      setNewFieldDefId(e.target.value);
+                      setNewFieldValue('');
+                    }}
+                    className="h-7 rounded border border-border-default bg-field px-1.5 text-[11px] text-text-primary outline-none focus:border-border-emphasis"
+                  >
+                    <option value="">Select field…</option>
+                    {availableFieldDefs.map((def) => (
+                      <option key={def.id} value={def.id}>
+                        {def.label}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedFieldDef && (
+                    <CustomFieldInput def={selectedFieldDef} value={newFieldValue} onChange={setNewFieldValue} />
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={submitNewField}
+                      disabled={!selectedFieldDef || savingField}
+                      className="h-7 rounded-md bg-accent px-2.5 text-[11px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {savingField ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAddingField(false);
+                        setNewFieldDefId('');
+                        setNewFieldValue('');
+                      }}
+                      className="h-7 rounded-md border border-border-strong bg-field px-2.5 text-[11px] font-medium text-text-secondary hover:bg-raised"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                availableFieldDefs.length > 0 && (
+                  <button
+                    onClick={() => setAddingField(true)}
+                    className="mt-3 self-start text-[11px] font-medium text-accent hover:text-accent-hover"
+                  >
+                    + Add field
+                  </button>
+                )
+              ))}
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-4">

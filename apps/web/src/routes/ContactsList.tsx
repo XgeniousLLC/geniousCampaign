@@ -802,7 +802,7 @@ function FormField({
   );
 }
 
-function CustomFieldInput({
+export function CustomFieldInput({
   def,
   value,
   onChange,
