@@ -215,20 +215,27 @@ export class ContactsService {
   }
 
   async update(id: string, dto: UpdateContactDto) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
 
     if (dto.email) {
-      const existing = await this.drizzle.db.query.contacts.findFirst({
+      const conflict = await this.drizzle.db.query.contacts.findFirst({
         where: eq(contacts.email, dto.email),
       });
-      if (existing && existing.id !== id) {
+      if (conflict && conflict.id !== id) {
         throw new ConflictException(`A contact with email "${dto.email}" already exists`);
       }
     }
 
     const [updated] = await this.drizzle.db
       .update(contacts)
-      .set({ ...dto, updatedAt: new Date() })
+      .set({
+        ...dto,
+        // Merge rather than replace — a caller (e.g. adding one custom field
+        // from the contact detail page) sends only the field(s) it knows
+        // about, not the contact's full customFields object.
+        ...(dto.customFields ? { customFields: { ...(existing.customFields as object), ...dto.customFields } } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(contacts.id, id))
       .returning();
 
