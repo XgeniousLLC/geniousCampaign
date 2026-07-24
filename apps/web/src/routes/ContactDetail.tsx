@@ -20,6 +20,7 @@ import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi
 import { useAuthStore } from '../stores/useAuthStore';
 import { ContactEnrollments } from '../components/ContactEnrollments';
 import { CustomFieldInput } from './ContactsList';
+import { PanelListSkeleton } from '../components/skeletons';
 
 export function ContactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -47,7 +48,7 @@ export function ContactDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  if (!contact) return <div className="text-sm text-text-muted">Loading…</div>;
+  if (!contact) return <ContactDetailSkeleton />;
 
   const name = contact.firstName || contact.lastName ? `${contact.firstName ?? ''} ${contact.lastName ?? ''}`.trim() : contact.email;
   const initials = ((contact.firstName?.[0] ?? contact.email[0]) + (contact.lastName?.[0] ?? '')).toUpperCase();
@@ -207,6 +208,67 @@ export function ContactDetail() {
           <ContactEnrollments contactId={contact.id} />
           <div className="rounded-md border border-border-default bg-panel p-4 text-xs text-text-muted">
             Activity feed and send history land with later Sprint 1/4 tickets.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContactDetailSkeleton() {
+  return (
+    <div>
+      <div className="mb-4 h-3.5 w-20 animate-pulse rounded bg-raised2" />
+
+      <div className="mb-5 flex items-center gap-3.5">
+        <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-raised2" />
+        <div className="space-y-1.5">
+          <div className="h-4 w-40 animate-pulse rounded bg-raised2" />
+          <div className="h-3 w-52 animate-pulse rounded bg-raised2" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[280px_1fr] items-start gap-4">
+        <div className="flex flex-col gap-3.5">
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <div className="mb-3 h-2.5 w-14 animate-pulse rounded bg-raised2" />
+            <div className="flex flex-col gap-2.5">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <div className="h-2.5 w-16 animate-pulse rounded bg-raised2" />
+                  <div className="h-2.5 w-20 animate-pulse rounded bg-raised2" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <div className="mb-2.5 h-2.5 w-10 animate-pulse rounded bg-raised2" />
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              <div className="h-5 w-16 animate-pulse rounded-sm bg-raised2" />
+              <div className="h-5 w-12 animate-pulse rounded-sm bg-raised2" />
+            </div>
+            <div className="mb-2.5 h-2.5 w-10 animate-pulse rounded bg-raised2" />
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-raised2" />
+                  <div className="h-2.5 w-24 animate-pulse rounded bg-raised2" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="rounded-md border border-border-default bg-panel">
+            <div className="border-b border-border-default p-4">
+              <div className="h-2.5 w-24 animate-pulse rounded bg-raised2" />
+            </div>
+            <PanelListSkeleton rows={3} />
+          </div>
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <div className="h-2.5 w-56 animate-pulse rounded bg-raised2" />
           </div>
         </div>
       </div>

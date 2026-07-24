@@ -25,7 +25,7 @@ import {
   CtaButtonIcon,
 } from './icons';
 
-const PERSONALIZATION_TOKENS = [
+export const PERSONALIZATION_TOKENS = [
   { field: 'contact.firstName', label: 'First name' },
   { field: 'contact.lastName', label: 'Last name' },
   { field: 'contact.email', label: 'Email' },
