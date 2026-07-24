@@ -9,7 +9,7 @@ import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
-import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
+import { TemplateEditorToolbar, PERSONALIZATION_TOKENS } from '../components/TemplateEditorToolbar';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
@@ -41,6 +41,11 @@ export function TemplateEditor() {
   const [parentTemplateId, setParentTemplateId] = useState<string | null>(null);
   const [linkPopup, setLinkPopup] = useState<{ pos: number; href: string; x: number; y: number } | null>(null);
   const [linkEditOpen, setLinkEditOpen] = useState(false);
+  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const [subjectTokenOpen, setSubjectTokenOpen] = useState(false);
+  const [subjectCustomKey, setSubjectCustomKey] = useState('');
+  const subjectCustomKeyValid = /^[a-zA-Z0-9_]+$/.test(subjectCustomKey.trim());
+  const [subjectFallback, setSubjectFallback] = useState('');
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
   const currentUserEmail = useAuthStore((s) => s.user?.email ?? '');
 
@@ -130,6 +135,22 @@ export function TemplateEditor() {
     }
   }
 
+  // Subject is a plain &lt;input&gt;, not a TipTap doc — insert at the tracked
+  // cursor position and restore selection there, mirroring the body
+  // toolbar's insertPersonalizationToken/insertSpintaxBlock commands.
+  function insertIntoSubject(text: string) {
+    const el = subjectInputRef.current;
+    const start = el?.selectionStart ?? subject.length;
+    const end = el?.selectionEnd ?? subject.length;
+    const next = subject.slice(0, start) + text + subject.slice(end);
+    setSubject(next);
+    const pos = start + text.length;
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
   function currentBody() {
     const bodyJson = (editor?.getJSON() ?? EMPTY_DOC) as ProseMirrorNode;
     return { bodyHtml: renderBodyHtml(bodyJson), bodyText: renderBodyText(bodyJson) };
@@ -215,11 +236,91 @@ export function TemplateEditor() {
         <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-3">
           <span className="w-16 shrink-0 text-xs text-text-meta">Subject</span>
           <input
+            ref={subjectInputRef}
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject line, e.g. Hi {{contact.firstName}}"
             className="flex-1 bg-transparent text-sm font-medium text-text-primary outline-none placeholder:text-text-faint"
           />
+          <button
+            type="button"
+            onClick={() => insertIntoSubject('{option A|option B}')}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-accent-light/25 bg-accent-light/10 px-2 text-[11px] font-semibold text-accent-lighter hover:bg-accent-light/15"
+          >
+            Spintax
+          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setSubjectTokenOpen((o) => !o)}
+              className="flex h-7 items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2 text-[11px] font-semibold text-accent-light hover:bg-accent/15"
+            >
+              Insert token ▾
+            </button>
+            {subjectTokenOpen && (
+              <div className="absolute right-0 top-8 z-20 w-60 rounded-md border border-border-modal bg-panel2 p-1 shadow-lg">
+                <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-text-meta">Personalization tokens</div>
+                {PERSONALIZATION_TOKENS.map((tk) => (
+                  <button
+                    key={tk.field}
+                    type="button"
+                    onClick={() => {
+                      const fallback = subjectFallback.trim();
+                      insertIntoSubject(`{{${tk.field}${fallback ? `|${fallback}` : ''}}}`);
+                      setSubjectTokenOpen(false);
+                    }}
+                    className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left font-mono text-xs text-text-tertiary hover:bg-raised"
+                  >
+                    <span className="text-accent-light">{'{{'}</span>
+                    {tk.label}
+                    <span className="text-accent-light">{'}}'}</span>
+                  </button>
+                ))}
+                <div className="mt-1 border-t border-border-subtle p-2 pt-1.5">
+                  <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Fallback if empty</div>
+                  <input
+                    value={subjectFallback}
+                    onChange={(e) => setSubjectFallback(e.target.value)}
+                    placeholder="e.g. there (optional)"
+                    className="h-7 w-full rounded border border-border-subtle bg-surface px-1.5 text-xs text-text-primary placeholder:text-text-faint"
+                  />
+                </div>
+                <div className="mt-1 border-t border-border-subtle p-2 pt-2">
+                  <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Custom field</div>
+                  <div className="flex gap-1">
+                    <input
+                      value={subjectCustomKey}
+                      onChange={(e) => setSubjectCustomKey(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' || !subjectCustomKeyValid) return;
+                        const key = subjectCustomKey.trim();
+                        const fallback = subjectFallback.trim();
+                        insertIntoSubject(`{{contact.custom.${key}${fallback ? `|${fallback}` : ''}}}`);
+                        setSubjectCustomKey('');
+                        setSubjectTokenOpen(false);
+                      }}
+                      placeholder="field key"
+                      className="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-1.5 font-mono text-xs text-text-primary placeholder:text-text-faint"
+                    />
+                    <button
+                      type="button"
+                      disabled={!subjectCustomKeyValid}
+                      onClick={() => {
+                        const key = subjectCustomKey.trim();
+                        const fallback = subjectFallback.trim();
+                        insertIntoSubject(`{{contact.custom.${key}${fallback ? `|${fallback}` : ''}}}`);
+                        setSubjectCustomKey('');
+                        setSubjectTokenOpen(false);
+                      }}
+                      className="h-7 shrink-0 rounded border border-accent/25 bg-accent/10 px-2 text-xs font-semibold text-accent-light hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Insert
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="max-w-2xl px-6 py-5">

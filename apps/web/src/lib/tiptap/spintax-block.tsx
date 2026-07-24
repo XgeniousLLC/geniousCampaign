@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface SpintaxBlockOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -16,7 +16,17 @@ declare module '@tiptap/core' {
 
 function SpintaxBlockView({ node, updateAttributes }: NodeViewProps) {
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLElement>(null);
   const options: string[] = (node.attrs.options as string[]) ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
 
   function setOption(i: number, value: string) {
     const next = [...options];
@@ -33,7 +43,7 @@ function SpintaxBlockView({ node, updateAttributes }: NodeViewProps) {
   }
 
   return (
-    <NodeViewWrapper as="span" className="relative inline-block" contentEditable={false}>
+    <NodeViewWrapper as="span" ref={wrapperRef} className="relative inline-block" contentEditable={false}>
       <span
         onClick={() => setOpen((o) => !o)}
         className="mx-0.5 inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-dashed border-accent-light/40 bg-accent-light/10 px-2 py-0.5 text-xs font-medium text-accent-lighter"
