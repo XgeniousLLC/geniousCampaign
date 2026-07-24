@@ -31,7 +31,7 @@ Creates a new contact, or updates an existing one if the email already exists (u
 | `email` | string | yes | Must be a valid email address. |
 | `firstName` | string | no | |
 | `lastName` | string | no | |
-| `customFields` | object | no | Arbitrary key/value pairs, merged into the contact's existing custom fields on update. |
+| `customFields` | object | no | Key/value pairs, merged into the contact's existing custom fields on update. Each key is matched against an existing custom field's key (Settings > Custom fields); if no match exists, a new custom field is auto-created (as a `text` field, label derived from the key) so the value has somewhere to attach. Keys are slugified the same way the Settings UI slugifies a label (lowercased, non-alphanumerics collapsed to `_`), so `"Favorite Color"` and `"favorite_color"` resolve to the same field. |
 | `listId` | string (UUID) | no | An existing list's id. Added in addition to the key's default list, if it has one. `404` if the id doesn't exist. |
 | `tagIds` | string[] (UUIDs) | no | Existing tags' ids. Added in addition to the key's default tags. `404` if any id doesn't exist. |
 
@@ -179,3 +179,4 @@ These endpoints are for the app's own Settings UI — not intended for external 
 
 - A contact submitted with an email that's already suppressed still gets created/updated — suppression is checked at *send* time (per every list/campaign/sequence send), not at contact-creation time. Submitting a bounced/unsubscribed address here won't cause it to receive mail.
 - Each key tracks a `lastUsedAt` timestamp (visible in the UI) so you can tell whether a given integration is actually calling in.
+- Custom fields auto-created via `customFields` (see `POST /api/v1/contacts` above) show up in Settings > Custom fields exactly like ones created there directly — they're the same table, just populated from either place. An auto-created field defaults to `inputType: "text"`; if it needs a different type (`number`, `date`, `url`, `boolean`, `select`), edit it from Settings after the fact — the public API always creates as `text`.

@@ -3,6 +3,7 @@ import { ContactsService } from '../contacts/contacts.service';
 import { ListsService } from '../lists/lists.service';
 import { TagsService } from '../tags/tags.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
+import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { ApiKeyAuthGuard } from '../api-keys/api-key-auth.guard';
 import { PublicApiThrottlerGuard } from './public-api-throttler.guard';
 import { CurrentApiKey, type AuthenticatedApiKey } from '../api-keys/current-api-key.decorator';
@@ -28,14 +29,29 @@ export class PublicApiController {
     private readonly lists: ListsService,
     private readonly tags: TagsService,
     private readonly enrollments: EnrollmentService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   @Post('contacts')
   async createContact(@Body() dto: CreatePublicContactDto, @CurrentApiKey() apiKey: AuthenticatedApiKey) {
+    // Each customFields key is a custom-field slug: matched against an
+    // existing custom_field_defs row if one exists, else a new def is
+    // auto-created for it (CLAUDE.md invariant 14) — the value then lands in
+    // contacts.customFields keyed by the def's canonical (slugified) key,
+    // same as if an admin had defined the field first via Settings.
+    let customFields: Record<string, unknown> | undefined;
+    if (dto.customFields) {
+      customFields = {};
+      for (const [rawKey, value] of Object.entries(dto.customFields)) {
+        const def = await this.customFields.getOrCreateByKey(rawKey);
+        customFields[def.key] = value;
+      }
+    }
+
     const contact = await this.contacts.upsertByEmail(dto.email, {
       firstName: dto.firstName,
       lastName: dto.lastName,
-      customFields: dto.customFields,
+      customFields,
     });
 
     // dto.listId/dto.tagIds are external-caller input and validated here

@@ -128,6 +128,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Done | GC-030, GC-077 |
 | GC-131 | Sender Accounts: test email button per account | 4 | S | Done | GC-047 |
 | GC-132 | Email log: resend button on failed sends | 4 | M | Done | GC-060 |
+| GC-133 | Public API: `customFields` slugs auto-create a `custom_field_defs` row when unmatched | 4 | S | Done | GC-121, GC-128 |
 
 ---
 
@@ -1397,3 +1398,14 @@ Requested: retry transient failures without re-running entire campaign/sequence.
 **Frontend** (`EmailLog.tsx`): detail drawer header now shows a "Resend" button when `status='failed'` (hidden for other statuses). Button triggers the resend, shows inline success/failure feedback, auto-reloads the detail row on success to reflect any status change.
 
 Verified live: opened an email log detail for a failed send, clicked "Resend", got back success message, detail reloaded. Backend: all existing email-log tests green, `tsc --noEmit` clean.
+
+### GC-133 — Public API: `customFields` slugs auto-create a `custom_field_defs` row when unmatched (2026-07-24)
+Requested: `POST /api/v1/contacts`'s `customFields` accepted arbitrary keys straight into the JSONB blob with no link to GC-128's `custom_field_defs` catalog. Wanted: a key that matches an existing custom field's slug sets that field's value; a key that doesn't match gets a new custom field definition created for it automatically, then the value is set.
+
+**Backend**: `CustomFieldsService.getOrCreateByKey()` (`custom-fields.service.ts`) — slugifies the incoming key with the same `slugify()` the Settings-created-field path uses, looks it up in `custom_field_defs`, and if missing inserts a new row (`inputType: 'text'`, label derived from the key via `labelFromKey()`) via `.onConflictDoNothing()` + re-query rather than find-then-throw, so two concurrent requests introducing the same new slug both succeed instead of one 409ing the other. `PublicApiController.createContact()` runs every `dto.customFields` entry through it before calling `ContactsService.upsertByEmail()`, so the value always lands keyed by the def's canonical slug. `CustomFieldsModule` added to `PublicApiModule`'s imports for the DI wiring.
+
+No schema/migration change — values still live in `contacts.customFields` JSONB (GC-128's model), this just makes sure a matching `custom_field_defs` row exists before writing to it.
+
+**Docs**: `docs/PUBLIC_API.md` — `customFields` row in the `POST /api/v1/contacts` request-body table now documents the match-or-create behavior and the slugification rule; added a bullet under **Notes** clarifying auto-created fields default to `text` and show up in Settings > Custom fields like any other. Mirrored the same change into the public docs-site (`docs-site/api-reference.md`, `docs-site/user-manual/api-and-integrations.md`) — that site is a separate docsify build (`.github/workflows/docs.yml`) that only deploys on a `main`-branch push touching `docs-site/**`, so it doesn't pick up `docs/` edits automatically; touching both in the same PR is what makes the GitHub Pages site (`xgeniousllc.github.io/geniousCampaign`) auto-update on merge to `main`.
+
+Verified live against the real dev DB (not mocked): started the API on an isolated port, inserted a throwaway `api_keys` row directly via `psql` (matching `ApiKeysService`'s `sha256(raw)` hash scheme — no seeded owner login credential available this session), then `POST /api/v1/contacts` with `customFields: { "company_size": "50-200", "Favorite Color": "blue" }` against a DB that already had a `company_size` def. Confirmed via `psql`: `company_size` value applied to the existing def, `Favorite Color` slugified into a new `favorite_color` text field (label "Favorite Color") in `custom_field_defs`, contact's `customFields` ended up `{"company_size": "50-200", "favorite_color": "blue"}`. Cleaned up the test contact, auto-created field, and throwaway API key afterward. `tsc --noEmit` clean on `apps/api`.
