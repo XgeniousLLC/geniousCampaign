@@ -1,4 +1,8 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, nodePasteRule } from '@tiptap/core';
+
+// Matches {{contact.firstName}}, {{contact.custom.foo|fallback}}, etc. — same
+// shape as BUILTIN_TOKEN_RE/CUSTOM_TOKEN_RE in packages/shared/personalize.ts.
+const TOKEN_PASTE_RE = /\{\{(contact\.(?:custom\.[a-zA-Z0-9_]+|firstName|lastName|email))(?:\|([^}]*))?\}\}/g;
 
 export interface PersonalizationTokenOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -66,5 +70,22 @@ export const PersonalizationToken = Node.create<PersonalizationTokenOptions>({
         ({ commands }) =>
           commands.insertContent({ type: this.name, attrs }),
     };
+  },
+
+  // Converts a pasted literal `{{contact.x}}` into an atomic token node so it
+  // can never be split apart by a following paragraph/line-break reflow —
+  // this is what makes paste behave the same as typing + toolbar-insert.
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        find: TOKEN_PASTE_RE,
+        type: this.type,
+        getAttributes: (match) => ({
+          field: match[1],
+          label: null,
+          fallback: match[2] ?? null,
+        }),
+      }),
+    ];
   },
 });

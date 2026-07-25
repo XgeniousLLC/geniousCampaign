@@ -1,6 +1,12 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, nodePasteRule } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
+
+// Matches a flat `{a|b|c}` spintax group on paste. Requires at least one '|'
+// so a stray literal brace isn't misread as spintax, and excludes any match
+// whose brace is adjacent to another brace so the doubled braces of a
+// personalization token (`{{contact.x|fallback}}`) are never mistaken for it.
+const SPINTAX_PASTE_RE = /(?<!\{)\{(?!\{)([^{}|]+(?:\|[^{}|]+)+)\}/g;
 
 export interface SpintaxBlockOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -125,5 +131,18 @@ export const SpintaxBlock = Node.create<SpintaxBlockOptions>({
         ({ commands }) =>
           commands.insertContent({ type: this.name, attrs }),
     };
+  },
+
+  // Converts a pasted literal `{a|b}` into an atomic spintax node so it can
+  // never be split apart by a following paragraph/line-break reflow — this
+  // is what makes paste behave the same as typing + toolbar-insert.
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        find: SPINTAX_PASTE_RE,
+        type: this.type,
+        getAttributes: (match) => ({ options: match[1].split('|') }),
+      }),
+    ];
   },
 });
