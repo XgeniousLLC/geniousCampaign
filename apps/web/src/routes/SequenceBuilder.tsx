@@ -108,6 +108,10 @@ export function SequenceBuilder() {
   const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [senderAccountId, setSenderAccountId] = useState('');
+  const [fromName, setFromName] = useState('');
+  const [replyTo, setReplyTo] = useState('');
+  const [savingSender, setSavingSender] = useState(false);
   const [tab, setTab] = useState<Tab>('Steps');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -133,6 +137,9 @@ export function SequenceBuilder() {
     ]);
     setSequence(seq);
     setName(seq.name);
+    setSenderAccountId(seq.senderAccountId ?? '');
+    setFromName(seq.fromName ?? '');
+    setReplyTo(seq.replyTo ?? '');
     setSteps(seqSteps);
     originalStepsRef.current = seqSteps;
     setTemplates(tpls);
@@ -180,6 +187,33 @@ export function SequenceBuilder() {
     reload();
   }
 
+  // --- Sequence-level sender (global — applies to every send_email step) ---
+
+  async function handleSenderAccountChange(value: string) {
+    if (!id) return;
+    setSenderAccountId(value);
+    setSavingSender(true);
+    await updateSequence(id, { senderAccountId: value || null });
+    setSavingSender(false);
+    reload();
+  }
+
+  async function saveFromName() {
+    if (!id || !sequence || fromName === (sequence.fromName ?? '')) return;
+    setSavingSender(true);
+    await updateSequence(id, { fromName: fromName || null });
+    setSavingSender(false);
+    reload();
+  }
+
+  async function saveReplyTo() {
+    if (!id || !sequence || replyTo === (sequence.replyTo ?? '')) return;
+    setSavingSender(true);
+    await updateSequence(id, { replyTo: replyTo || null });
+    setSavingSender(false);
+    reload();
+  }
+
   // --- Local-only step mutations (no API calls) ---
 
   function handleAddStep() {
@@ -191,9 +225,6 @@ export function SequenceBuilder() {
       templateId: null,
       delayValue: null,
       delayUnit: null,
-      senderAccountId: null,
-      fromName: null,
-      replyTo: null,
     };
     setSteps((prev) => [...prev, newSendStep]);
     setDirty(true);
@@ -251,30 +282,6 @@ export function SequenceBuilder() {
     setDirty(true);
   }
 
-  function handleSenderAccountChange(block: Block, senderAccountId: string | null) {
-    if (!block.sendStep) return;
-    setSteps((prev) =>
-      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, senderAccountId } : s)),
-    );
-    setDirty(true);
-  }
-
-  function handleFromNameChange(block: Block, fromName: string) {
-    if (!block.sendStep) return;
-    setSteps((prev) =>
-      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, fromName: fromName || null } : s)),
-    );
-    setDirty(true);
-  }
-
-  function handleReplyToChange(block: Block, replyTo: string) {
-    if (!block.sendStep) return;
-    setSteps((prev) =>
-      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, replyTo: replyTo || null } : s)),
-    );
-    setDirty(true);
-  }
-
   // --- Save all pending changes ---
 
   async function handleSave() {
@@ -303,9 +310,6 @@ export function SequenceBuilder() {
             templateId: step.templateId ?? undefined,
             delayValue: step.delayValue ?? undefined,
             delayUnit: step.delayUnit ?? undefined,
-            senderAccountId: step.senderAccountId ?? undefined,
-            fromName: step.fromName ?? undefined,
-            replyTo: step.replyTo ?? undefined,
           });
           idMap.set(step.id, created.id);
           orderedRealIds.push(created.id);
@@ -317,19 +321,13 @@ export function SequenceBuilder() {
             orig.templateId !== step.templateId ||
             orig.delayValue !== step.delayValue ||
             orig.delayUnit !== step.delayUnit ||
-            orig.type !== step.type ||
-            orig.senderAccountId !== step.senderAccountId ||
-            orig.fromName !== step.fromName ||
-            orig.replyTo !== step.replyTo;
+            orig.type !== step.type;
           if (changed) {
             await updateStep(id, step.id, {
               type: step.type,
               templateId: step.templateId ?? undefined,
               delayValue: step.delayValue ?? undefined,
               delayUnit: step.delayUnit ?? undefined,
-              senderAccountId: step.senderAccountId ?? null,
-              fromName: step.fromName ?? null,
-              replyTo: step.replyTo ?? null,
             });
           }
           idMap.set(step.id, step.id);
@@ -682,50 +680,6 @@ export function SequenceBuilder() {
                           <span className="text-[10.5px] text-text-meta">Variants can be A/B tested — configure in the template editor</span>
                         </div>
                       )}
-                      {block.sendStep && (
-                        <div className="border-t border-border-subtle px-3 py-3 pl-[50px]">
-                          <div className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">Sender</div>
-                          <select
-                            value={block.sendStep.senderAccountId ?? ''}
-                            onChange={(e) => handleSenderAccountChange(block, e.target.value || null)}
-                            disabled={!canWrite}
-                            className="mb-2.5 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
-                          >
-                            <option value="">Auto (best available)</option>
-                            {senderAccounts.map((acc) => (
-                              <option key={acc.id} value={acc.id}>
-                                {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="mb-2">
-                            <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
-                              From name
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="Falls back to account name if empty"
-                              value={block.sendStep.fromName ?? ''}
-                              onChange={(e) => handleFromNameChange(block, e.target.value)}
-                              disabled={!canWrite}
-                              className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
-                              Reply-to
-                            </label>
-                            <input
-                              type="email"
-                              placeholder="Optional reply-to email"
-                              value={block.sendStep.replyTo ?? ''}
-                              onChange={(e) => handleReplyToChange(block, e.target.value)}
-                              disabled={!canWrite}
-                              className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -751,6 +705,56 @@ export function SequenceBuilder() {
             )}
           </div>
 
+          <div>
+          <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">Sender</span>
+              {savingSender && <span className="text-[10.5px] text-text-faint">Saving…</span>}
+            </div>
+            <select
+              value={senderAccountId}
+              onChange={(e) => handleSenderAccountChange(e.target.value)}
+              disabled={!canWrite}
+              className="mb-2.5 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
+            >
+              <option value="">Auto (best available)</option>
+              {senderAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <div className="mb-2">
+              <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
+                From name
+              </label>
+              <input
+                type="text"
+                placeholder="Falls back to account name if empty"
+                value={fromName}
+                onChange={(e) => setFromName(e.target.value)}
+                onBlur={saveFromName}
+                disabled={!canWrite}
+                className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
+                Reply-to
+              </label>
+              <input
+                type="email"
+                placeholder="Optional reply-to email"
+                value={replyTo}
+                onChange={(e) => setReplyTo(e.target.value)}
+                onBlur={saveReplyTo}
+                disabled={!canWrite}
+                className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
+              />
+            </div>
+            <p className="mt-2.5 text-[10.5px] text-text-meta">Applies to every "Send email" step in this sequence.</p>
+          </div>
+
           <div className="rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Summary</div>
             <div className="flex flex-col gap-2.5 text-xs">
@@ -767,6 +771,7 @@ export function SequenceBuilder() {
                 <span className="font-mono font-semibold text-text-primary">{enrollments.length}</span>
               </div>
             </div>
+          </div>
           </div>
         </div>
       )}

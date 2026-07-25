@@ -17,7 +17,14 @@ export class SequencesService {
   async create(dto: CreateSequenceDto, db: DbOrTx = this.drizzle.db) {
     const [created] = await db
       .insert(sequences)
-      .values({ name: dto.name, description: dto.description, webhookSecret: randomBytes(32).toString('hex') })
+      .values({
+        name: dto.name,
+        description: dto.description,
+        senderAccountId: dto.senderAccountId,
+        fromName: dto.fromName,
+        replyTo: dto.replyTo,
+        webhookSecret: randomBytes(32).toString('hex'),
+      })
       .returning();
     return created;
   }

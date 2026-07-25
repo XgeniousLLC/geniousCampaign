@@ -3,7 +3,7 @@ import { SettingsService } from '../settings/settings.service';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, lte } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { sequenceEnrollments, sequenceSteps, contacts, templates, sends } from '../db/schema';
+import { sequenceEnrollments, sequenceSteps, sequences, contacts, templates, sends } from '../db/schema';
 import { resolveNextExecutableStep, type RunnerStep } from './step-resolution.util';
 import { resolvePersonalization, resolveSpintax } from '@genius-campaign/shared';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
@@ -97,6 +97,10 @@ export class SequenceRunnerService {
     const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.id, enrollment.contactId) });
     if (!contact) return;
 
+    // Sender is set once per sequence, not per step (revised GC-130) — every
+    // send_email step in a sequence shares the same account/from name/reply-to.
+    const sequence = await this.drizzle.db.query.sequences.findFirst({ where: eq(sequences.id, enrollment.sequenceId) });
+
     if (!step.templateId) {
       await this.recordFailedSend(enrollment, step, contact.id, 'Step has no template configured');
       return;
@@ -170,9 +174,9 @@ export class SequenceRunnerService {
         text: resolvedBodyText,
         unsubscribeUrl,
         messageTags: { sequenceId: enrollment.sequenceId, sequenceStepId: step.id },
-        senderAccountId: step.senderAccountId ?? undefined,
-        fromName: step.fromName ?? undefined,
-        replyTo: step.replyTo ?? undefined,
+        senderAccountId: sequence?.senderAccountId ?? undefined,
+        fromName: sequence?.fromName ?? undefined,
+        replyTo: sequence?.replyTo ?? undefined,
       });
       await this.drizzle.db
         .update(sends)

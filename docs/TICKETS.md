@@ -125,7 +125,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-127 | Template editor: link click shows edit/go tooltip instead of navigating; button color picker | 4 | M | Done | GC-015 |
 | GC-128 | Custom contact fields: Settings > Custom fields (define by input type), dynamic fields on Add contact form | 4 | M | Done | GC-010 |
 | GC-129 | Template list: delete + bulk delete with checkboxes | 4 | S | Done | GC-021 |
-| GC-130 | Sequences: sender-account picker + From name + reply-to override | 4 | M | Done | GC-030, GC-077 |
+| GC-130 | Sequences: sender-account picker + From name + reply-to override (global, per-sequence) | 4 | M | Done | GC-030, GC-077 |
 | GC-131 | Sender Accounts: test email button per account | 4 | S | Done | GC-047 |
 | GC-132 | Email log: resend button on failed sends | 4 | M | Done | GC-060 |
 | GC-133 | Public API: `customFields` slugs auto-create a `custom_field_defs` row when unmatched | 4 | S | Done | GC-121, GC-128 |
@@ -1455,3 +1455,14 @@ Requested: reorder the Subject input row to appear above the Bold/Italic/Spintax
 **Fix**: swapped the JSX order of the Subject row and `<TemplateEditorToolbar>` in `TemplateEditor.tsx` — no logic changes, pure reorder.
 
 Verified live in the browser: Subject now sits directly under the template name/action-buttons header, with the formatting toolbar and body editor below it.
+
+### GC-130 (revised) — Sequences: sender-account picker + From name + reply-to override is per-sequence, not per-step (2026-07-25)
+Sharifur flagged: GC-130 had put the sender-account/From name/reply-to override on each individual `send_email` step, which is wrong — a sequence should have one shared sender identity for every step, not a separately configurable one per step.
+
+**Schema** (migration `0037`): moved `senderAccountId`/`fromName`/`replyTo` off `sequence_steps` and onto `sequences` (nullable, same shape as before; `senderAccountId` still FK → `sender_accounts` with `onDelete: 'set null'`). Existing per-step values were dropped by the migration — GC-130 had only ever been exercised in dev, not against real sends.
+
+**Backend**: `CreateStepDto`/`UpdateStepDto` lost the three fields; `CreateSequenceDto`/`UpdateSequenceDto` gained them. `SequenceRunnerService.executeSendEmail()` (`apps/api/src/sequence-runner/sequence-runner.service.ts`) now looks up the parent `sequences` row via `enrollment.sequenceId` and reads `senderAccountId`/`fromName`/`replyTo` from there instead of from `step`, before passing them to `SendDispatcherService.send()` — same downstream validation/quota/hard-fail path as before, just a different read site.
+
+**Frontend** (`SequenceBuilder.tsx`): removed the per-step "Sender" section from each send-email step block; added one "Sender" panel in the right sidebar (above the existing Summary panel) — sender-account dropdown, From name, reply-to, all scoped to the whole sequence and saved via `updateSequence()` (dropdown saves on change, text inputs save on blur, same pattern as the sequence name field). Step create/update payloads and the steps dirty-diff no longer reference the three fields.
+
+Verified live: opened the "Hello" sequence, set the sidebar Sender panel to the AWS SES account with From name "Sequence Global Sender" and reply-to `globaltest@example.com`, confirmed via direct DB read that all three landed on the `sequences` row (not `sequence_steps`), reloaded the page and confirmed the panel re-populates from the saved values, then reset the test sequence back to empty/auto-pick. Confirmed no per-step sender UI remains on either of the sequence's two steps. Backend: `sequence-runner.service.spec.ts` and full API suite green (pre-existing unrelated failures in `password-reset.service.spec.ts` from already-seeded dev DB state, not from this change). `tsc --noEmit` clean on both `apps/api` and `apps/web`.

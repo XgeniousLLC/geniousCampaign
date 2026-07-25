@@ -11,6 +11,11 @@ export interface Sequence {
   // API, and trigger-driven) when false. Doesn't affect contacts already
   // enrolled; that's the separate per-enrollment pause/resume/stop control.
   isActive: boolean;
+  // GC-130 (revised) — global sender for every send_email step in this
+  // sequence; null = auto-pick. Not configurable per step.
+  senderAccountId?: string | null;
+  fromName?: string | null;
+  replyTo?: string | null;
   createdAt: string;
   updatedAt: string;
   // Present on list responses only (GET /sequences) — computed server-side.
@@ -28,12 +33,6 @@ export interface SequenceStep {
   templateId: string | null;
   delayValue: number | null;
   delayUnit: DelayUnit | null;
-  // GC-130 — sender account override for send_email steps
-  senderAccountId?: string | null;
-  // GC-130 — from name override
-  fromName?: string | null;
-  // GC-130 — reply-to override
-  replyTo?: string | null;
 }
 
 export function listSequences() {
@@ -44,11 +43,27 @@ export function getSequence(id: string) {
   return apiGet<Sequence>(`/sequences/${id}`);
 }
 
-export function createSequence(input: { name: string; description?: string }) {
+export function createSequence(input: {
+  name: string;
+  description?: string;
+  senderAccountId?: string;
+  fromName?: string;
+  replyTo?: string;
+}) {
   return apiPost<Sequence>('/sequences', input);
 }
 
-export function updateSequence(id: string, input: { name?: string; description?: string; isActive?: boolean }) {
+export function updateSequence(
+  id: string,
+  input: Partial<{
+    name: string;
+    description: string;
+    isActive: boolean;
+    senderAccountId: string | null;
+    fromName: string | null;
+    replyTo: string | null;
+  }>,
+) {
   return apiPatch<Sequence>(`/sequences/${id}`, input);
 }
 
@@ -63,9 +78,6 @@ export function addStep(
     templateId?: string;
     delayValue?: number;
     delayUnit?: DelayUnit;
-    senderAccountId?: string;
-    fromName?: string;
-    replyTo?: string;
   },
 ) {
   return apiPost<SequenceStep>(`/sequences/${sequenceId}/steps`, input);
@@ -79,9 +91,6 @@ export function updateStep(
     templateId: string;
     delayValue: number;
     delayUnit: DelayUnit;
-    senderAccountId: string | null;
-    fromName: string | null;
-    replyTo: string | null;
   }>,
 ) {
   return apiPatch<SequenceStep>(`/sequences/${sequenceId}/steps/${stepId}`, input);
