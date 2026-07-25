@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 
 export interface SubjectHighlightInputHandle {
   focus: () => void;
@@ -12,7 +12,10 @@ interface SubjectHighlightInputProps {
   className?: string;
 }
 
-type Segment = { type: 'text'; value: string } | { type: 'token'; raw: string } | { type: 'spintax'; raw: string };
+type Segment =
+  | { type: 'text'; value: string }
+  | { type: 'token'; raw: string }
+  | { type: 'spintax'; raw: string; start: number; options: string[] };
 
 // Matches {{contact.firstName}}, {{contact.custom.foo|fallback}}, etc. — same
 // shape as BUILTIN_TOKEN_RE/CUSTOM_TOKEN_RE in packages/shared/personalize.ts,
@@ -29,6 +32,26 @@ function findGroupEnd(text: string, start: number): number {
     }
   }
   return -1;
+}
+
+// Splits a spintax group's inner text on '|' at brace-depth 0, so a nested
+// {a|b} inside one option's own text isn't itself split apart.
+function splitOptions(inner: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of inner) {
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    if (ch === '|' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts;
 }
 
 // Parses raw subject text into plain/token/spintax segments for highlighting.
@@ -60,7 +83,8 @@ function parseSegments(text: string): Segment[] {
       const end = findGroupEnd(text, i);
       if (end !== -1) {
         flush();
-        segments.push({ type: 'spintax', raw: text.slice(i, end + 1) });
+        const raw = text.slice(i, end + 1);
+        segments.push({ type: 'spintax', raw, start: i, options: splitOptions(raw.slice(1, -1)) });
         i = end + 1;
         continue;
       }
@@ -131,6 +155,28 @@ export const SubjectHighlightInput = forwardRef<SubjectHighlightInputHandle, Sub
     const divRef = useRef<HTMLDivElement>(null);
     const caretRef = useRef<number | null>(null);
     const lastCaretRef = useRef<number | null>(null);
+    const [openSeg, setOpenSeg] = useState<{ start: number; top: number; left: number } | null>(null);
+
+    function replaceSpintaxOptions(start: number, oldRaw: string, options: string[]) {
+      const newRaw = `{${options.join('|')}}`;
+      onChange(value.slice(0, start) + newRaw + value.slice(start + oldRaw.length));
+    }
+
+    function findSpintaxSegment(start: number) {
+      return parseSegments(value).find((s): s is Extract<Segment, { type: 'spintax' }> => s.type === 'spintax' && s.start === start);
+    }
+
+    useEffect(() => {
+      if (!openSeg) return;
+      function handleClickOutside(e: MouseEvent) {
+        const target = e.target as Node;
+        if (divRef.current?.contains(target)) return;
+        if ((target as HTMLElement).closest?.('[data-spintax-popup]')) return;
+        setOpenSeg(null);
+      }
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [openSeg]);
 
     useImperativeHandle(ref, () => ({
       focus() {
@@ -191,8 +237,15 @@ export const SubjectHighlightInput = forwardRef<SubjectHighlightInputHandle, Sub
         } else {
           const span = document.createElement('span');
           span.className =
-            'mx-0.5 inline-flex items-baseline rounded-sm border border-dashed border-accent-light/40 bg-accent-light/10 px-2 py-0.5 text-xs font-medium text-accent-lighter';
+            'mx-0.5 inline-flex cursor-pointer items-baseline rounded-sm border border-dashed border-accent-light/40 bg-accent-light/10 px-2 py-0.5 text-xs font-medium text-accent-lighter';
           span.textContent = seg.raw;
+          const start = seg.start;
+          span.addEventListener('mousedown', (e) => e.preventDefault());
+          span.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const rect = span.getBoundingClientRect();
+            setOpenSeg((prev) => (prev && prev.start === start ? null : { start, top: rect.bottom + 4, left: rect.left }));
+          });
           el.appendChild(span);
         }
       }
@@ -202,20 +255,61 @@ export const SubjectHighlightInput = forwardRef<SubjectHighlightInputHandle, Sub
       }
     }, [value]);
 
+    const openSegment = openSeg ? findSpintaxSegment(openSeg.start) : undefined;
+
     return (
-      <div
-        ref={divRef}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onSelect={trackCaret}
-        onKeyUp={trackCaret}
-        onMouseUp={trackCaret}
-        data-placeholder={placeholder}
-        className={`${className ?? ''} empty:before:content-[attr(data-placeholder)] empty:before:text-text-faint`}
-      />
+      <>
+        <div
+          ref={divRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onSelect={trackCaret}
+          onKeyUp={trackCaret}
+          onMouseUp={trackCaret}
+          data-placeholder={placeholder}
+          className={`${className ?? ''} empty:before:content-[attr(data-placeholder)] empty:before:text-text-faint`}
+        />
+        {openSeg && openSegment && (
+          <div
+            data-spintax-popup
+            className="fixed z-20 w-64 rounded-md border border-border-modal bg-panel2 p-2 shadow-lg"
+            style={{ top: openSeg.top, left: openSeg.left }}
+          >
+            <div className="mb-1 px-1 text-[10px] uppercase tracking-wide text-text-meta">Spintax options</div>
+            {openSegment.options.map((opt, i) => (
+              <div key={i} className="mb-1 flex items-center gap-1">
+                <input
+                  value={opt}
+                  onChange={(e) => {
+                    const next = [...openSegment.options];
+                    next[i] = e.target.value;
+                    replaceSpintaxOptions(openSegment.start, openSegment.raw, next);
+                  }}
+                  className="min-w-0 flex-1 rounded border border-border-default bg-field px-2 py-1 text-xs text-text-primary outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => replaceSpintaxOptions(openSegment.start, openSegment.raw, openSegment.options.filter((_, idx) => idx !== i))}
+                  disabled={openSegment.options.length <= 1}
+                  className="rounded px-1.5 text-xs text-text-faint hover:text-danger disabled:opacity-30"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => replaceSpintaxOptions(openSegment.start, openSegment.raw, [...openSegment.options, ''])}
+              className="mt-1 w-full rounded border border-border-default px-2 py-1 text-xs text-text-muted hover:bg-raised hover:text-text-primary"
+            >
+              + Add option
+            </button>
+          </div>
+        )}
+      </>
     );
   },
 );

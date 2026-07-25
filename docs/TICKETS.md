@@ -130,6 +130,10 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-132 | Email log: resend button on failed sends | 4 | M | Done | GC-060 |
 | GC-133 | Public API: `customFields` slugs auto-create a `custom_field_defs` row when unmatched | 4 | S | Done | GC-121, GC-128 |
 | GC-134 | Contact detail page: manually add a custom field + value | 4 | S | Done | GC-128 |
+| GC-135 | Template body editor: paste doesn't resolve tokens/spintax | 4 | M | Done | GC-014, GC-016 |
+| GC-136 | Subject field: spintax pill has no click-to-edit (unlike body editor) | 4 | S | Done | GC-016 |
+| GC-137 | Template editor: Shuffle preview panel full-width below editor | 4 | S | Done | GC-016 |
+| GC-138 | Template editor: move Subject field above formatting toolbar | 4 | S | Done | GC-014 |
 
 ---
 
@@ -1421,3 +1425,33 @@ Requested: the contact detail page (GC-054-ish era) showed existing `customField
 **Frontend** (`ContactDetail.tsx`): "Fields" panel gained a "+ Add field" link (hidden once every existing def is already set on the contact, and behind the same non-viewer permission check already used for the Lists section). Clicking it shows a dropdown of `custom_field_defs` not yet present on this contact, then the matching typed input (reused `CustomFieldInput` from `ContactsList.tsx`, exported for this — same component the "Add contact" modal already uses, so text/number/date/url/boolean/select all render consistently). Save calls the widened `updateContact(id, { customFields })`, then reloads.
 
 Verified live against the real local dev DB: direct API tests confirmed the merge fix (PATCH with only `{"favorite_color": "teal"}` against a contact that already had `{"source": "seed"}` left both keys intact) and the auth guard (no token → 401, `viewer` role → 403 on write / 200 on read, `owner`/`editor` → 200). Then a full browser pass on `localhost:5174` against `localhost:3002`: logged in, opened a test contact, clicked "+ Add field," picked "Favorite Color," typed "Teal," saved — persisted, displayed, other unused defs remained offered. All test contacts/field-defs/users cleaned up afterward. `tsc --noEmit` clean on both `apps/api` and `apps/web`.
+
+### GC-135 — Template body editor: paste doesn't resolve tokens/spintax (2026-07-25)
+Reported: pasting body copy containing `{{first_name}}`-style tokens and `{a|b}` spintax into the TipTap template body editor left them unresolved at send/preview time, even though the same syntax works fine when typed or inserted via the toolbar.
+
+**Root cause**: `personalization-token.ts`/`spintax-block.tsx` only recognized `{{contact.x}}`/`{a|b}` as atomic nodes when inserted via the toolbar commands or round-tripped from previously-saved HTML (`parseHTML` matches `span[data-personalization-token]`/`span[data-spintax-block]`, never raw text). Typed or pasted literal braces stayed as plain text nodes. `resolvePersonalization`/`resolveSpintax` (`packages/shared`) run once, on the final rendered `bodyHtml` string, and require the token/spintax substring to be exactly contiguous — a paste from any rich source (Word/Gmail/Docs) that line-wraps or paragraph-breaks mid-brace (or the existing lack of any paste handling at all in the body editor, unlike `SubjectHighlightInput`'s explicit `\r\n`→space collapse) could split a `{{...}}`/`{...}` across a `<p>`/`<br>` boundary, breaking the regex match silently.
+
+**Fix**: added `addPasteRules()` to both `PersonalizationToken` (`personalization-token.ts`) and `SpintaxBlock` (`spintax-block.tsx`) using TipTap's `nodePasteRule`. A pasted `{{contact.firstName}}`/`{{contact.custom.x|fallback}}` or `{a|b|c}` is now converted into the same atomic node the toolbar inserts, at paste time — so it can never be split apart by whatever paragraph/line reflow the pasted source carries. Spintax's paste regex (`(?<!\{)\{(?!\{)([^{}|]+(?:\|[^{}|]+)+)\}`) requires at least one `|` (avoids misreading a stray literal brace as spintax) and excludes matches adjacent to another brace (so a token's own doubled braces are never mistaken for a spintax group).
+
+Verified live: dispatched a synthetic paste event into the body editor with `Hi {{contact.firstName}}, {try out|dig into} it.` — both became live interactive nodes (token pill, spintax block showing "try out" + a "2" option-count badge, clickable to edit), same as toolbar-inserted ones. `tsc --noEmit` clean on `apps/web`.
+
+### GC-136 — Subject field: spintax pill has no click-to-edit (unlike body editor) (2026-07-25)
+Reported via screenshot: a spintax group in the template Subject field "wasn't showing properly." Investigation found the pill's highlight styling (`SubjectHighlightInput.tsx`) already exactly matched the body editor's `SpintaxBlock` pill (same dashed-border/accent classes, added by commit `989ea81e`) — the actual gap, confirmed with the user, was that the body editor's spintax pill is clickable (opens a popup to edit/add/remove each variant), while the Subject field's pill was inert plain text.
+
+**Fix**: `SubjectHighlightInput.tsx` — `parseSegments()` now also returns each spintax segment's `start` offset and parsed `options` (split on `|` at brace-depth 0, so a nested group isn't itself split). Clicking a spintax pill opens a popup (rendered as a plain React-managed sibling of the contentEditable div, not inside its manually-rebuilt innerHTML, so typing in an option input doesn't lose focus on every keystroke) with per-option inputs, add/remove buttons, matching `SpintaxBlockView`'s body-editor UI. Edits splice the new `{opt1|opt2}` back into the subject string at the segment's original offset and call `onChange`.
+
+Verified live: opened a template with subject `{Hi|Hello|Hey} {{contact.firstName}}`, clicked the spintax pill, popup opened with 3 option inputs; edited a value, added a 4th option ("Howdy") — pill updated live to `{Hi|Hello|Hey|Howdy}` without losing input focus per keystroke; removed it back down; clicked outside to confirm the popup closes. Not saved (test template left unchanged). `tsc --noEmit` clean.
+
+### GC-137 — Template editor: Shuffle preview panel full-width below editor (2026-07-25)
+Requested: the spintax "Shuffle preview" panel (`SpintaxShufflePreview.tsx`) rendered as a fixed 320px sidebar next to the template editor (`TemplateEditor.tsx`'s `grid-cols-[1fr_320px]` layout) — wanted it below the editor, full width instead.
+
+**Fix**: changed the page root from `grid grid-cols-[1fr_320px] items-start gap-4` to `flex flex-col gap-4`. `SpintaxShufflePreview`'s root div had no width-capping classes of its own, so it now stretches to full container width as a stacked block below the editor panel with no changes needed inside the component itself.
+
+Verified live in the browser: panel now renders below the editor, spanning the full content width.
+
+### GC-138 — Template editor: move Subject field above formatting toolbar (2026-07-25)
+Requested: reorder the Subject input row to appear above the Bold/Italic/Spintax/Insert token/AI Assist toolbar, rather than below it.
+
+**Fix**: swapped the JSX order of the Subject row and `<TemplateEditorToolbar>` in `TemplateEditor.tsx` — no logic changes, pure reorder.
+
+Verified live in the browser: Subject now sits directly under the template name/action-buttons header, with the formatting toolbar and body editor below it.

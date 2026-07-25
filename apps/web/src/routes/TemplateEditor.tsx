@@ -150,7 +150,7 @@ export function TemplateEditor() {
   }
 
   return (
-    <div className="grid grid-cols-[1fr_320px] items-start gap-4">
+    <div className="flex flex-col gap-4">
       {showLibrary && canWrite && (
         <TemplateLibraryModal onPick={applyLibraryTemplate} onBlank={() => setShowLibrary(false)} />
       )}
@@ -219,8 +219,6 @@ export function TemplateEditor() {
             )}
           </div>
         </div>
-
-        <TemplateEditorToolbar editor={editor} />
 
         <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-3">
           <span className="w-16 shrink-0 text-xs text-text-meta">Subject</span>
@@ -311,6 +309,8 @@ export function TemplateEditor() {
             )}
           </div>
         </div>
+
+        <TemplateEditorToolbar editor={editor} />
 
         <div className="max-w-2xl px-6 py-5">
           <EditorContent
