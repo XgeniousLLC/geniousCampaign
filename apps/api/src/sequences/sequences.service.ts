@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
 import { sequences, sequenceSteps, sequenceEnrollments, sends, emailEvents } from '../db/schema';
@@ -174,5 +174,106 @@ export class SequencesService {
     });
 
     return this.listSteps(sequenceId, db);
+  }
+
+  /** Sequence detail "Stats" tab (GC-139) — per-step enrollment counts,
+   * sent today/yesterday/scheduled-tomorrow, and engagement rates. Day
+   * boundaries are UTC calendar days (`date_trunc('day', now())`), same
+   * convention as `senderAccounts.sentTodayDate` elsewhere in this codebase. */
+  async getStats(sequenceId: string, db: DbOrTx = this.drizzle.db) {
+    await this.findOne(sequenceId, db);
+
+    const steps = await this.listSteps(sequenceId, db);
+    const sendSteps = steps.filter((s) => s.type === 'send_email');
+
+    const enrollmentStatusRows = await db
+      .select({ status: sequenceEnrollments.status, count: sql<number>`count(*)`.mapWith(Number) })
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.sequenceId, sequenceId))
+      .groupBy(sequenceEnrollments.status);
+    const enrolledByStatus = Object.fromEntries(enrollmentStatusRows.map((r) => [r.status, r.count]));
+
+    const stepCountRows = await db
+      .select({ stepId: sequenceEnrollments.currentStepId, count: sql<number>`count(*)`.mapWith(Number) })
+      .from(sequenceEnrollments)
+      .where(
+        and(
+          eq(sequenceEnrollments.sequenceId, sequenceId),
+          inArray(sequenceEnrollments.status, ['active', 'paused']),
+        ),
+      )
+      .groupBy(sequenceEnrollments.currentStepId);
+    const countByStepId = new Map(stepCountRows.map((r) => [r.stepId, r.count]));
+
+    const stepBreakdown = sendSteps.map((step, i) => ({
+      stepId: step.id,
+      stepNumber: i + 1,
+      templateId: step.templateId,
+      contactCount: countByStepId.get(step.id) ?? 0,
+    }));
+
+    const [sendCounts] = await db
+      .select({
+        sentToday: sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) and ${sends.sentAt} < date_trunc('day', now()) + interval '1 day')`.mapWith(
+          Number,
+        ),
+        sentYesterday: sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) - interval '1 day' and ${sends.sentAt} < date_trunc('day', now()))`.mapWith(
+          Number,
+        ),
+        totalSent: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(Number),
+        bounced: sql<number>`count(*) filter (where ${sends.status} = 'bounced')`.mapWith(Number),
+        complained: sql<number>`count(*) filter (where ${sends.status} = 'complained')`.mapWith(Number),
+        failed: sql<number>`count(*) filter (where ${sends.status} = 'failed')`.mapWith(Number),
+      })
+      .from(sends)
+      .where(eq(sends.sequenceId, sequenceId));
+
+    const [scheduledRow] = await db
+      .select({
+        scheduledTomorrow: sql<number>`count(*) filter (where ${sequenceEnrollments.nextRunAt} >= date_trunc('day', now()) + interval '1 day' and ${sequenceEnrollments.nextRunAt} < date_trunc('day', now()) + interval '2 day')`.mapWith(
+          Number,
+        ),
+      })
+      .from(sequenceEnrollments)
+      .where(and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.status, 'active')));
+
+    const [eventRow] = await db
+      .select({
+        opens: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(Number),
+        clicks: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'click')`.mapWith(Number),
+      })
+      .from(emailEvents)
+      .innerJoin(sends, eq(emailEvents.sendId, sends.id))
+      .where(eq(sends.sequenceId, sequenceId));
+
+    const totalSent = sendCounts?.totalSent ?? 0;
+    const opens = eventRow?.opens ?? 0;
+    const clicks = eventRow?.clicks ?? 0;
+
+    return {
+      enrolled: {
+        active: enrolledByStatus.active ?? 0,
+        paused: enrolledByStatus.paused ?? 0,
+        stopped: enrolledByStatus.stopped ?? 0,
+        completed: enrolledByStatus.completed ?? 0,
+        total: Object.values(enrolledByStatus).reduce((a: number, b) => a + (b as number), 0),
+      },
+      stepBreakdown,
+      sends: {
+        sentToday: sendCounts?.sentToday ?? 0,
+        sentYesterday: sendCounts?.sentYesterday ?? 0,
+        scheduledTomorrow: scheduledRow?.scheduledTomorrow ?? 0,
+        totalSent,
+        bounced: sendCounts?.bounced ?? 0,
+        complained: sendCounts?.complained ?? 0,
+        failed: sendCounts?.failed ?? 0,
+      },
+      engagement: {
+        opens,
+        clicks,
+        openRate: totalSent > 0 ? opens / totalSent : 0,
+        clickRate: totalSent > 0 ? clicks / totalSent : 0,
+      },
+    };
   }
 }

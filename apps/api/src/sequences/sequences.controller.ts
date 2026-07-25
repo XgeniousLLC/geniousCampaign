@@ -66,6 +66,11 @@ export class SequencesController {
     return this.sequencesService.listSteps(id);
   }
 
+  @Get(':id/stats')
+  getStats(@Param('id') id: string) {
+    return this.sequencesService.getStats(id);
+  }
+
   @Post(':id/steps')
   @Roles('owner', 'editor')
   addStep(@Param('id') id: string, @Body() dto: CreateStepDto, @CurrentUser() user: AuthenticatedUser) {
