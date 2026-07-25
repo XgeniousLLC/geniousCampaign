@@ -237,8 +237,24 @@ export const SubjectHighlightInput = forwardRef<SubjectHighlightInputHandle, Sub
         } else {
           const span = document.createElement('span');
           span.className =
-            'mx-0.5 inline-flex cursor-pointer items-baseline rounded-sm border border-dashed border-accent-light/40 bg-accent-light/10 px-2 py-0.5 text-xs font-medium text-accent-lighter';
-          span.textContent = seg.raw;
+            'mx-0.5 inline-flex cursor-pointer items-center gap-1.5 rounded-sm border border-dashed border-accent-light/40 bg-accent-light/10 px-2 py-0.5 text-xs font-medium text-accent-lighter';
+          const label = seg.options[0] || 'option';
+          const countText = String(seg.options.length);
+          span.appendChild(document.createTextNode(label));
+          const badge = document.createElement('span');
+          badge.className = 'rounded-sm bg-accent-light/25 px-1 font-mono text-[10px] text-accent-tint';
+          badge.textContent = countText;
+          span.appendChild(badge);
+          // Pads the pill's textContent length back up to seg.raw.length so offset
+          // math in getOffsets/setCaretOffset (which walks raw textContent) still
+          // lines up with positions in `value` — see file header comment.
+          const padLen = Math.max(0, seg.raw.length - label.length - countText.length);
+          if (padLen > 0) {
+            const pad = document.createElement('span');
+            pad.className = 'inline-block w-0 overflow-hidden select-none';
+            pad.textContent = ' '.repeat(padLen);
+            span.appendChild(pad);
+          }
           const start = seg.start;
           span.addEventListener('mousedown', (e) => e.preventDefault());
           span.addEventListener('click', (e) => {
