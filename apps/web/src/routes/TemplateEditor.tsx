@@ -10,6 +10,7 @@ import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
 import { TemplateEditorToolbar, PERSONALIZATION_TOKENS } from '../components/TemplateEditorToolbar';
+import { SubjectHighlightInput, type SubjectHighlightInputHandle } from '../components/SubjectHighlightInput';
 import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
@@ -41,7 +42,7 @@ export function TemplateEditor() {
   const [parentTemplateId, setParentTemplateId] = useState<string | null>(null);
   const [linkPopup, setLinkPopup] = useState<{ pos: number; href: string; x: number; y: number } | null>(null);
   const [linkEditOpen, setLinkEditOpen] = useState(false);
-  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const subjectInputRef = useRef<SubjectHighlightInputHandle>(null);
   const [subjectTokenOpen, setSubjectTokenOpen] = useState(false);
   const [subjectCustomKey, setSubjectCustomKey] = useState('');
   const subjectCustomKeyValid = /^[a-zA-Z0-9_]+$/.test(subjectCustomKey.trim());
@@ -135,20 +136,8 @@ export function TemplateEditor() {
     }
   }
 
-  // Subject is a plain &lt;input&gt;, not a TipTap doc — insert at the tracked
-  // cursor position and restore selection there, mirroring the body
-  // toolbar's insertPersonalizationToken/insertSpintaxBlock commands.
   function insertIntoSubject(text: string) {
-    const el = subjectInputRef.current;
-    const start = el?.selectionStart ?? subject.length;
-    const end = el?.selectionEnd ?? subject.length;
-    const next = subject.slice(0, start) + text + subject.slice(end);
-    setSubject(next);
-    const pos = start + text.length;
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(pos, pos);
-    });
+    subjectInputRef.current?.insertText(text);
   }
 
   function currentBody() {
@@ -235,12 +224,12 @@ export function TemplateEditor() {
 
         <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-3">
           <span className="w-16 shrink-0 text-xs text-text-meta">Subject</span>
-          <input
+          <SubjectHighlightInput
             ref={subjectInputRef}
             value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            onChange={setSubject}
             placeholder="Subject line, e.g. Hi {{contact.firstName}}"
-            className="flex-1 bg-transparent text-sm font-medium text-text-primary outline-none placeholder:text-text-faint"
+            className="flex-1 min-w-0 whitespace-nowrap overflow-x-auto bg-transparent text-sm font-medium text-text-primary outline-none"
           />
           <button
             type="button"
