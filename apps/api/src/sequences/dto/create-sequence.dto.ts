@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateSequenceDto {
   @IsString()
@@ -11,4 +11,17 @@ export class CreateSequenceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  // Global sender for every send_email step in this sequence — null = auto-pick.
+  @IsOptional()
+  @IsUUID()
+  senderAccountId?: string;
+
+  @IsOptional()
+  @IsString()
+  fromName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  replyTo?: string;
 }
