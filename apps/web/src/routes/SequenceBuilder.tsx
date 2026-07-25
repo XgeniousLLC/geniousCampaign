@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   addStep,
   getSequence,
+  getSequenceStats,
   listSequences,
   listSteps,
   reorderSteps,
@@ -11,6 +12,7 @@ import {
   updateStep,
   type DelayUnit,
   type Sequence,
+  type SequenceStats,
   type SequenceStep,
 } from '../lib/sequencesApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
@@ -27,7 +29,7 @@ import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi
 import { useAuthStore } from '../stores/useAuthStore';
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
 
-const TABS = ['Steps', 'Enrolled contacts'] as const;
+const TABS = ['Steps', 'Enrolled contacts', 'Stats'] as const;
 type Tab = (typeof TABS)[number];
 
 const ENROLLMENT_STATUS_STYLES: Record<Enrollment['status'], string> = {
@@ -94,6 +96,10 @@ function formatDuration(totalMinutes: number): string {
   return parts.join(' ') || '0m';
 }
 
+function formatPercent(ratio: number): string {
+  return `${(ratio * 100).toFixed(1)}%`;
+}
+
 let tempIdCounter = 0;
 function tempId(): string {
   return `temp_${++tempIdCounter}_${Date.now()}`;
@@ -122,11 +128,12 @@ export function SequenceBuilder() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [stats, setStats] = useState<SequenceStats | null>(null);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
     if (!id) return;
-    const [seq, seqSteps, tpls, enr, allContacts, allSequences, senders] = await Promise.all([
+    const [seq, seqSteps, tpls, enr, allContacts, allSequences, senders, seqStats] = await Promise.all([
       getSequence(id),
       listSteps(id),
       listTemplates({ includeVariants: true }),
@@ -134,6 +141,7 @@ export function SequenceBuilder() {
       listContacts(),
       listSequences(),
       listSenderAccounts(),
+      getSequenceStats(id),
     ]);
     setSequence(seq);
     setName(seq.name);
@@ -147,6 +155,7 @@ export function SequenceBuilder() {
     setEnrollments(enr);
     setContacts(allContacts);
     setOpenCount(allSequences.find((s) => s.id === id)?.openCount ?? 0);
+    setStats(seqStats);
     setDirty(false);
   }
 
@@ -849,6 +858,94 @@ export function SequenceBuilder() {
           </table>
         </div>
       )}
+
+      {tab === 'Stats' && (
+        <div className="max-w-[820px]">
+          {!stats ? (
+            <div className="animate-pulse text-xs text-text-muted">Loading stats…</div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-4 gap-3">
+                <StatCard label="Sent today" value={stats.sends.sentToday} />
+                <StatCard label="Sent yesterday" value={stats.sends.sentYesterday} />
+                <StatCard label="Scheduled tomorrow" value={stats.sends.scheduledTomorrow} />
+                <StatCard label="Total sent" value={stats.sends.totalSent} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-md border border-border-default bg-panel p-4">
+                  <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Enrollment status</div>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <RatioStat label="Active" value={stats.enrolled.active} />
+                    <RatioStat label="Paused" value={stats.enrolled.paused} />
+                    <RatioStat label="Completed" value={stats.enrolled.completed} />
+                    <RatioStat label="Stopped" value={stats.enrolled.stopped} />
+                  </div>
+                </div>
+                <div className="rounded-md border border-border-default bg-panel p-4">
+                  <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Engagement</div>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    <RatioStat label="Open rate" value={formatPercent(stats.engagement.openRate)} sub={`${stats.engagement.opens} opens`} />
+                    <RatioStat label="Click rate" value={formatPercent(stats.engagement.clickRate)} sub={`${stats.engagement.clicks} clicks`} />
+                    <RatioStat label="Bounced" value={stats.sends.bounced} />
+                    <RatioStat label="Failed" value={stats.sends.failed} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border-default bg-panel p-4">
+                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Contacts per step</div>
+                {stats.stepBreakdown.length === 0 ? (
+                  <p className="text-xs text-text-muted">This sequence has no send steps yet.</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {stats.stepBreakdown.map((s) => {
+                      const template = templates.find((t) => t.id === s.templateId);
+                      const max = Math.max(1, ...stats.stepBreakdown.map((b) => b.contactCount));
+                      return (
+                        <div key={s.stepId}>
+                          <div className="mb-1.5 flex items-center justify-between text-xs">
+                            <span className="text-text-tertiary">
+                              Step {s.stepNumber}
+                              {template && <span className="text-text-faint"> — {template.name}</span>}
+                            </span>
+                            <span className="font-mono font-medium text-text-secondary">{s.contactCount}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-surface">
+                            <div
+                              className="h-full rounded-full bg-accent"
+                              style={{ width: `${(s.contactCount / max) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-border-default bg-panel p-3.5">
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="mt-1.5 font-mono text-2xl font-semibold text-text-heading">{value}</div>
+    </div>
+  );
+}
+
+function RatioStat({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
+  return (
+    <div>
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="mt-0.5 font-mono text-lg font-semibold leading-none text-text-heading">{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-text-faint">{sub}</div>}
     </div>
   );
 }

@@ -103,3 +103,22 @@ export function removeStep(sequenceId: string, stepId: string) {
 export function reorderSteps(sequenceId: string, stepIds: string[]) {
   return apiPost<SequenceStep[]>(`/sequences/${sequenceId}/steps/reorder`, { stepIds });
 }
+
+export interface SequenceStats {
+  enrolled: { active: number; paused: number; stopped: number; completed: number; total: number };
+  stepBreakdown: Array<{ stepId: string; stepNumber: number; templateId: string | null; contactCount: number }>;
+  sends: {
+    sentToday: number;
+    sentYesterday: number;
+    scheduledTomorrow: number;
+    totalSent: number;
+    bounced: number;
+    complained: number;
+    failed: number;
+  };
+  engagement: { opens: number; clicks: number; openRate: number; clickRate: number };
+}
+
+export function getSequenceStats(sequenceId: string) {
+  return apiGet<SequenceStats>(`/sequences/${sequenceId}/stats`);
+}
