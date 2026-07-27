@@ -1,6 +1,6 @@
 # Public API
 
-A small REST surface for external tools (a website contact form, Zapier/Make, a custom script) to push contacts into geniusCampaign — auth is a bearer API key, not a login session. This is separate from the [inbound webhook framework](../CLAUDE.md) (HMAC-signed, generic payload mapping, fires triggers) — the public API is purpose-built for one thing: "create or update a contact, optionally into a list and/or with tags," with a simpler auth story that's easier for arbitrary external tools to call (a static header value, no signature to compute).
+A REST surface for external tools (a website contact form, Zapier/Make, a custom script) to push contacts into and manage them within geniusCampaign — auth is a bearer API key, not a login session. This is separate from the [inbound webhook framework](../CLAUDE.md) (HMAC-signed, generic payload mapping, fires triggers) — the public API is purpose-built for contact CRUD, list/tag management, and sequence enrollment control, with a simpler auth story that's easier for arbitrary external tools to call (a static header value, no signature to compute).
 
 ## Authentication
 
@@ -153,6 +153,235 @@ URL-encode the email in the path (`@` → `%40`).
 ```
 
 `stopped` is empty if the contact had no active/paused enrollments — this is not an error, it's the correct "nothing to stop" outcome. Already-`completed`/already-`stopped` enrollments are left untouched (not re-included).
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
+## `GET /api/v1/contacts/{email}`
+
+Returns the full contact profile — tags, lists, and sequence enrollments — so an external tool can inspect a contact and then remove it from one or more of those associations using the sibling `remove-*` endpoints (see below).
+
+The contact must already exist (404 if not) — this endpoint never creates one as a side effect.
+
+### Example
+
+```bash
+curl https://your-api-host/api/v1/contacts/jane%40example.com \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `200 OK`
+
+```json
+{
+  "id": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "status": "active",
+  "customFields": { "company": "Acme Inc" },
+  "tags": [
+    { "id": "c1a2...-tag-1", "name": "lead", "color": "#818CF8" },
+    { "id": "d4e5...-tag-2", "name": "newsletter", "color": "#34D399" }
+  ],
+  "lists": [
+    { "id": "b2a1...-list-1", "name": "Product Launch" }
+  ],
+  "sequences": [
+    { "sequenceId": "a1b2...-seq-1", "sequenceName": "Welcome Series", "status": "active", "enrolledAt": "2026-03-15T10:30:00Z" },
+    { "sequenceId": "c3d4...-seq-2", "sequenceName": "Re-engagement", "status": "paused", "enrolledAt": "2026-04-01T08:00:00Z" }
+  ]
+}
+```
+
+`sequences[].status` is one of `active`, `paused`, `stopped`, or `completed` — the same per-enrollment states used throughout the app (no shared sequence-wide clock, per CLAUDE.md invariant 1).
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
+## `POST /api/v1/contacts/{email}/remove-sequence`
+
+Stops the contact's enrollment in a specific sequence and records an optional reason in the audit trail. Reuses the same `EnrollmentService.stop()` call the admin UI and webhook controller use (CLAUDE.md invariant 2) — an API-triggered removal is the identical state transition.
+
+The contact must already exist (404 if not) — this endpoint never creates one as a side effect. The enrollment must be active or paused (404 if the contact has no enrollment in this sequence, 409 if it is already stopped/completed).
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `sequenceId` | string (UUID) | yes | An existing sequence's id. `404` if it doesn't exist. |
+| `reason` | string | no | Free-text reason for removal. Written to the audit log for traceability. |
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/remove-sequence \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "sequenceId": "a1b2c3d4-...-seq-1", "reason": "Contact requested opt-out from sequence emails" }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "enrollmentId": "d4e2...-enr-1",
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "sequenceId": "a1b2c3d4-...-seq-1",
+  "status": "stopped"
+}
+```
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `400` | `sequenceId` missing or not a valid UUID. |
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email, `sequenceId` doesn't exist, or the contact has no active/paused enrollment in this sequence. |
+| `409` | The enrollment is already stopped or completed. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
+## `POST /api/v1/contacts/{email}/remove-list`
+
+Removes a contact from a static list. The list must exist (404 if not) — this validates the `listId` is real. No error if the contact was not already in the list; the remove is idempotent.
+
+The contact must already exist (404 if not) — this endpoint never creates one as a side effect.
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `listId` | string (UUID) | yes | An existing list's id. `404` if it doesn't exist. |
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/remove-list \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "listId": "b2a1...-list-1" }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "listId": "b2a1...-list-1"
+}
+```
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `400` | `listId` missing or not a valid UUID. |
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email, or `listId` doesn't exist. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
+## `POST /api/v1/contacts/{email}/remove-tags`
+
+Removes one or more tags from a contact. Each tag must exist (404 if any is unknown). No error if the contact didn't have a particular tag to begin with; the remove is idempotent per tag.
+
+The contact must already exist (404 if not) — this endpoint never creates one as a side effect.
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `tagIds` | string[] (UUIDs) | yes | Existing tags' ids. `404` if any id doesn't exist. |
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/remove-tags \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "tagIds": ["c1a2...-tag-1", "d4e5...-tag-2"] }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "removed": [
+    { "tagId": "c1a2...-tag-1" },
+    { "tagId": "d4e5...-tag-2" }
+  ]
+}
+```
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `400` | `tagIds` missing, not an array, or an element is not a valid UUID. |
+| `401` | Missing, invalid, or expired `X-Api-Key`. |
+| `404` | No contact exists with that email, or one of the `tagIds` doesn't exist. |
+| `429` | Rate limit exceeded — see **Rate limiting** below. |
+
+## `POST /api/v1/contacts/{email}/remove-all`
+
+Removes the contact from **every** list they're in and **stops every** active/paused sequence enrollment — all in one call. Accepts an optional `reason` that's logged to the audit trail for each stopped enrollment.
+
+The contact must already exist (404 if not).
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reason` | string | no | Free-text reason for removal. Written to the audit log for every stopped sequence enrollment. |
+
+### Example
+
+```bash
+curl -X POST https://your-api-host/api/v1/contacts/jane%40example.com/remove-all \
+  -H "X-Api-Key: gcp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "GDPR data minimization request" }'
+```
+
+URL-encode the email in the path (`@` → `%40`).
+
+### Response — `201 Created`
+
+```json
+{
+  "contactId": "b3f1c2b0-...-8e2a",
+  "email": "jane@example.com",
+  "listsRemoved": 2,
+  "sequencesStopped": 1,
+  "stopped": [
+    { "enrollmentId": "d4e2...-enr-1", "sequenceId": "a1b2...-seq-1" }
+  ]
+}
+```
+
+`listsRemoved` is the count of list memberships removed; `sequencesStopped` is the count of enrollments stopped. Both are `0` if the contact had nothing to remove.
 
 ### Error responses
 

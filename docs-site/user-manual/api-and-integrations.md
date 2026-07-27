@@ -18,6 +18,11 @@ Hand whoever manages the external tool this summary (full technical detail — e
 - **`POST /api/v1/contacts`** — creates a new contact, or updates one that already exists with that email (never errors on a duplicate — it's an upsert). Accepts `email` (required), `firstName`, `lastName`, `customFields` (key/value pairs — a key matching an existing custom field's slug sets its value; an unmatched key auto-creates a new custom field for it), and optionally `listId`/`tagIds` to add the contact to a specific list/tags on the way in.
 - **`POST /api/v1/contacts/{email}/enroll`** — puts an existing contact into a sequence, given its `sequenceId`. Same enrollment logic as clicking "Enroll contacts" on the sequence page. The contact must already exist; errors if they're already active/paused in that sequence.
 - **`POST /api/v1/contacts/{email}/stop-sequences`** — stops every active or paused sequence enrollment for that contact across every sequence at once (e.g. call this from a "customer replied" or "converted" automation so they stop receiving further sequence steps). The contact must already exist — this one never creates a contact as a side effect.
+- **`GET /api/v1/contacts/{email}`** — returns the full contact profile: tags, lists, and sequence enrollments. Use this to inspect a contact before deciding what to change.
+- **`POST /api/v1/contacts/{email}/remove-sequence`** — stops a specific sequence enrollment for the contact, with an optional reason logged to the audit trail. Requires `sequenceId` in the body.
+- **`POST /api/v1/contacts/{email}/remove-list`** — removes the contact from a specific list. Requires `listId` in the body.
+- **`POST /api/v1/contacts/{email}/remove-tags`** — removes one or more tags from the contact. Requires `tagIds` array in the body.
+- **`POST /api/v1/contacts/{email}/remove-all`** — removes the contact from every list and stops every active sequence enrollment in a single call. Accepts an optional `reason` for the audit trail.
 - Every request needs the `X-Api-Key` header from step 3 above. Missing, wrong, or expired keys get rejected.
 
 ### Managing existing keys
