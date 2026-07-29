@@ -152,12 +152,12 @@ export function SpintaxShufflePreview({
   }
 
   function currentBodyText() {
-    if (!editor) return '';
+    if (!editor || editor.isDestroyed) return '';
     return renderBodyText(editor.getJSON() as ProseMirrorNode);
   }
 
   function shuffle() {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     const rawText = currentBodyText();
     setVariants(
       Array.from({ length: VARIANT_COUNT }, () => ({

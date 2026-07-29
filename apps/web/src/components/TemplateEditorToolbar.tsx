@@ -95,7 +95,7 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [buttonDialogOpen, setButtonDialogOpen] = useState(false);
   const { inputRef, uploading, error, openFilePicker, handleFileChange } = useImageUpload(editor);
 
-  if (!editor) return null;
+  if (!editor || editor.isDestroyed) return null;
 
   const currentHeading = editor.isActive('heading', { level: 1 })
     ? 'h1'
@@ -297,6 +297,7 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
           onClose={() => setAiOpen(false)}
           context={renderBodyText(editor.getJSON() as ProseMirrorNode)}
           onInsert={(text) => {
+            if (editor.isDestroyed) return;
             // Replaces the whole doc rather than inserting at cursor — this
             // modal is opened as "rewrite my template," so the result should
             // become the new content, with tokens/buttons parsed back into
