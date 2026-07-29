@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Logger, Post, RawBody, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { eq } from 'drizzle-orm';
 import { SuppressionService } from './suppression.service';
@@ -64,10 +64,10 @@ export class SesSnsController {
   }
 
   @Post()
-  async handle(@Body() rawBody: string) {
+  async handle(@RawBody() rawBody: Buffer) {
     let envelope: SnsEnvelope;
     try {
-      envelope = JSON.parse(rawBody);
+      envelope = JSON.parse(rawBody.toString());
     } catch {
       this.logger.warn('Received non-JSON SNS payload, ignoring');
       return { ok: false };
@@ -82,8 +82,13 @@ export class SesSnsController {
     }
 
     if (envelope.Type === 'Notification') {
-      const notification: SesNotification = JSON.parse(envelope.Message);
-      await this.processNotification(notification);
+      try {
+        const notification: SesNotification = JSON.parse(envelope.Message);
+        await this.processNotification(notification);
+      } catch {
+        this.logger.warn('SNS Notification.Message was not valid JSON, ignoring');
+        return { ok: false };
+      }
     }
 
     return { ok: true };

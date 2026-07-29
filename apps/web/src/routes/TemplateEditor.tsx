@@ -83,13 +83,16 @@ export function TemplateEditor() {
 
   useEffect(() => {
     if (!id || !editor) return;
+    let cancelled = false;
     getTemplate(id).then((template) => {
+      if (cancelled || editor.isDestroyed) return;
       setName(template.name);
       setSubject(template.subject);
       setParentTemplateId(template.parentTemplateId ?? null);
       editor.commands.setContent(template.bodyJson);
       setLoaded(true);
     });
+    return () => { cancelled = true; };
   }, [id, editor]);
 
   function toast(text: string, tone: 'success' | 'error') {
@@ -99,7 +102,7 @@ export function TemplateEditor() {
   }
 
   async function handleSave() {
-    if (!editor) return;
+    if (!editor || editor.isDestroyed) return;
     setSaving(true);
     try {
       const bodyJson = editor.getJSON();
@@ -121,7 +124,7 @@ export function TemplateEditor() {
   function applyLibraryTemplate(t: LibraryTemplate) {
     setName(t.name);
     setSubject(t.subject);
-    editor?.commands.setContent(t.bodyJson);
+    if (editor && !editor.isDestroyed) editor.commands.setContent(t.bodyJson);
     setShowLibrary(false);
   }
 
@@ -141,7 +144,7 @@ export function TemplateEditor() {
   }
 
   function currentBody() {
-    const bodyJson = (editor?.getJSON() ?? EMPTY_DOC) as ProseMirrorNode;
+    const bodyJson = (editor && !editor.isDestroyed ? editor.getJSON() : EMPTY_DOC) as ProseMirrorNode;
     return { bodyHtml: renderBodyHtml(bodyJson), bodyText: renderBodyText(bodyJson) };
   }
 
@@ -344,7 +347,9 @@ export function TemplateEditor() {
             setLinkPopup(null);
           }}
           onEdit={() => {
-            editor?.chain().setTextSelection(linkPopup.pos).extendMarkRange('link').run();
+            if (editor && !editor.isDestroyed) {
+              editor.chain().setTextSelection(linkPopup.pos).extendMarkRange('link').run();
+            }
             setLinkEditOpen(true);
             setLinkPopup(null);
           }}
@@ -352,7 +357,7 @@ export function TemplateEditor() {
         />
       )}
 
-      {linkEditOpen && editor && (
+      {linkEditOpen && editor && !editor.isDestroyed && (
         <PromptDialog
           title="Edit link"
           submitLabel="Update"
