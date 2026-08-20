@@ -46,7 +46,15 @@ export class TrackingService {
 
   buildOpenPixelUrl(sendId: string): string {
     const token = signTrackingToken(this.secret, { sendId } satisfies OpenPayload);
-    return `${this.baseUrl}/t/o/${token}`;
+    const url = `${this.baseUrl}/t/o/${token}`;
+    const domain = this.settings.get('TRACKING_DOMAIN');
+    if (!domain || domain === 'track.yourdomain.com') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TRACKING] TRACKING_DOMAIN not configured; tracking pixels will use fallback ${this.baseUrl} and may be unreachable from email clients`
+      );
+    }
+    return url;
   }
 
   buildClickUrl(sendId: string, url: string): string {

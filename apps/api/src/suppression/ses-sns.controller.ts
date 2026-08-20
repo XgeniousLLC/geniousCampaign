@@ -39,9 +39,20 @@ interface SesComplaintNotification {
   };
 }
 
+interface SesDeliveryNotification {
+  notificationType: 'Delivery';
+  mail?: SesMailObject;
+  delivery: {
+    recipients: string[];
+    timestamp: string;
+    processingTimeMillis: number;
+  };
+}
+
 type SesNotification =
   | SesBounceNotification
   | SesComplaintNotification
+  | SesDeliveryNotification
   | { notificationType: string };
 
 interface SnsEnvelope {
@@ -67,6 +78,13 @@ export class SesSnsController {
     private readonly events: EventEmitter2,
   ) {}
 
+  // Health check for SNS subscription verification — SNS performs an initial
+  // GET to confirm the endpoint is reachable before sending notifications.
+  @Get()
+  getHealthCheck() {
+    return { status: 'ok' };
+  }
+
   // Read-only, so Settings > Integrations can show the exact URL to paste
   // into the SNS topic's HTTPS subscription — same req.hostname derivation
   // TrackingDomainController uses for its CNAME target, kept auth-gated
@@ -80,18 +98,24 @@ export class SesSnsController {
 
   @Post()
   async handle(@RawBody() rawBody: Buffer, @Req() req: Request) {
+    const bodyString = rawBody.toString();
+    const contentType = req.get('content-type');
+    this.logger.debug(`[SNS_RECEIVED] content-type: ${contentType}, length: ${bodyString.length}, first 100 chars: ${bodyString.substring(0, 100)}`);
+
     let envelope: SnsEnvelope;
     try {
-      envelope = JSON.parse(rawBody.toString());
-    } catch {
-      this.logger.warn('Received non-JSON SNS payload, ignoring');
+      envelope = JSON.parse(bodyString);
+    } catch (err) {
+      this.logger.warn(
+        `[SNS_PARSE_ERROR] Failed to parse SNS payload: ${err instanceof Error ? err.message : String(err)}. Content-Type: ${contentType}. Body preview: ${bodyString.substring(0, 200)}`,
+      );
       await this.webhookDeliveries.log({
         webhookEndpointId: null,
         slug: 'ses-sns',
         signatureValid: true,
         payload: null,
         headers: this.extractHeaders(req),
-        error: 'Failed to parse JSON',
+        error: `Failed to parse JSON: ${err instanceof Error ? err.message : String(err)}`,
       });
       return { ok: false };
     }
@@ -191,6 +215,14 @@ export class SesSnsController {
         'complaint',
         undefined,
       );
+    } else if (notification.notificationType === 'Delivery') {
+      const { delivery, mail } = notification as SesDeliveryNotification;
+      await this.markSendStatusAndCreateEvent(
+        mail?.messageId,
+        'delivered',
+        'delivery',
+        undefined,
+      );
     }
   }
 
@@ -199,8 +231,8 @@ export class SesSnsController {
    * and emits an event to the internal bus for triggers and outbound webhooks. */
   private async markSendStatusAndCreateEvent(
     messageId: string | undefined,
-    status: 'bounced' | 'complained',
-    eventType: 'bounce' | 'complaint',
+    status: 'bounced' | 'complained' | 'delivered',
+    eventType: 'bounce' | 'complaint' | 'delivery',
     bounceType?: string,
   ) {
     if (!messageId) return;
@@ -234,6 +266,11 @@ export class SesSnsController {
       });
     } else if (eventType === 'complaint') {
       this.events.emit('email.complained', {
+        sendId: send.id,
+        contactId: send.contactId,
+      });
+    } else if (eventType === 'delivery') {
+      this.events.emit('email.delivered', {
         sendId: send.id,
         contactId: send.contactId,
       });
