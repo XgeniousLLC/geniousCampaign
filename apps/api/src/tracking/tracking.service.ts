@@ -6,6 +6,7 @@ import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
 import { emailEvents, sends } from '../db/schema';
 import { signTrackingToken, verifyTrackingToken } from './tracking-token.util';
+import { DebugLogService } from '../debug-log/debug-log.service';
 
 interface OpenPayload {
   sendId: string;
@@ -23,6 +24,7 @@ export class TrackingService {
     private readonly config: ConfigService,
     private readonly settings: SettingsService,
     private readonly events: EventEmitter2,
+    private readonly debugLog: DebugLogService,
   ) {}
 
   private get secret(): string {
@@ -56,11 +58,21 @@ export class TrackingService {
     try {
       const payload = verifyTrackingToken<OpenPayload>(this.secret, token);
       if (!payload) {
-        console.warn(`[TRACKING_VERIFY] Token verification returned null for token: ${token.substring(0, 20)}...`);
+        const tokenPreview = token.substring(0, 20);
+        this.debugLog.record({
+          source: 'backend',
+          message: `[TRACKING_VERIFY] Token verification returned null for token: ${tokenPreview}...`,
+          context: { tokenPreview },
+        });
       }
       return payload;
     } catch (err) {
-      console.error(`[TRACKING_VERIFY_ERROR] Exception during token verification:`, err);
+      this.debugLog.record({
+        source: 'backend',
+        message: `[TRACKING_VERIFY_ERROR] Exception during token verification`,
+        stack: err instanceof Error ? err.stack : String(err),
+        context: { error: err instanceof Error ? err.message : String(err) },
+      });
       return null;
     }
   }
@@ -72,15 +84,28 @@ export class TrackingService {
   async recordOpen(sendId: string) {
     const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
     if (!send) {
-      console.error(`[TRACKING_ERROR] Send not found for sendId: ${sendId}`);
+      await this.debugLog.record({
+        source: 'backend',
+        message: `[TRACKING_ERROR] Send not found for sendId: ${sendId}`,
+        context: { sendId, error: 'Send record not found' },
+      });
       return;
     }
     try {
       await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'open' });
-      console.log(`[TRACKING_SUCCESS] Open event inserted for sendId: ${sendId}, contactId: ${send.contactId}`);
+      await this.debugLog.record({
+        source: 'backend',
+        message: `[TRACKING_SUCCESS] Open event inserted for sendId: ${sendId}, contactId: ${send.contactId}`,
+        context: { sendId, contactId: send.contactId },
+      });
       this.events.emit('email.opened', { sendId, contactId: send.contactId });
     } catch (err) {
-      console.error(`[TRACKING_ERROR] Failed to record open event for sendId: ${sendId}`, err);
+      await this.debugLog.record({
+        source: 'backend',
+        message: `[TRACKING_ERROR] Failed to record open event for sendId: ${sendId}`,
+        stack: err instanceof Error ? err.stack : String(err),
+        context: { sendId, error: err instanceof Error ? err.message : String(err) },
+      });
     }
   }
 
