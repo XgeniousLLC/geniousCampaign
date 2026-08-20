@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Res } from '@nestjs/common';
+import { Controller, Get, Header, Param, Res, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { TrackingService } from './tracking.service';
 
@@ -8,15 +8,22 @@ const TRANSPARENT_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAA
 
 @Controller('t')
 export class TrackingController {
+  private readonly logger = new Logger(TrackingController.name);
+
   constructor(private readonly tracking: TrackingService) {}
 
   @Get('o/:token')
   @Header('Content-Type', 'image/gif')
   @Header('Cache-Control', 'no-store')
   async open(@Param('token') token: string, @Res() res: Response) {
+    this.logger.log(`[PIXEL_REQUEST] Open pixel requested with token: ${token.substring(0, 20)}...`);
     const payload = this.tracking.verifyOpenToken(token);
     if (payload) {
+      this.logger.log(`[PIXEL_VALID] Token verified for sendId: ${payload.sendId}`);
       await this.tracking.recordOpen(payload.sendId);
+      this.logger.log(`[PIXEL_RECORDED] Open event recorded for sendId: ${payload.sendId}`);
+    } else {
+      this.logger.warn(`[PIXEL_INVALID] Token verification failed for token: ${token.substring(0, 20)}...`);
     }
     res.status(200).send(TRANSPARENT_GIF);
   }

@@ -53,7 +53,16 @@ export class TrackingService {
   }
 
   verifyOpenToken(token: string): OpenPayload | null {
-    return verifyTrackingToken<OpenPayload>(this.secret, token);
+    try {
+      const payload = verifyTrackingToken<OpenPayload>(this.secret, token);
+      if (!payload) {
+        console.warn(`[TRACKING_VERIFY] Token verification returned null for token: ${token.substring(0, 20)}...`);
+      }
+      return payload;
+    } catch (err) {
+      console.error(`[TRACKING_VERIFY_ERROR] Exception during token verification:`, err);
+      return null;
+    }
   }
 
   verifyClickToken(token: string): ClickPayload | null {
@@ -62,9 +71,17 @@ export class TrackingService {
 
   async recordOpen(sendId: string) {
     const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
-    if (!send) return;
-    await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'open' });
-    this.events.emit('email.opened', { sendId, contactId: send.contactId });
+    if (!send) {
+      console.error(`[TRACKING_ERROR] Send not found for sendId: ${sendId}`);
+      return;
+    }
+    try {
+      await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'open' });
+      console.log(`[TRACKING_SUCCESS] Open event inserted for sendId: ${sendId}, contactId: ${send.contactId}`);
+      this.events.emit('email.opened', { sendId, contactId: send.contactId });
+    } catch (err) {
+      console.error(`[TRACKING_ERROR] Failed to record open event for sendId: ${sendId}`, err);
+    }
   }
 
   async recordClick(sendId: string, url: string) {
