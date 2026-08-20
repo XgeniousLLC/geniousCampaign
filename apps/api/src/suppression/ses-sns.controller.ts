@@ -39,9 +39,20 @@ interface SesComplaintNotification {
   };
 }
 
+interface SesDeliveryNotification {
+  notificationType: 'Delivery';
+  mail?: SesMailObject;
+  delivery: {
+    recipients: string[];
+    timestamp: string;
+    processingTimeMillis: number;
+  };
+}
+
 type SesNotification =
   | SesBounceNotification
   | SesComplaintNotification
+  | SesDeliveryNotification
   | { notificationType: string };
 
 interface SnsEnvelope {
@@ -191,6 +202,14 @@ export class SesSnsController {
         'complaint',
         undefined,
       );
+    } else if (notification.notificationType === 'Delivery') {
+      const { delivery, mail } = notification as SesDeliveryNotification;
+      await this.markSendStatusAndCreateEvent(
+        mail?.messageId,
+        'delivered',
+        'delivery',
+        undefined,
+      );
     }
   }
 
@@ -199,8 +218,8 @@ export class SesSnsController {
    * and emits an event to the internal bus for triggers and outbound webhooks. */
   private async markSendStatusAndCreateEvent(
     messageId: string | undefined,
-    status: 'bounced' | 'complained',
-    eventType: 'bounce' | 'complaint',
+    status: 'bounced' | 'complained' | 'delivered',
+    eventType: 'bounce' | 'complaint' | 'delivery',
     bounceType?: string,
   ) {
     if (!messageId) return;
@@ -234,6 +253,11 @@ export class SesSnsController {
       });
     } else if (eventType === 'complaint') {
       this.events.emit('email.complained', {
+        sendId: send.id,
+        contactId: send.contactId,
+      });
+    } else if (eventType === 'delivery') {
+      this.events.emit('email.delivered', {
         sendId: send.id,
         contactId: send.contactId,
       });

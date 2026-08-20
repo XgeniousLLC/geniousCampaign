@@ -64,7 +64,7 @@ export const campaigns = pgTable('campaigns', {
 });
 
 export const sendProviderEnum = pgEnum('send_provider', ['ses', 'gmail']);
-export const sendStatusEnum = pgEnum('send_status', ['sent', 'failed', 'suppressed', 'bounced', 'complained']);
+export const sendStatusEnum = pgEnum('send_status', ['sent', 'failed', 'suppressed', 'bounced', 'complained', 'delivered']);
 
 export const sends = pgTable(
   'sends',
@@ -98,7 +98,7 @@ export const sends = pgTable(
   (table) => [index('sends_contact_id_idx').on(table.contactId)],
 );
 
-export const emailEventTypeEnum = pgEnum('email_event_type', ['open', 'click', 'bounce', 'complaint']);
+export const emailEventTypeEnum = pgEnum('email_event_type', ['open', 'click', 'bounce', 'complaint', 'delivery']);
 
 export const emailEvents = pgTable(
   'email_events',
