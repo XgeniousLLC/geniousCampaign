@@ -78,6 +78,13 @@ export class SesSnsController {
     private readonly events: EventEmitter2,
   ) {}
 
+  // Health check for SNS subscription verification — SNS performs an initial
+  // GET to confirm the endpoint is reachable before sending notifications.
+  @Get()
+  getHealthCheck() {
+    return { status: 'ok' };
+  }
+
   // Read-only, so Settings > Integrations can show the exact URL to paste
   // into the SNS topic's HTTPS subscription — same req.hostname derivation
   // TrackingDomainController uses for its CNAME target, kept auth-gated
