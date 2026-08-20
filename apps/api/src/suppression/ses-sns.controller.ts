@@ -91,18 +91,24 @@ export class SesSnsController {
 
   @Post()
   async handle(@RawBody() rawBody: Buffer, @Req() req: Request) {
+    const bodyString = rawBody.toString();
+    const contentType = req.get('content-type');
+    this.logger.debug(`[SNS_RECEIVED] content-type: ${contentType}, length: ${bodyString.length}, first 100 chars: ${bodyString.substring(0, 100)}`);
+
     let envelope: SnsEnvelope;
     try {
-      envelope = JSON.parse(rawBody.toString());
-    } catch {
-      this.logger.warn('Received non-JSON SNS payload, ignoring');
+      envelope = JSON.parse(bodyString);
+    } catch (err) {
+      this.logger.warn(
+        `[SNS_PARSE_ERROR] Failed to parse SNS payload: ${err instanceof Error ? err.message : String(err)}. Content-Type: ${contentType}. Body preview: ${bodyString.substring(0, 200)}`,
+      );
       await this.webhookDeliveries.log({
         webhookEndpointId: null,
         slug: 'ses-sns',
         signatureValid: true,
         payload: null,
         headers: this.extractHeaders(req),
-        error: 'Failed to parse JSON',
+        error: `Failed to parse JSON: ${err instanceof Error ? err.message : String(err)}`,
       });
       return { ok: false };
     }
