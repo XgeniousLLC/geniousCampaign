@@ -1,9 +1,19 @@
-import { Controller, Get, Logger, Post, RawBody, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Logger,
+  Post,
+  RawBody,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { eq } from 'drizzle-orm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SuppressionService } from './suppression.service';
 import { DrizzleService } from '../db/drizzle.service';
-import { sends } from '../db/schema';
+import { sends, emailEvents } from '../db/schema';
+import { WebhookDeliveriesService } from '../webhooks/webhook-deliveries.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -29,7 +39,10 @@ interface SesComplaintNotification {
   };
 }
 
-type SesNotification = SesBounceNotification | SesComplaintNotification | { notificationType: string };
+type SesNotification =
+  | SesBounceNotification
+  | SesComplaintNotification
+  | { notificationType: string };
 
 interface SnsEnvelope {
   Type: 'SubscriptionConfirmation' | 'Notification' | 'UnsubscribeConfirmation';
@@ -50,6 +63,8 @@ export class SesSnsController {
   constructor(
     private readonly suppression: SuppressionService,
     private readonly drizzle: DrizzleService,
+    private readonly webhookDeliveries: WebhookDeliveriesService,
+    private readonly events: EventEmitter2,
   ) {}
 
   // Read-only, so Settings > Integrations can show the exact URL to paste
@@ -64,19 +79,36 @@ export class SesSnsController {
   }
 
   @Post()
-  async handle(@RawBody() rawBody: Buffer) {
+  async handle(@RawBody() rawBody: Buffer, @Req() req: Request) {
     let envelope: SnsEnvelope;
     try {
       envelope = JSON.parse(rawBody.toString());
     } catch {
       this.logger.warn('Received non-JSON SNS payload, ignoring');
+      await this.webhookDeliveries.log({
+        webhookEndpointId: null,
+        slug: 'ses-sns',
+        signatureValid: true,
+        payload: null,
+        headers: this.extractHeaders(req),
+        error: 'Failed to parse JSON',
+      });
       return { ok: false };
     }
 
     if (envelope.Type === 'SubscriptionConfirmation' && envelope.SubscribeURL) {
       this.logger.log(`Confirming SNS subscription: ${envelope.SubscribeURL}`);
+      await this.webhookDeliveries.log({
+        webhookEndpointId: null,
+        slug: 'ses-sns-subscription',
+        signatureValid: true,
+        payload: envelope,
+        headers: this.extractHeaders(req),
+      });
       await fetch(envelope.SubscribeURL).catch((err) =>
-        this.logger.error(`Failed to confirm SNS subscription: ${err instanceof Error ? err.message : err}`),
+        this.logger.error(
+          `Failed to confirm SNS subscription: ${err instanceof Error ? err.message : err}`,
+        ),
       );
       return { ok: true };
     }
@@ -84,9 +116,26 @@ export class SesSnsController {
     if (envelope.Type === 'Notification') {
       try {
         const notification: SesNotification = JSON.parse(envelope.Message);
+        await this.webhookDeliveries.log({
+          webhookEndpointId: null,
+          slug: 'ses-sns',
+          signatureValid: true,
+          payload: notification,
+          headers: this.extractHeaders(req),
+        });
         await this.processNotification(notification);
-      } catch {
-        this.logger.warn('SNS Notification.Message was not valid JSON, ignoring');
+      } catch (error) {
+        this.logger.warn(
+          `SNS Notification.Message was not valid JSON or processing failed: ${error}`,
+        );
+        await this.webhookDeliveries.log({
+          webhookEndpointId: null,
+          slug: 'ses-sns',
+          signatureValid: true,
+          payload: envelope,
+          headers: this.extractHeaders(req),
+          error: error instanceof Error ? error.message : String(error),
+        });
         return { ok: false };
       }
     }
@@ -94,32 +143,102 @@ export class SesSnsController {
     return { ok: true };
   }
 
+  private extractHeaders(req: Request): Record<string, unknown> {
+    return {
+      'content-type': req.get('content-type'),
+      'x-amz-sns-message-type': req.get('x-amz-sns-message-type'),
+      'x-amz-sns-message-id': req.get('x-amz-sns-message-id'),
+      'x-amz-sns-topic-arn': req.get('x-amz-sns-topic-arn'),
+      'user-agent': req.get('user-agent'),
+    };
+  }
+
   private async processNotification(notification: SesNotification) {
     if (notification.notificationType === 'Bounce') {
       const { bounce, mail } = notification as SesBounceNotification;
       for (const recipient of bounce.bouncedRecipients) {
         if (bounce.bounceType === 'Permanent') {
-          await this.suppression.suppress(recipient.emailAddress, 'hard_bounce', 'ses_sns');
+          await this.suppression.suppress(
+            recipient.emailAddress,
+            'hard_bounce',
+            'ses_sns',
+          );
         } else {
-          await this.suppression.recordSoftBounce(recipient.emailAddress, 'ses_sns');
+          await this.suppression.recordSoftBounce(
+            recipient.emailAddress,
+            'ses_sns',
+          );
         }
       }
-      await this.markSendStatus(mail?.messageId, 'bounced');
+      await this.markSendStatusAndCreateEvent(
+        mail?.messageId,
+        'bounced',
+        'bounce',
+        bounce.bounceType,
+      );
     } else if (notification.notificationType === 'Complaint') {
       const { complaint, mail } = notification as SesComplaintNotification;
       for (const recipient of complaint.complainedRecipients) {
-        await this.suppression.suppress(recipient.emailAddress, 'complaint', 'ses_sns');
+        await this.suppression.suppress(
+          recipient.emailAddress,
+          'complaint',
+          'ses_sns',
+        );
       }
-      await this.markSendStatus(mail?.messageId, 'complained');
+      await this.markSendStatusAndCreateEvent(
+        mail?.messageId,
+        'complained',
+        'complaint',
+        undefined,
+      );
     }
   }
 
-  /** Correlates the notification back to the specific `sends` row via
-   * providerMessageId, so sends.status becomes an accurate historical
-   * record (not just the suppression list) — this is what GC-050's
-   * circuit breaker reads its rolling bounce rate from. */
-  private async markSendStatus(messageId: string | undefined, status: 'bounced' | 'complained') {
+  /** Correlates the notification back to the specific `sends` row via providerMessageId,
+   * updates sends.status for historical record, creates an email_event record,
+   * and emits an event to the internal bus for triggers and outbound webhooks. */
+  private async markSendStatusAndCreateEvent(
+    messageId: string | undefined,
+    status: 'bounced' | 'complained',
+    eventType: 'bounce' | 'complaint',
+    bounceType?: string,
+  ) {
     if (!messageId) return;
-    await this.drizzle.db.update(sends).set({ status }).where(eq(sends.providerMessageId, messageId));
+
+    const send = await this.drizzle.db.query.sends.findFirst({
+      where: eq(sends.providerMessageId, messageId),
+    });
+
+    if (!send) {
+      this.logger.warn(`No send found for providerMessageId: ${messageId}`);
+      return;
+    }
+
+    await this.drizzle.db
+      .update(sends)
+      .set({ status })
+      .where(eq(sends.id, send.id));
+
+    const metadata = bounceType ? JSON.stringify({ bounceType }) : undefined;
+    await this.drizzle.db.insert(emailEvents).values({
+      sendId: send.id,
+      type: eventType,
+      metadata,
+    });
+
+    if (eventType === 'bounce') {
+      this.events.emit('email.bounced', {
+        sendId: send.id,
+        contactId: send.contactId,
+        bounceType: bounceType || 'Undetermined',
+      });
+    } else if (eventType === 'complaint') {
+      this.events.emit('email.complained', {
+        sendId: send.id,
+        contactId: send.contactId,
+      });
+    }
+
+    this.logger.log(`Recorded ${eventType} event for send ${send.id}`);
   }
 }
