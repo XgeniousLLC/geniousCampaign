@@ -3,10 +3,10 @@ import {
   Get,
   Logger,
   Post,
-  RawBody,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { eq } from 'drizzle-orm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -97,7 +97,8 @@ export class SesSnsController {
   }
 
   @Post()
-  async handle(@RawBody() rawBody: Buffer, @Req() req: Request) {
+  async handle(@Req() req: RawBodyRequest<Request>) {
+    const rawBody = req.rawBody ?? Buffer.alloc(0);
     const bodyString = rawBody.toString();
     const contentType = req.get('content-type');
     this.logger.debug(`[SNS_RECEIVED] content-type: ${contentType}, length: ${bodyString.length}, first 100 chars: ${bodyString.substring(0, 100)}`);

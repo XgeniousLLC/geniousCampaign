@@ -17,6 +17,7 @@ import { CampaignCompose } from './routes/CampaignCompose';
 import { CampaignDetail } from './routes/CampaignDetail';
 import { SenderAccountsSettings } from './routes/SenderAccountsSettings';
 import { EmailLog } from './routes/EmailLog';
+import { DebugLog } from './routes/DebugLog';
 import { ListsAndTags } from './routes/ListsAndTags';
 import { Verification } from './routes/Verification';
 import { Triggers } from './routes/Triggers';
@@ -53,6 +54,7 @@ function App() {
             <Route path="campaigns/:id" element={<CampaignDetail />} />
             <Route path="settings/sender-accounts" element={<SenderAccountsSettings />} />
             <Route path="email-log" element={<EmailLog />} />
+            <Route path="debug-log" element={<DebugLog />} />
             <Route path="lists" element={<ListsAndTags />} />
             <Route path="lists/:id" element={<ListDetail />} />
             <Route path="verification" element={<Verification />} />
