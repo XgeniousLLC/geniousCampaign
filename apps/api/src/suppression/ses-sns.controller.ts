@@ -114,7 +114,10 @@ export class SesSnsController {
         webhookEndpointId: null,
         slug: 'ses-sns',
         signatureValid: true,
-        payload: null,
+        // Store what AWS actually sent, not just the parse error — `payload:
+        // null` here was a dead end for debugging, since the Webhooks page
+        // showed no way to see the raw bytes that failed to parse.
+        payload: { contentType: contentType ?? null, rawBody: bodyString.slice(0, 4000) },
         headers: this.extractHeaders(req),
         error: `Failed to parse JSON: ${err instanceof Error ? err.message : String(err)}`,
       });
