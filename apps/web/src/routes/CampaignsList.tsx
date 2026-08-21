@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listCampaigns, type Campaign, type CampaignStatus } from '../lib/campaignsApi';
+import { listCampaigns, deleteCampaign, type Campaign, type CampaignStatus } from '../lib/campaignsApi';
 import { listLists } from '../lib/contactsApi';
 import type { List } from '../lib/contactsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { TableSkeleton } from '../components/skeletons';
+import { CloseIcon } from '../components/icons';
 
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: 'bg-text-muted/10 text-text-muted border-text-muted/25',
@@ -17,12 +18,27 @@ export function CampaignsList() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const navigate = useNavigate();
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
     Promise.all([listCampaigns().then(setCampaigns), listLists().then(setLists)]).finally(() => setLoading(false));
   }, []);
+
+  async function handleDelete(e: React.MouseEvent, id: string, name: string) {
+    e.stopPropagation();
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    setDeleting(id);
+    try {
+      await deleteCampaign(id);
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   function audienceLabel(c: Campaign): string {
     if (c.audienceType === 'tags') return `${c.tagIds?.length ?? 0} tag${c.tagIds?.length === 1 ? '' : 's'}`;
@@ -64,6 +80,7 @@ export function CampaignsList() {
               <th className="px-3 py-2 text-right font-medium">Open</th>
               <th className="px-3 py-2 text-right font-medium">Click</th>
               <th className="px-3 py-2 text-right font-medium">Status</th>
+              {canWrite && <th className="w-10 px-2 py-2" />}
             </tr>
           </thead>
           <tbody>
@@ -96,11 +113,29 @@ export function CampaignsList() {
                     </span>
                   )}
                 </td>
+                {canWrite && (
+                  <td className="px-2 py-2.5 text-right">
+                    {c.status !== 'sending' && (
+                      <button
+                        onClick={(e) => handleDelete(e, c.id, c.name)}
+                        disabled={deleting === c.id}
+                        title="Delete campaign"
+                        className="rounded p-1 text-text-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                      >
+                        {deleting === c.id ? (
+                          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : (
+                          <CloseIcon className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
             {campaigns.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-text-muted">
+                <td colSpan={canWrite ? 6 : 5} className="px-3 py-8 text-center text-text-muted">
                   No campaigns yet.
                 </td>
               </tr>

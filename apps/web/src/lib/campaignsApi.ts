@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 
 export type CampaignStatus = 'draft' | 'sending' | 'sent' | 'failed';
 export type SendStatus = 'sent' | 'failed' | 'suppressed' | 'bounced' | 'complained';
@@ -93,4 +93,8 @@ export function sendCampaign(id: string, confirmed?: boolean, scheduledAt?: stri
 
 export function cancelCampaignSchedule(id: string) {
   return apiPost<{ id: string; status: CampaignStatus }>(`/campaigns/${id}/cancel-schedule`, {});
+}
+
+export function deleteCampaign(id: string) {
+  return apiDelete<{ id: string }>(`/campaigns/${id}`);
 }

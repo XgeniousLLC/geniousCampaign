@@ -297,6 +297,22 @@ export class CampaignsService {
       : { id, status: 'queued' as const };
   }
 
+  /** Deletes a campaign. Blocked while 'sending': the processor holds this
+   * row's id for the duration of its send loop and inserts `sends` rows
+   * referencing it (`campaignId` FK) as it goes — deleting mid-send would
+   * make those inserts violate the FK constraint and corrupt the running
+   * job. Draft/sent/failed are all safe to delete; `sends.campaignId` is
+   * `onDelete: 'set null'` so past send records survive as orphaned history
+   * rather than being deleted with the campaign. */
+  async remove(id: string, db: DbOrTx = this.drizzle.db) {
+    const campaign = await this.findOne(id);
+    if (campaign.status === 'sending') {
+      throw new BadRequestException(`Campaign ${id} is currently sending — cannot delete`);
+    }
+    await db.delete(campaigns).where(eq(campaigns.id, id));
+    return { id };
+  }
+
   /** Cancels a pending schedule (GC-113) — removes the not-yet-fired delayed
    * BullMQ job (jobId === campaignId, same id `send()` used) and clears
    * scheduledAt so the campaign reverts to a plain unsent draft. Only valid
