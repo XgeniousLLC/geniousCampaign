@@ -80,4 +80,23 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
     const [reloaded] = await drizzle.db.select().from(campaigns).where(eq(campaigns.id, campaign.id));
     expect(reloaded.largeSendConfirmed).toBe(true);
   });
+
+  it('deletes a draft campaign', async () => {
+    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'To delete', templateId, listIds: [listId] }).returning();
+
+    const result = await service.remove(campaign.id);
+    expect(result).toEqual({ id: campaign.id });
+
+    const [reloaded] = await drizzle.db.select().from(campaigns).where(eq(campaigns.id, campaign.id));
+    expect(reloaded).toBeUndefined();
+  });
+
+  it('refuses to delete a campaign that is currently sending', async () => {
+    const [campaign] = await drizzle.db.insert(campaigns).values({ name: 'Mid-send', templateId, listIds: [listId], status: 'sending' }).returning();
+
+    await expect(service.remove(campaign.id)).rejects.toThrow('currently sending');
+
+    const [reloaded] = await drizzle.db.select().from(campaigns).where(eq(campaigns.id, campaign.id));
+    expect(reloaded).toBeDefined();
+  });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -58,6 +58,16 @@ export class CampaignsController {
     const result = await this.campaigns.send(id, dto.confirmed, dto.scheduledAt);
     await this.auditLog.record(user, 'campaign.send', 'campaign', id, { confirmed: dto.confirmed ?? false, scheduledAt: dto.scheduledAt });
     return result;
+  }
+
+  @Delete(':id')
+  @Roles('owner', 'editor')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const result = await this.campaigns.remove(id, tx);
+      await this.auditLog.record(user, 'campaign.delete', 'campaign', id, undefined, tx);
+      return result;
+    });
   }
 
   @Post(':id/cancel-schedule')

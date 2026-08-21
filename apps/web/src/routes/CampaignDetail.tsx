@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
+import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, deleteCampaign, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
 import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, type List } from '../lib/contactsApi';
+import { useAuthStore } from '../stores/useAuthStore';
 
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: 'bg-text-muted/10 text-text-muted border-text-muted/25',
@@ -42,6 +43,8 @@ export function CampaignDetail() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ recipientCount: number; threshold: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function load() {
     if (!id) return;
@@ -89,6 +92,19 @@ export function CampaignDetail() {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!id || !campaign) return;
+    if (!confirm(`Delete "${campaign.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteCampaign(id);
+      navigate('/campaigns');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed.');
+      setDeleting(false);
     }
   }
 
@@ -152,12 +168,20 @@ export function CampaignDetail() {
 
   return (
     <div>
-      <button
-        onClick={() => navigate('/campaigns')}
-        className="mb-3 flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-primary"
-      >
-        ← Campaigns
-      </button>
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => navigate('/campaigns')} className="flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-primary">
+          ← Campaigns
+        </button>
+        {canWrite && campaign.status !== 'sending' && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="h-7 rounded-md border border-danger/25 px-2.5 text-[11px] font-medium text-danger hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete campaign'}
+          </button>
+        )}
+      </div>
       <div className="mb-1 flex items-center gap-2.5">
         <h1 className="text-lg font-semibold text-text-heading">{campaign.name}</h1>
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLES[campaign.status]}`}>
