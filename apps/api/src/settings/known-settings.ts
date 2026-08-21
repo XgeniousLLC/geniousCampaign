@@ -14,6 +14,13 @@ export interface SettingDef {
   // frontend renders these with a dedicated component instead of a plain
   // input, and excludes them from the category's normal "Save" payload.
   verifyOnly?: boolean;
+  // Marks a secret the frontend can offer to fill with a random value
+  // (Web Crypto, client-side) rather than requiring the admin to invent or
+  // source one externally — e.g. TRACKING_SIGNING_SECRET is an internal
+  // HMAC key, not a vendor-issued credential. Still saved through the
+  // normal bulk PATCH once generated; this only changes how the input gets
+  // its value.
+  generatable?: boolean;
 }
 
 export interface SettingCategory {
@@ -111,7 +118,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     description: 'Pixel + link tracking and unsubscribe link signing.',
     fields: [
       { key: 'TRACKING_DOMAIN', label: 'Tracking domain', secret: false, verifyOnly: true },
-      { key: 'TRACKING_SIGNING_SECRET', label: 'Signing secret', secret: true },
+      { key: 'TRACKING_SIGNING_SECRET', label: 'Signing secret', secret: true, generatable: true },
     ],
     instructions: [
       'Simplest option: enter this API\'s own domain (the one this app is already deployed at) and click "Check DNS" — it verifies instantly with no DNS changes, since that domain already resolves here with a valid TLS certificate.',
@@ -120,7 +127,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
       'Add that CNAME record at your registrar/DNS provider. Propagation can take a few minutes to a few hours depending on the provider.',
       'Click "Check DNS" again once it\'s live — the domain is only saved here after the CNAME actually resolves, so a typo or a domain you don\'t control can\'t silently become the tracking host.',
       'No SPF/DKIM/DMARC records are needed for this domain — that\'s a separate concern handled by your sending domain (SES), not the tracking domain.',
-      'Signing secret below is generated internally (not something you fetch from an external dashboard) — leave it blank to keep the current one, or paste a replacement if you\'re rotating it.',
+      'Signing secret below is generated automatically the first time the app starts — nothing to configure. Leave it blank to keep the current one, or paste a replacement if you\'re rotating it.',
     ],
   },
   {

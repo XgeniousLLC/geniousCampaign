@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { appSettings } from '../db/schema';
@@ -44,6 +45,22 @@ export class SettingsService implements OnModuleInit {
 
   async onModuleInit() {
     await this.reload();
+    await this.generateMissingSecrets();
+  }
+
+  // Fields flagged `generatable` (e.g. TRACKING_SIGNING_SECRET) are internal
+  // keys, not vendor-issued credentials — nothing external to fetch, so
+  // there's no reason to make an admin generate/paste one before the
+  // feature works. Runs once per boot; a value already set (DB or .env)
+  // is left untouched, so this never overwrites a real deployment's secret.
+  private async generateMissingSecrets() {
+    const generatableFields = SETTING_CATEGORIES.flatMap((c) => c.fields).filter((f) => f.generatable);
+    for (const field of generatableFields) {
+      if (this.get(field.key)) continue;
+      const generated = randomBytes(32).toString('hex');
+      await this.setMany({ [field.key]: generated });
+      this.logger.log(`Auto-generated missing setting "${field.key}" on startup`);
+    }
   }
 
   async reload() {
