@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="text-6xl font-semibold tracking-tight text-text-heading">500</div>
           <div className="text-lg font-semibold text-text-heading">Something went wrong</div>
           <p className="max-w-sm text-sm text-text-muted">
-            The error has been logged. Try reloading the page — if it keeps happening, check Settings &gt; Debug log.
+            The error has been logged. Try reloading the page — if it keeps happening, check the Debug Log page.
           </p>
           <button
             onClick={() => window.location.reload()}
