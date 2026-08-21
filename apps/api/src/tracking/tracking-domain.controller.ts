@@ -32,6 +32,21 @@ export class TrackingDomainController {
     }
 
     const apiHost = (req.hostname || '').toLowerCase();
+
+    // Using the API's own domain directly (e.g. campaign-api.xgenious.com)
+    // needs no DNS proof — the request reaching this endpoint on that exact
+    // Host header already establishes it routes here with a valid TLS cert,
+    // which is all the CNAME check below exists to prove for a *separate*
+    // custom tracking subdomain. Excludes localhost/IP literals so the
+    // "show the DNS record" flow stays exercisable in local dev, same as
+    // before — a local-dev host can still never self-verify.
+    const isLocalHost = apiHost === 'localhost' || apiHost === '::1' || /^\d{1,3}(\.\d{1,3}){3}$/.test(apiHost);
+    if (domain === apiHost && !isLocalHost) {
+      await this.settings.setMany({ TRACKING_DOMAIN: domain });
+      await this.auditLog.record(user, 'settings.tracking_domain.save', 'settings', 'TRACKING_DOMAIN', { domain, verified: true, selfHost: true });
+      return { verified: true, domain };
+    }
+
     const record = { type: 'CNAME', host: domain, value: apiHost };
 
     let targets: string[] = [];

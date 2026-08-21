@@ -114,7 +114,8 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
       { key: 'TRACKING_SIGNING_SECRET', label: 'Signing secret', secret: true },
     ],
     instructions: [
-      'Pick a subdomain of your actual sending domain for this — e.g. track.yourdomain.com, not an unrelated third-party-looking domain. Every open pixel and click-through link in outgoing email points here, so it needs to resolve to this app and hold a valid TLS certificate.',
+      'Simplest option: enter this API\'s own domain (the one this app is already deployed at) and click "Check DNS" — it verifies instantly with no DNS changes, since that domain already resolves here with a valid TLS certificate.',
+      'Otherwise, pick a subdomain of your actual sending domain instead — e.g. track.yourdomain.com. Every open pixel and click-through link in outgoing email points here, so it needs to resolve to this app and hold a valid TLS certificate.',
       'Type the domain below and click "Check DNS" — this shows the exact CNAME record to add at your DNS provider (host = your tracking domain, value = this API\'s own hostname).',
       'Add that CNAME record at your registrar/DNS provider. Propagation can take a few minutes to a few hours depending on the provider.',
       'Click "Check DNS" again once it\'s live — the domain is only saved here after the CNAME actually resolves, so a typo or a domain you don\'t control can\'t silently become the tracking host.',
