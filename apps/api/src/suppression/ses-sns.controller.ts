@@ -15,8 +15,19 @@ interface SesMailObject {
   messageId?: string;
 }
 
+// SES publishes bounce/complaint/delivery notifications in two different
+// envelope shapes depending on how the SNS topic is wired up:
+//  - a configuration set's SNS event destination (what SES_SNS_SETUP.md has
+//    the app use) discriminates on top-level `eventType` ("Send", "Bounce",
+//    "Complaint", "Delivery", "Open", "Click", ...)
+//  - a topic subscribed directly to bounce/complaint notifications (no
+//    configuration set) discriminates on top-level `notificationType`
+//    ("Bounce", "Complaint", "Delivery")
+// Both shapes nest the same `bounce`/`complaint`/`delivery` objects, so a
+// single normalized `type` read from whichever field is present covers both.
 interface SesBounceNotification {
-  notificationType: 'Bounce';
+  eventType?: 'Bounce';
+  notificationType?: 'Bounce';
   mail?: SesMailObject;
   bounce: {
     bounceType: 'Permanent' | 'Transient' | 'Undetermined';
@@ -25,7 +36,8 @@ interface SesBounceNotification {
 }
 
 interface SesComplaintNotification {
-  notificationType: 'Complaint';
+  eventType?: 'Complaint';
+  notificationType?: 'Complaint';
   mail?: SesMailObject;
   complaint: {
     complainedRecipients: { emailAddress: string }[];
@@ -33,7 +45,8 @@ interface SesComplaintNotification {
 }
 
 interface SesDeliveryNotification {
-  notificationType: 'Delivery';
+  eventType?: 'Delivery';
+  notificationType?: 'Delivery';
   mail?: SesMailObject;
   delivery: {
     recipients: string[];
@@ -42,11 +55,34 @@ interface SesDeliveryNotification {
   };
 }
 
+// Open/Click are only published if SES's own engagement tracking is enabled
+// on the configuration set (separate from this app's pixel/redirect tracking
+// — CLAUDE.md invariant 15). Handled here too, keyed by the same
+// providerMessageId correlation as bounce/complaint/delivery, so a send that
+// SES itself tracked shows up in email_events even if the in-app pixel/link
+// didn't fire (e.g. an email client that blocks the tracking pixel but not
+// SES's rewritten link).
+interface SesOpenNotification {
+  eventType: 'Open';
+  notificationType?: never;
+  mail?: SesMailObject;
+  open: { timestamp: string; ipAddress?: string; userAgent?: string };
+}
+
+interface SesClickNotification {
+  eventType: 'Click';
+  notificationType?: never;
+  mail?: SesMailObject;
+  click: { link: string; timestamp: string; ipAddress?: string; userAgent?: string };
+}
+
 type SesNotification =
   | SesBounceNotification
   | SesComplaintNotification
   | SesDeliveryNotification
-  | { notificationType: string };
+  | SesOpenNotification
+  | SesClickNotification
+  | { eventType?: string; notificationType?: string };
 
 interface SnsEnvelope {
   Type: 'SubscriptionConfirmation' | 'Notification' | 'UnsubscribeConfirmation';
@@ -179,7 +215,14 @@ export class SesSnsController {
   }
 
   private async processNotification(notification: SesNotification) {
-    if (notification.notificationType === 'Bounce') {
+    // Configuration-set event publishing (what this app is wired to use, per
+    // SES_SNS_SETUP.md) discriminates on `eventType`; a topic subscribed
+    // directly to bounce/complaint notifications discriminates on
+    // `notificationType`. Checking eventType first, falling back to
+    // notificationType, covers both without needing to know which is in use.
+    const type = notification.eventType ?? notification.notificationType;
+
+    if (type === 'Bounce') {
       const { bounce, mail } = notification as SesBounceNotification;
       for (const recipient of bounce.bouncedRecipients) {
         if (bounce.bounceType === 'Permanent') {
@@ -201,7 +244,7 @@ export class SesSnsController {
         'bounce',
         bounce.bounceType,
       );
-    } else if (notification.notificationType === 'Complaint') {
+    } else if (type === 'Complaint') {
       const { complaint, mail } = notification as SesComplaintNotification;
       for (const recipient of complaint.complainedRecipients) {
         await this.suppression.suppress(
@@ -216,25 +259,45 @@ export class SesSnsController {
         'complaint',
         undefined,
       );
-    } else if (notification.notificationType === 'Delivery') {
+    } else if (type === 'Delivery') {
       const { delivery, mail } = notification as SesDeliveryNotification;
       await this.markSendStatusAndCreateEvent(
         mail?.messageId,
         'delivered',
         'delivery',
-        undefined,
       );
+    } else if (type === 'Open') {
+      const { mail } = notification as SesOpenNotification;
+      await this.markSendStatusAndCreateEvent(mail?.messageId, null, 'open');
+    } else if (type === 'Click') {
+      const { click, mail } = notification as SesClickNotification;
+      await this.markSendStatusAndCreateEvent(
+        mail?.messageId,
+        null,
+        'click',
+        undefined,
+        click.link,
+      );
+    } else {
+      // "Send", "Reject", "Rendering Failure", "DeliveryDelay",
+      // "Subscription" — expected, no sends/email_events update needed.
+      // Logged at debug so a genuinely new/misspelled type is still visible
+      // without warning on every routine "Send" event.
+      this.logger.debug(`Ignoring SES SNS event type: ${type}`);
     }
   }
 
   /** Correlates the notification back to the specific `sends` row via providerMessageId,
-   * updates sends.status for historical record, creates an email_event record,
-   * and emits an event to the internal bus for triggers and outbound webhooks. */
+   * optionally updates sends.status for historical record (bounce/complaint/delivery only —
+   * open/click pass status=null since there's no corresponding sends.status value, matching
+   * TrackingService's pixel/redirect-based recordOpen/recordClick), creates an email_event
+   * record, and emits an event to the internal bus for triggers and outbound webhooks. */
   private async markSendStatusAndCreateEvent(
     messageId: string | undefined,
-    status: 'bounced' | 'complained' | 'delivered',
-    eventType: 'bounce' | 'complaint' | 'delivery',
+    status: 'bounced' | 'complained' | 'delivered' | null,
+    eventType: 'bounce' | 'complaint' | 'delivery' | 'open' | 'click',
     bounceType?: string,
+    url?: string,
   ) {
     if (!messageId) return;
 
@@ -247,16 +310,19 @@ export class SesSnsController {
       return;
     }
 
-    await this.drizzle.db
-      .update(sends)
-      .set({ status })
-      .where(eq(sends.id, send.id));
+    if (status) {
+      await this.drizzle.db
+        .update(sends)
+        .set({ status })
+        .where(eq(sends.id, send.id));
+    }
 
     const metadata = bounceType ? JSON.stringify({ bounceType }) : undefined;
     await this.drizzle.db.insert(emailEvents).values({
       sendId: send.id,
       type: eventType,
       metadata,
+      url,
     });
 
     if (eventType === 'bounce') {
@@ -274,6 +340,17 @@ export class SesSnsController {
       this.events.emit('email.delivered', {
         sendId: send.id,
         contactId: send.contactId,
+      });
+    } else if (eventType === 'open') {
+      this.events.emit('email.opened', {
+        sendId: send.id,
+        contactId: send.contactId,
+      });
+    } else if (eventType === 'click') {
+      this.events.emit('email.clicked', {
+        sendId: send.id,
+        contactId: send.contactId,
+        url,
       });
     }
 
