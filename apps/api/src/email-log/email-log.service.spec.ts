@@ -15,18 +15,32 @@ describe('EmailLogService (integration, real DB) — GC-060', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] })],
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: ['../../.env', '.env'],
+        }),
+      ],
       providers: [EmailLogService, DrizzleService],
     }).compile();
 
     service = moduleRef.get(EmailLogService);
     drizzle = moduleRef.get(DrizzleService);
 
-    const [contact] = await drizzle.db.insert(contacts).values({ email: `email-log-test-${Date.now()}@example.com` }).returning();
+    const [contact] = await drizzle.db
+      .insert(contacts)
+      .values({ email: `email-log-test-${Date.now()}@example.com` })
+      .returning();
     contactId = contact.id;
     const [template] = await drizzle.db
       .insert(templates)
-      .values({ name: 'Email log test template', subject: 'live subject', bodyJson: { type: 'doc', content: [] }, bodyHtml: '<p>live html</p>', bodyText: 'live text' })
+      .values({
+        name: 'Email log test template',
+        subjectLines: ['live subject'],
+        bodyJson: { type: 'doc', content: [] },
+        bodyHtml: '<p>live html</p>',
+        bodyText: 'live text',
+      })
       .returning();
     templateId = template.id;
 
@@ -36,24 +50,38 @@ describe('EmailLogService (integration, real DB) — GC-060', () => {
         contactId,
         templateId,
         provider: 'ses',
-        resolvedSubject: 'Resolved subject from send time, not the live template',
+        resolvedSubject:
+          'Resolved subject from send time, not the live template',
         resolvedBodyHtml: '<p>Resolved body from send time</p>',
         resolvedBodyText: 'Resolved body from send time',
         status: 'sent',
       })
       .returning();
     sentId = sent.id;
-    await drizzle.db.insert(emailEvents).values({ sendId: sentId, type: 'open' });
+    await drizzle.db
+      .insert(emailEvents)
+      .values({ sendId: sentId, type: 'open' });
 
     const [bounced] = await drizzle.db
       .insert(sends)
-      .values({ contactId, templateId, provider: 'ses', resolvedSubject: 'x', resolvedBodyHtml: 'x', resolvedBodyText: 'x', status: 'bounced' })
+      .values({
+        contactId,
+        templateId,
+        provider: 'ses',
+        resolvedSubject: 'x',
+        resolvedBodyHtml: 'x',
+        resolvedBodyText: 'x',
+        status: 'bounced',
+      })
       .returning();
     bouncedId = bounced.id;
 
     // Mutate the template after the send — the send's own stored copy
     // must not change (this is what the detail drawer proves).
-    await drizzle.db.update(templates).set({ subject: 'template subject changed later' }).where(eq(templates.id, templateId));
+    await drizzle.db
+      .update(templates)
+      .set({ subjectLines: ['template subject changed later'] })
+      .where(eq(templates.id, templateId));
   });
 
   afterAll(async () => {
@@ -73,7 +101,9 @@ describe('EmailLogService (integration, real DB) — GC-060', () => {
 
   it('detail drawer shows the real resolved subject/body stored on the send, not the (since-changed) live template, plus real event history', async () => {
     const detail = await service.getDetail(sentId);
-    expect(detail.send.resolvedSubject).toBe('Resolved subject from send time, not the live template');
+    expect(detail.send.resolvedSubject).toBe(
+      'Resolved subject from send time, not the live template',
+    );
     expect(detail.send.resolvedSubject).not.toContain('changed later');
     expect(detail.events).toHaveLength(1);
     expect(detail.events[0].type).toBe('open');

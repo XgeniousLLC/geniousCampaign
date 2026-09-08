@@ -12,9 +12,18 @@ import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { DebugLogService } from '../debug-log/debug-log.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
-import { contacts, sequences, sequenceSteps, sequenceEnrollments, sends, templates } from '../db/schema';
+import {
+  contacts,
+  sequences,
+  sequenceSteps,
+  sequenceStepTemplates,
+  sequenceEnrollments,
+  sends,
+  templates,
+} from '../db/schema';
 
 describe('SequenceRunnerService (integration, real DB)', () => {
   let runner: SequenceRunnerService;
@@ -27,10 +36,15 @@ describe('SequenceRunnerService (integration, real DB)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: ['../../.env', '.env'],
+        }),
         BullModule.forRootAsync({
           inject: [ConfigService],
-          useFactory: (config: ConfigService) => ({ connection: { url: config.get<string>('REDIS_URL') } }),
+          useFactory: (config: ConfigService) => ({
+            connection: { url: config.get<string>('REDIS_URL') },
+          }),
         }),
         EventEmitterModule.forRoot(),
       ],
@@ -44,10 +58,15 @@ describe('SequenceRunnerService (integration, real DB)', () => {
         CircuitBreakerService,
         SuppressionService,
         TrackingService,
+        DebugLogService,
         DrizzleService,
         SettingsService,
       ],
     }).compile();
+    // .compile() alone doesn't run lifecycle hooks (onModuleInit) — .init()
+    // does, which is what SettingsService needs to auto-generate/load
+    // TRACKING_SIGNING_SECRET before TrackingService reads it.
+    await moduleRef.init();
 
     runner = moduleRef.get(SequenceRunnerService);
     enrollmentService = moduleRef.get(EnrollmentService);
@@ -55,7 +74,10 @@ describe('SequenceRunnerService (integration, real DB)', () => {
 
     const [contact] = await drizzle.db
       .insert(contacts)
-      .values({ email: `runner-test-${Date.now()}@example.com`, firstName: 'Ada' })
+      .values({
+        email: `runner-test-${Date.now()}@example.com`,
+        firstName: 'Ada',
+      })
       .returning();
     contactId = contact.id;
 
@@ -63,7 +85,7 @@ describe('SequenceRunnerService (integration, real DB)', () => {
       .insert(templates)
       .values({
         name: 'Runner test template',
-        subject: 'Hi {{contact.firstName}}',
+        subjectLines: ['Hi {{contact.firstName}}'],
         bodyJson: { type: 'doc', content: [] },
         bodyHtml: '<p>Hello {{contact.firstName}}</p>',
         bodyText: 'Hello {{contact.firstName}}',
@@ -79,9 +101,18 @@ describe('SequenceRunnerService (integration, real DB)', () => {
   });
 
   it('does not process a paused enrollment even if its nextRunAt is due (invariant 3)', async () => {
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Pause test sequence', webhookSecret: 'test-secret' }).returning();
+    const [sequence] = await drizzle.db
+      .insert(sequences)
+      .values({ name: 'Pause test sequence', webhookSecret: 'test-secret' })
+      .returning();
     sequenceId = sequence.id;
-    await drizzle.db.insert(sequenceSteps).values({ sequenceId, order: 0, type: 'send_email', templateId });
+    const [sendStep] = await drizzle.db
+      .insert(sequenceSteps)
+      .values({ sequenceId, order: 0, type: 'send_email' })
+      .returning();
+    await drizzle.db
+      .insert(sequenceStepTemplates)
+      .values({ sequenceStepId: sendStep.id, templateId });
 
     const enrollment = await enrollmentService.enroll(sequenceId, contactId);
     await enrollmentService.pause(enrollment.id);
@@ -99,20 +130,42 @@ describe('SequenceRunnerService (integration, real DB)', () => {
     expect(stillPaused.status).toBe('paused');
     expect(stillPaused.currentStepId).toBe(enrollment.currentStepId);
 
-    const sendRows = await drizzle.db.select().from(sends).where(eq(sends.sequenceEnrollmentId, enrollment.id));
+    const sendRows = await drizzle.db
+      .select()
+      .from(sends)
+      .where(eq(sends.sequenceEnrollmentId, enrollment.id));
     expect(sendRows.length).toBe(0);
   });
 
   it('runs a 3-step sequence end-to-end (send_email -> wait -> exit)', async () => {
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Full run sequence', webhookSecret: 'test-secret' }).returning();
+    const [sequence] = await drizzle.db
+      .insert(sequences)
+      .values({ name: 'Full run sequence', webhookSecret: 'test-secret' })
+      .returning();
     const fullSequenceId = sequence.id;
-    await drizzle.db.insert(sequenceSteps).values([
-      { sequenceId: fullSequenceId, order: 0, type: 'send_email', templateId },
-      { sequenceId: fullSequenceId, order: 1, type: 'wait', delayValue: 1, delayUnit: 'minutes' },
-      { sequenceId: fullSequenceId, order: 2, type: 'exit' },
-    ]);
+    const insertedSteps = await drizzle.db
+      .insert(sequenceSteps)
+      .values([
+        { sequenceId: fullSequenceId, order: 0, type: 'send_email' },
+        {
+          sequenceId: fullSequenceId,
+          order: 1,
+          type: 'wait',
+          delayValue: 1,
+          delayUnit: 'minutes',
+        },
+        { sequenceId: fullSequenceId, order: 2, type: 'exit' },
+      ])
+      .returning();
+    const fullSendStep = insertedSteps.find((s) => s.type === 'send_email')!;
+    await drizzle.db
+      .insert(sequenceStepTemplates)
+      .values({ sequenceStepId: fullSendStep.id, templateId });
 
-    const enrollment = await enrollmentService.enroll(fullSequenceId, contactId);
+    const enrollment = await enrollmentService.enroll(
+      fullSequenceId,
+      contactId,
+    );
 
     // Tick 1: executes the send_email step (fails without real AWS creds —
     // that's expected and asserted below), advances into the wait.
@@ -123,7 +176,10 @@ describe('SequenceRunnerService (integration, real DB)', () => {
     expect(afterSend.status).toBe('active');
     expect(afterSend.nextRunAt!.getTime()).toBeGreaterThan(Date.now() + 30_000); // ~1 minute out
 
-    const sendRows = await drizzle.db.select().from(sends).where(eq(sends.sequenceEnrollmentId, enrollment.id));
+    const sendRows = await drizzle.db
+      .select()
+      .from(sends)
+      .where(eq(sends.sequenceEnrollmentId, enrollment.id));
     expect(sendRows.length).toBe(1);
     expect(sendRows[0].resolvedSubject).toBe('Hi Ada'); // personalization resolved
     expect(['sent', 'failed']).toContain(sendRows[0].status); // real attempt either way, never faked

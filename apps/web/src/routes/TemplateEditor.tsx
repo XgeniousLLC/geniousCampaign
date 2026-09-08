@@ -9,9 +9,8 @@ import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
-import { TemplateEditorToolbar, PERSONALIZATION_TOKENS } from '../components/TemplateEditorToolbar';
-import { SubjectHighlightInput, type SubjectHighlightInputHandle } from '../components/SubjectHighlightInput';
-import { SpintaxShufflePreview } from '../components/SpintaxShufflePreview';
+import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
+import { TemplateLineField } from '../components/TemplateLineField';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
 import { SendTestEmailModal } from '../components/SendTestEmailModal';
@@ -30,7 +29,8 @@ export function TemplateEditor() {
   const isNew = !id;
 
   const [name, setName] = useState('Untitled template');
-  const [subject, setSubject] = useState('');
+  const [subjectLines, setSubjectLines] = useState<string[]>(['']);
+  const [previewTextLines, setPreviewTextLines] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
@@ -39,14 +39,8 @@ export function TemplateEditor() {
   const [showLibrary, setShowLibrary] = useState(isNew);
   const [showPreview, setShowPreview] = useState(false);
   const [showSendTest, setShowSendTest] = useState(false);
-  const [parentTemplateId, setParentTemplateId] = useState<string | null>(null);
   const [linkPopup, setLinkPopup] = useState<{ pos: number; href: string; x: number; y: number } | null>(null);
   const [linkEditOpen, setLinkEditOpen] = useState(false);
-  const subjectInputRef = useRef<SubjectHighlightInputHandle>(null);
-  const [subjectTokenOpen, setSubjectTokenOpen] = useState(false);
-  const [subjectCustomKey, setSubjectCustomKey] = useState('');
-  const subjectCustomKeyValid = /^[a-zA-Z0-9_]+$/.test(subjectCustomKey.trim());
-  const [subjectFallback, setSubjectFallback] = useState('');
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
   const currentUserEmail = useAuthStore((s) => s.user?.email ?? '');
 
@@ -87,8 +81,8 @@ export function TemplateEditor() {
     getTemplate(id).then((template) => {
       if (cancelled || editor.isDestroyed) return;
       setName(template.name);
-      setSubject(template.subject);
-      setParentTemplateId(template.parentTemplateId ?? null);
+      setSubjectLines(template.subjectLines.length > 0 ? template.subjectLines : ['']);
+      setPreviewTextLines(template.previewTextLines);
       editor.commands.setContent(template.bodyJson);
       setLoaded(true);
     });
@@ -106,11 +100,18 @@ export function TemplateEditor() {
     setSaving(true);
     try {
       const bodyJson = editor.getJSON();
+      const cleanSubjectLines = subjectLines.map((s) => s.trim()).filter(Boolean);
+      const input = {
+        name,
+        subjectLines: cleanSubjectLines.length > 0 ? cleanSubjectLines : [''],
+        previewTextLines: previewTextLines.map((s) => s.trim()).filter(Boolean),
+        bodyJson,
+      };
       if (isNew) {
-        const created = await createTemplate({ name, subject, bodyJson });
+        const created = await createTemplate(input);
         navigate(`/templates/${created.id}`, { replace: true });
       } else {
-        await updateTemplate(id!, { name, subject, bodyJson });
+        await updateTemplate(id!, input);
       }
       setSavedAt(new Date());
       toast('Template saved.', 'success');
@@ -123,24 +124,36 @@ export function TemplateEditor() {
 
   function applyLibraryTemplate(t: LibraryTemplate) {
     setName(t.name);
-    setSubject(t.subject);
+    setSubjectLines([t.subject]);
     if (editor && !editor.isDestroyed) editor.commands.setContent(t.bodyJson);
     setShowLibrary(false);
   }
 
+  function updateSubjectLine(index: number, value: string) {
+    setSubjectLines((prev) => prev.map((s, i) => (i === index ? value : s)));
+  }
+
+  function removeSubjectLine(index: number) {
+    setSubjectLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updatePreviewTextLine(index: number, value: string) {
+    setPreviewTextLines((prev) => prev.map((s, i) => (i === index ? value : s)));
+  }
+
+  function removePreviewTextLine(index: number) {
+    setPreviewTextLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleDelete() {
     if (!id) return;
-    if (!confirm('Delete this template? This also removes all its variants.')) return;
+    if (!confirm('Delete this template?')) return;
     try {
       await deleteTemplate(id);
       navigate('/templates');
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Delete failed.', 'error');
     }
-  }
-
-  function insertIntoSubject(text: string) {
-    subjectInputRef.current?.insertText(text);
   }
 
   function currentBody() {
@@ -203,7 +216,7 @@ export function TemplateEditor() {
               </button>
               {showSendTest && (
                 <SendTestEmailModal
-                  subject={subject}
+                  subject={subjectLines[0] ?? ''}
                   bodyHtml={currentBody().bodyHtml}
                   bodyText={currentBody().bodyText}
                   defaultEmail={currentUserEmail}
@@ -223,94 +236,54 @@ export function TemplateEditor() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-3">
-          <span className="w-16 shrink-0 text-xs text-text-meta">Subject</span>
-          <SubjectHighlightInput
-            ref={subjectInputRef}
-            value={subject}
-            onChange={setSubject}
-            placeholder="Subject line, e.g. Hi {{contact.firstName}}"
-            className="flex-1 min-w-0 whitespace-nowrap overflow-x-auto bg-transparent text-sm font-medium text-text-primary outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => insertIntoSubject('{option A|option B}')}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-accent-light/25 bg-accent-light/10 px-2 text-[11px] font-semibold text-accent-lighter hover:bg-accent-light/15"
-          >
-            Spintax
-          </button>
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setSubjectTokenOpen((o) => !o)}
-              className="flex h-7 items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2 text-[11px] font-semibold text-accent-light hover:bg-accent/15"
-            >
-              Insert token ▾
-            </button>
-            {subjectTokenOpen && (
-              <div className="absolute right-0 top-8 z-20 w-60 rounded-md border border-border-modal bg-panel2 p-1 shadow-lg">
-                <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-text-meta">Personalization tokens</div>
-                {PERSONALIZATION_TOKENS.map((tk) => (
-                  <button
-                    key={tk.field}
-                    type="button"
-                    onClick={() => {
-                      const fallback = subjectFallback.trim();
-                      insertIntoSubject(`{{${tk.field}${fallback ? `|${fallback}` : ''}}}`);
-                      setSubjectTokenOpen(false);
-                    }}
-                    className="flex w-full items-center gap-1 rounded px-2 py-1.5 text-left font-mono text-xs text-text-tertiary hover:bg-raised"
-                  >
-                    <span className="text-accent-light">{'{{'}</span>
-                    {tk.label}
-                    <span className="text-accent-light">{'}}'}</span>
-                  </button>
-                ))}
-                <div className="mt-1 border-t border-border-subtle p-2 pt-1.5">
-                  <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Fallback if empty</div>
-                  <input
-                    value={subjectFallback}
-                    onChange={(e) => setSubjectFallback(e.target.value)}
-                    placeholder="e.g. there (optional)"
-                    className="h-7 w-full rounded border border-border-subtle bg-surface px-1.5 text-xs text-text-primary placeholder:text-text-faint"
-                  />
-                </div>
-                <div className="mt-1 border-t border-border-subtle p-2 pt-2">
-                  <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Custom field</div>
-                  <div className="flex gap-1">
-                    <input
-                      value={subjectCustomKey}
-                      onChange={(e) => setSubjectCustomKey(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'Enter' || !subjectCustomKeyValid) return;
-                        const key = subjectCustomKey.trim();
-                        const fallback = subjectFallback.trim();
-                        insertIntoSubject(`{{contact.custom.${key}${fallback ? `|${fallback}` : ''}}}`);
-                        setSubjectCustomKey('');
-                        setSubjectTokenOpen(false);
-                      }}
-                      placeholder="field key"
-                      className="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-1.5 font-mono text-xs text-text-primary placeholder:text-text-faint"
-                    />
-                    <button
-                      type="button"
-                      disabled={!subjectCustomKeyValid}
-                      onClick={() => {
-                        const key = subjectCustomKey.trim();
-                        const fallback = subjectFallback.trim();
-                        insertIntoSubject(`{{contact.custom.${key}${fallback ? `|${fallback}` : ''}}}`);
-                        setSubjectCustomKey('');
-                        setSubjectTokenOpen(false);
-                      }}
-                      className="h-7 shrink-0 rounded border border-accent/25 bg-accent/10 px-2 text-xs font-semibold text-accent-light hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Insert
-                    </button>
-                  </div>
-                </div>
-              </div>
+        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-text-meta">Subject lines — one is picked at random per send</span>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setSubjectLines((prev) => [...prev, ''])}
+                className="text-[11px] font-medium text-accent-light hover:text-accent-lighter"
+              >
+                + Add subject line
+              </button>
             )}
           </div>
+          {subjectLines.map((line, i) => (
+            <TemplateLineField
+              key={i}
+              value={line}
+              onChange={(v) => updateSubjectLine(i, v)}
+              onRemove={canWrite ? () => removeSubjectLine(i) : undefined}
+              removeDisabled={subjectLines.length <= 1}
+              placeholder="Subject line, e.g. Hi {{contact.firstName}}"
+            />
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-text-meta">Preview text — inbox preheader, also shuffled per send</span>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setPreviewTextLines((prev) => [...prev, ''])}
+                className="text-[11px] font-medium text-accent-light hover:text-accent-lighter"
+              >
+                + Add preview text
+              </button>
+            )}
+          </div>
+          {previewTextLines.length === 0 && <div className="text-xs text-text-faint">No preview text set.</div>}
+          {previewTextLines.map((line, i) => (
+            <TemplateLineField
+              key={i}
+              value={line}
+              onChange={(v) => updatePreviewTextLine(i, v)}
+              onRemove={canWrite ? () => removePreviewTextLine(i) : undefined}
+              placeholder="Preview text shown next to the subject in the inbox"
+            />
+          ))}
         </div>
 
         <TemplateEditorToolbar editor={editor} />
@@ -325,11 +298,9 @@ export function TemplateEditor() {
         {savedAt && <div className="px-6 pb-4 text-xs text-text-faint">Saved {savedAt.toLocaleTimeString()}</div>}
       </div>
 
-      <SpintaxShufflePreview editor={editor} subject={subject} templateId={id} templateName={name} parentTemplateId={parentTemplateId} />
-
       {showPreview && (
         <TemplatePreviewModal
-          subject={subject}
+          subject={subjectLines[0] ?? ''}
           bodyHtml={currentBody().bodyHtml}
           bodyText={currentBody().bodyText}
           defaultTestEmail={currentUserEmail}

@@ -3,7 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import { AnalyticsService } from './analytics.service';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts, templates, campaigns, sends, emailEvents } from '../db/schema';
+import {
+  contacts,
+  templates,
+  campaigns,
+  sends,
+  emailEvents,
+} from '../db/schema';
 
 describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () => {
   let service: AnalyticsService;
@@ -15,23 +21,41 @@ describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () =>
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] })],
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: ['../../.env', '.env'],
+        }),
+      ],
       providers: [AnalyticsService, DrizzleService],
     }).compile();
 
     service = moduleRef.get(AnalyticsService);
     drizzle = moduleRef.get(DrizzleService);
 
-    const [contact] = await drizzle.db.insert(contacts).values({ email: `analytics-test-${Date.now()}@example.com` }).returning();
+    const [contact] = await drizzle.db
+      .insert(contacts)
+      .values({ email: `analytics-test-${Date.now()}@example.com` })
+      .returning();
     contactId = contact.id;
     const [template] = await drizzle.db
       .insert(templates)
-      .values({ name: 'Analytics test template', subject: 'Hi', bodyJson: { type: 'doc', content: [] }, bodyHtml: '<p>Hi</p>', bodyText: 'Hi' })
+      .values({
+        name: 'Analytics test template',
+        subjectLines: ['Hi'],
+        bodyJson: { type: 'doc', content: [] },
+        bodyHtml: '<p>Hi</p>',
+        bodyText: 'Hi',
+      })
       .returning();
     templateId = template.id;
     const [campaign] = await drizzle.db
       .insert(campaigns)
-      .values({ name: 'Analytics test campaign', templateId, listIds: [(await drizzle.db.query.lists.findFirst())!.id] })
+      .values({
+        name: 'Analytics test campaign',
+        templateId,
+        listIds: [(await drizzle.db.query.lists.findFirst())!.id],
+      })
       .returning();
     campaignId = campaign.id;
 
@@ -39,25 +63,62 @@ describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () =>
     for (let i = 0; i < 3; i++) {
       const [send] = await drizzle.db
         .insert(sends)
-        .values({ contactId, templateId, campaignId, provider: 'ses', resolvedSubject: 'x', resolvedBodyHtml: 'x', resolvedBodyText: 'x', status: 'sent' })
+        .values({
+          contactId,
+          templateId,
+          campaignId,
+          provider: 'ses',
+          resolvedSubject: 'x',
+          resolvedBodyHtml: 'x',
+          resolvedBodyText: 'x',
+          status: 'sent',
+        })
         .returning();
       sendIds.push(send.id);
     }
     const [bounced] = await drizzle.db
       .insert(sends)
-      .values({ contactId, templateId, campaignId, provider: 'ses', resolvedSubject: 'x', resolvedBodyHtml: 'x', resolvedBodyText: 'x', status: 'bounced' })
+      .values({
+        contactId,
+        templateId,
+        campaignId,
+        provider: 'ses',
+        resolvedSubject: 'x',
+        resolvedBodyHtml: 'x',
+        resolvedBodyText: 'x',
+        status: 'bounced',
+      })
       .returning();
     sendIds.push(bounced.id);
     const [suppressed] = await drizzle.db
       .insert(sends)
-      .values({ contactId, templateId, campaignId, provider: 'ses', resolvedSubject: 'x', resolvedBodyHtml: 'x', resolvedBodyText: 'x', status: 'suppressed' })
+      .values({
+        contactId,
+        templateId,
+        campaignId,
+        provider: 'ses',
+        resolvedSubject: 'x',
+        resolvedBodyHtml: 'x',
+        resolvedBodyText: 'x',
+        status: 'suppressed',
+      })
       .returning();
     sendIds.push(suppressed.id);
 
     // 2 of the 3 sent ones got opened, 1 of those also clicked.
-    await drizzle.db.insert(emailEvents).values({ sendId: sendIds[0], type: 'open' });
-    await drizzle.db.insert(emailEvents).values({ sendId: sendIds[1], type: 'open' });
-    await drizzle.db.insert(emailEvents).values({ sendId: sendIds[1], type: 'click', url: 'https://example.com' });
+    await drizzle.db
+      .insert(emailEvents)
+      .values({ sendId: sendIds[0], type: 'open' });
+    await drizzle.db
+      .insert(emailEvents)
+      .values({ sendId: sendIds[1], type: 'open' });
+    await drizzle.db
+      .insert(emailEvents)
+      .values({
+        sendId: sendIds[1],
+        type: 'click',
+        url: 'https://example.com',
+      });
   });
 
   afterAll(async () => {
@@ -74,10 +135,17 @@ describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () =>
     const overview = await service.getOverview(1);
 
     // Manual spot-check against the real rows, not the service's own logic.
-    const allSends = await drizzle.db.select().from(sends).where(eq(sends.campaignId, campaignId));
+    const allSends = await drizzle.db
+      .select()
+      .from(sends)
+      .where(eq(sends.campaignId, campaignId));
     const manualSentCount = allSends.filter((s) => s.status === 'sent').length;
-    const manualBouncedCount = allSends.filter((s) => s.status === 'bounced').length;
-    const manualSuppressedCount = allSends.filter((s) => s.status === 'suppressed').length;
+    const manualBouncedCount = allSends.filter(
+      (s) => s.status === 'bounced',
+    ).length;
+    const manualSuppressedCount = allSends.filter(
+      (s) => s.status === 'suppressed',
+    ).length;
 
     expect(manualSentCount).toBe(3);
     expect(manualBouncedCount).toBe(1);
@@ -88,7 +156,9 @@ describe('AnalyticsService.getOverview (integration, real DB) — GC-058', () =>
     // other tests' data may coexist in the same window.
     expect(overview.sentCount).toBeGreaterThanOrEqual(manualSentCount);
     expect(overview.bouncedCount).toBeGreaterThanOrEqual(manualBouncedCount);
-    expect(overview.suppressedCount).toBeGreaterThanOrEqual(manualSuppressedCount);
+    expect(overview.suppressedCount).toBeGreaterThanOrEqual(
+      manualSuppressedCount,
+    );
     expect(overview.openCount).toBeGreaterThanOrEqual(2);
     expect(overview.clickCount).toBeGreaterThanOrEqual(1);
   });

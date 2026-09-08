@@ -22,7 +22,6 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { InfoIcon, CloseIcon, CopyIcon, CheckCircleIcon } from '../components/icons';
 import { PaginationBar } from '../components/PaginationBar';
 import { AddMemberModal } from '../components/AddMemberModal';
-import { TrackingDomainField } from '../components/TrackingDomainField';
 import { SesSnsWebhookUrlField } from '../components/SesSnsWebhookUrlField';
 
 const LOG_PAGE_SIZE = 20;
@@ -621,9 +620,6 @@ function IntegrationsPanel() {
     try {
       const payload: Record<string, string> = {};
       for (const f of category.fields) {
-        // verifyOnly fields (TRACKING_DOMAIN) have their own dedicated save
-        // path (DNS check first) — never send them through the bulk PATCH.
-        if (f.verifyOnly) continue;
         if (values[f.key]) payload[f.key] = values[f.key];
       }
       const updated = await updateIntegrationSettings(payload);
@@ -755,9 +751,6 @@ function IntegrationsPanel() {
                     </span>
                   </div>
                   {(() => {
-                    if (f.verifyOnly) {
-                      return <TrackingDomainField field={f} onSaved={load} />;
-                    }
                     const selectOptions =
                       f.options ?? (category.key === 'ai' && f.key === 'LLM_MODEL' ? AI_MODEL_OPTIONS[values['LLM_PROVIDER'] || 'openai'] : undefined);
                     if (selectOptions) {

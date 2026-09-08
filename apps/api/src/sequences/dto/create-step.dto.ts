@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsUUID } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, IsUUID } from 'class-validator';
 
 export const STEP_TYPES = ['send_email', 'wait', 'condition', 'exit'] as const;
 export const DELAY_UNITS = ['minutes', 'hours', 'days'] as const;
@@ -8,8 +8,9 @@ export class CreateStepDto {
   type!: (typeof STEP_TYPES)[number];
 
   @IsOptional()
-  @IsUUID()
-  templateId?: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  templateIds?: string[];
 
   @IsOptional()
   @IsInt()

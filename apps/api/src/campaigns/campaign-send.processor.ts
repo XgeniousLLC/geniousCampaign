@@ -5,7 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Job } from 'bullmq';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { resolveSpintax, resolvePersonalization } from '@genius-campaign/shared';
+import { resolveTemplateContent } from '@genius-campaign/shared';
 import { DrizzleService } from '../db/drizzle.service';
 import { campaigns, templates, sends } from '../db/schema';
 import { CampaignsService } from './campaigns.service';
@@ -34,16 +34,23 @@ export class CampaignSendProcessor extends WorkerHost {
   }
 
   async process(job: Job<{ campaignId: string }>) {
-    const campaign = await this.drizzle.db.query.campaigns.findFirst({ where: eq(campaigns.id, job.data.campaignId) });
+    const campaign = await this.drizzle.db.query.campaigns.findFirst({
+      where: eq(campaigns.id, job.data.campaignId),
+    });
     // Re-check status at fire time (invariant 3 pattern) — a duplicate job
     // for an already-sending/sent campaign is a no-op, not a second send.
     if (!campaign || campaign.status !== 'draft') {
       return { skipped: true };
     }
 
-    const template = await this.drizzle.db.query.templates.findFirst({ where: eq(templates.id, campaign.templateId) });
+    const template = await this.drizzle.db.query.templates.findFirst({
+      where: eq(templates.id, campaign.templateId),
+    });
     if (!template) {
-      await this.drizzle.db.update(campaigns).set({ status: 'failed', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
+      await this.drizzle.db
+        .update(campaigns)
+        .set({ status: 'failed', updatedAt: new Date() })
+        .where(eq(campaigns.id, campaign.id));
       return { error: `Template ${campaign.templateId} not found` };
     }
 
@@ -55,13 +62,21 @@ export class CampaignSendProcessor extends WorkerHost {
         await this.senderAccounts.pickAccountForSend(campaign.senderAccountId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        await this.drizzle.db.update(campaigns).set({ status: 'failed', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
-        this.logger.error(`Campaign "${campaign.name}" (${campaign.id}) failed: ${message}`);
+        await this.drizzle.db
+          .update(campaigns)
+          .set({ status: 'failed', updatedAt: new Date() })
+          .where(eq(campaigns.id, campaign.id));
+        this.logger.error(
+          `Campaign "${campaign.name}" (${campaign.id}) failed: ${message}`,
+        );
         return { error: message };
       }
     }
 
-    await this.drizzle.db.update(campaigns).set({ status: 'sending', updatedAt: new Date() }).where(eq(campaigns.id, campaign.id));
+    await this.drizzle.db
+      .update(campaigns)
+      .set({ status: 'sending', updatedAt: new Date() })
+      .where(eq(campaigns.id, campaign.id));
 
     const recipients = await this.campaignsService.resolveRecipients(campaign);
     let sentCount = 0;
@@ -74,33 +89,44 @@ export class CampaignSendProcessor extends WorkerHost {
       // can carry status 'suppressed'/'unsubscribed' without a matching
       // suppression_list row (e.g. set directly via CSV import or a
       // PATCH /contacts/:id) and must still never receive a send.
-      const statusBlocked = contact.status === 'suppressed' || contact.status === 'unsubscribed';
-      if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
+      const statusBlocked =
+        contact.status === 'suppressed' || contact.status === 'unsubscribed';
+      if (
+        statusBlocked ||
+        (await this.suppression.isSuppressed(contact.email))
+      ) {
         suppressedCount++;
         await this.drizzle.db.insert(sends).values({
           contactId: contact.id,
           templateId: template.id,
           campaignId: campaign.id,
           provider: 'ses',
-          resolvedSubject: template.subject,
+          resolvedSubject: template.subjectLines[0] ?? '',
+          resolvedPreviewText: template.previewTextLines[0] ?? null,
           resolvedBodyHtml: template.bodyHtml,
           resolvedBodyText: template.bodyText,
           status: 'suppressed',
-          error: statusBlocked ? `${contact.email} has status "${contact.status}"` : `${contact.email} is on the suppression list`,
+          error: statusBlocked
+            ? `${contact.email} has status "${contact.status}"`
+            : `${contact.email} is on the suppression list`,
           isDryRun: campaign.isDryRun,
         });
         continue;
       }
 
       // Personalization resolved before spintax — invariant 5.
-      const resolvedSubject = resolveSpintax(resolvePersonalization(template.subject, contact));
-      const resolvedBodyHtmlRaw = resolveSpintax(resolvePersonalization(template.bodyHtml, contact));
-      const resolvedBodyText = resolveSpintax(resolvePersonalization(template.bodyText, contact));
+      // resolveTemplateContent() also picks a random subject/preview-text
+      // line per recipient (shuffle), as the outer step before that.
+      const resolved = resolveTemplateContent(template, contact);
+      const resolvedSubject = resolved.subject;
+      const resolvedBodyHtmlRaw = resolved.bodyHtml;
+      const resolvedBodyText = resolved.bodyText;
 
       const sendId = randomUUID();
       const openPixelUrl = this.tracking.buildOpenPixelUrl(sendId);
-      const htmlWithClickTracking = rewriteLinksForTracking(resolvedBodyHtmlRaw, (url) =>
-        this.tracking.buildClickUrl(sendId, url),
+      const htmlWithClickTracking = rewriteLinksForTracking(
+        resolvedBodyHtmlRaw,
+        (url) => this.tracking.buildClickUrl(sendId, url),
       );
       const resolvedBodyHtml = `${htmlWithClickTracking}<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`;
 
@@ -120,6 +146,7 @@ export class CampaignSendProcessor extends WorkerHost {
           campaignId: campaign.id,
           provider: 'ses',
           resolvedSubject,
+          resolvedPreviewText: resolved.previewText || null,
           resolvedBodyHtml,
           resolvedBodyText,
           status: 'sent',
@@ -137,6 +164,7 @@ export class CampaignSendProcessor extends WorkerHost {
         campaignId: campaign.id,
         provider: 'ses',
         resolvedSubject,
+        resolvedPreviewText: resolved.previewText || null,
         resolvedBodyHtml,
         resolvedBodyText,
         status: 'failed',
@@ -147,7 +175,9 @@ export class CampaignSendProcessor extends WorkerHost {
         // redirected to a fixed test address rather than the real
         // recipient — the subject marks who it was really meant for.
         const sendTarget = campaign.sendToEmail || contact.email;
-        const sendSubject = campaign.sendToEmail ? `[Test → ${contact.email}] ${resolvedSubject}` : resolvedSubject;
+        const sendSubject = campaign.sendToEmail
+          ? `[Test → ${contact.email}] ${resolvedSubject}`
+          : resolvedSubject;
         const result = await this.sendDispatcher.send({
           to: sendTarget,
           subject: sendSubject,
@@ -161,13 +191,21 @@ export class CampaignSendProcessor extends WorkerHost {
         });
         await this.drizzle.db
           .update(sends)
-          .set({ status: 'sent', provider: result.provider, providerMessageId: result.providerMessageId, sentAt: new Date() })
+          .set({
+            status: 'sent',
+            provider: result.provider,
+            providerMessageId: result.providerMessageId,
+            sentAt: new Date(),
+          })
           .where(eq(sends.id, sendId));
         sentCount++;
       } catch (err) {
         await this.drizzle.db
           .update(sends)
-          .set({ status: 'failed', error: err instanceof Error ? err.message : String(err) })
+          .set({
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          })
           .where(eq(sends.id, sendId));
         failedCount++;
       }
@@ -177,13 +215,25 @@ export class CampaignSendProcessor extends WorkerHost {
     const finalStatus = attempted > 0 && sentCount === 0 ? 'failed' : 'sent';
     await this.drizzle.db
       .update(campaigns)
-      .set({ status: finalStatus, sentCount, failedCount, suppressedCount, updatedAt: new Date() })
+      .set({
+        status: finalStatus,
+        sentCount,
+        failedCount,
+        suppressedCount,
+        updatedAt: new Date(),
+      })
       .where(eq(campaigns.id, campaign.id));
 
     this.logger.log(
       `Campaign "${campaign.name}" (${campaign.id}) finished: ${sentCount} sent, ${failedCount} failed, ${suppressedCount} suppressed`,
     );
-    this.events.emit('campaign.completed', { campaignId: campaign.id, name: campaign.name, sentCount, failedCount, suppressedCount });
+    this.events.emit('campaign.completed', {
+      campaignId: campaign.id,
+      name: campaign.name,
+      sentCount,
+      failedCount,
+      suppressedCount,
+    });
     return { sentCount, failedCount, suppressedCount };
   }
 }

@@ -5,7 +5,16 @@ import { eq } from 'drizzle-orm';
 import { CircuitBreakerService } from './circuit-breaker.service';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts, sequences, sequenceSteps, sequenceEnrollments, sends, templates, breakerEvaluations, breakerResets } from '../db/schema';
+import {
+  contacts,
+  sequences,
+  sequenceSteps,
+  sequenceEnrollments,
+  sends,
+  templates,
+  breakerEvaluations,
+  breakerResets,
+} from '../db/schema';
 
 describe('CircuitBreakerService (integration, real DB)', () => {
   let breaker: CircuitBreakerService;
@@ -17,37 +26,71 @@ describe('CircuitBreakerService (integration, real DB)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }), EventEmitterModule.forRoot()],
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          envFilePath: ['../../.env', '.env'],
+        }),
+        EventEmitterModule.forRoot(),
+      ],
       providers: [CircuitBreakerService, EnrollmentService, DrizzleService],
     }).compile();
 
     // Small window/threshold so a handful of test sends can deterministically trip it.
     const realConfig = moduleRef.get(ConfigService);
-    const overrides: Record<string, string> = { CIRCUIT_BREAKER_WINDOW_SIZE: '20', CIRCUIT_BREAKER_THRESHOLD_PCT: '20' };
-    jest.spyOn(realConfig, 'get').mockImplementation(
-      ((key: string) => overrides[key] ?? ConfigService.prototype.get.call(realConfig, key)) as typeof realConfig.get,
-    );
+    const overrides: Record<string, string> = {
+      CIRCUIT_BREAKER_WINDOW_SIZE: '20',
+      CIRCUIT_BREAKER_THRESHOLD_PCT: '20',
+    };
+    jest
+      .spyOn(realConfig, 'get')
+      .mockImplementation(
+        ((key: string) =>
+          overrides[key] ??
+          ConfigService.prototype.get.call(
+            realConfig,
+            key,
+          )) as typeof realConfig.get,
+      );
 
     breaker = moduleRef.get(CircuitBreakerService);
     enrollmentService = moduleRef.get(EnrollmentService);
     drizzle = moduleRef.get(DrizzleService);
 
-    const [contact] = await drizzle.db.insert(contacts).values({ email: `breaker-test-${Date.now()}@example.com` }).returning();
+    const [contact] = await drizzle.db
+      .insert(contacts)
+      .values({ email: `breaker-test-${Date.now()}@example.com` })
+      .returning();
     contactId = contact.id;
     const [template] = await drizzle.db
       .insert(templates)
-      .values({ name: 'Breaker test template', subject: 'Hi', bodyJson: { type: 'doc', content: [] }, bodyHtml: '<p>Hi</p>', bodyText: 'Hi' })
+      .values({
+        name: 'Breaker test template',
+        subjectLines: ['Hi'],
+        bodyJson: { type: 'doc', content: [] },
+        bodyHtml: '<p>Hi</p>',
+        bodyText: 'Hi',
+      })
       .returning();
     templateId = template.id;
-    const [sequence] = await drizzle.db.insert(sequences).values({ name: 'Breaker test sequence', webhookSecret: 'test-secret' }).returning();
+    const [sequence] = await drizzle.db
+      .insert(sequences)
+      .values({ name: 'Breaker test sequence', webhookSecret: 'test-secret' })
+      .returning();
     sequenceId = sequence.id;
-    await drizzle.db.insert(sequenceSteps).values({ sequenceId, order: 0, type: 'exit' });
+    await drizzle.db
+      .insert(sequenceSteps)
+      .values({ sequenceId, order: 0, type: 'exit' });
   });
 
   afterAll(async () => {
     await drizzle.db.delete(sends).where(eq(sends.templateId, templateId));
-    await drizzle.db.delete(sequenceEnrollments).where(eq(sequenceEnrollments.sequenceId, sequenceId));
-    await drizzle.db.delete(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId));
+    await drizzle.db
+      .delete(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.sequenceId, sequenceId));
+    await drizzle.db
+      .delete(sequenceSteps)
+      .where(eq(sequenceSteps.sequenceId, sequenceId));
     await drizzle.db.delete(sequences).where(eq(sequences.id, sequenceId));
     await drizzle.db.delete(templates).where(eq(templates.id, templateId));
     await drizzle.db.delete(contacts).where(eq(contacts.id, contactId));

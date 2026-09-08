@@ -10,19 +10,25 @@ export interface CtaButtonOptions {
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     ctaButton: {
-      insertCtaButton: (attrs: { text: string; href: string; color?: string }) => ReturnType;
+      insertCtaButton: (attrs: { text: string; href: string; color?: string; textColor?: string }) => ReturnType;
     };
   }
 }
 
 const DEFAULT_COLOR = '#6366F1';
+const DEFAULT_TEXT_COLOR = '#ffffff';
+
+function safeHex(color: string, fallback: string) {
+  return /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : fallback;
+}
 
 // Inline styles only (no external stylesheet) so the button still renders
 // correctly once this node's HTML is pulled into an actual sent email —
 // most mail clients strip <style> blocks and class names.
-function buttonStyle(color: string) {
-  const safeColor = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : DEFAULT_COLOR;
-  return `display:inline-block;padding:10px 22px;background:${safeColor};color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px`;
+function buttonStyle(color: string, textColor: string) {
+  const safeColor = safeHex(color, DEFAULT_COLOR);
+  const safeTextColor = safeHex(textColor, DEFAULT_TEXT_COLOR);
+  return `display:inline-block;padding:10px 22px;background:${safeColor};color:${safeTextColor};border-radius:6px;text-decoration:none;font-weight:600;font-size:14px`;
 }
 
 function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
@@ -30,6 +36,7 @@ function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
   const text = (node.attrs.text as string) ?? 'Click here';
   const href = (node.attrs.href as string) ?? '#';
   const color = (node.attrs.color as string) ?? DEFAULT_COLOR;
+  const textColor = (node.attrs.textColor as string) ?? DEFAULT_TEXT_COLOR;
 
   return (
     <NodeViewWrapper as="div" contentEditable={false} className="my-1">
@@ -40,8 +47,8 @@ function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
           setEditing(true);
         }}
         title="Click to edit button text/URL/color"
-        style={{ cursor: 'pointer', backgroundColor: color }}
-        className="inline-block rounded-md px-5 py-2.5 text-sm font-semibold text-white no-underline"
+        style={{ cursor: 'pointer', backgroundColor: color, color: textColor }}
+        className="inline-block rounded-md px-5 py-2.5 text-sm font-semibold no-underline"
       >
         {text}
       </a>
@@ -53,10 +60,11 @@ function CtaButtonView({ node, updateAttributes }: NodeViewProps) {
             { key: 'text', label: 'Button text', defaultValue: text },
             { key: 'href', label: 'Button URL', defaultValue: href },
             { key: 'color', label: 'Button color', type: 'color', defaultValue: color },
+            { key: 'textColor', label: 'Text color', type: 'color', defaultValue: textColor },
           ]}
           onClose={() => setEditing(false)}
           onSubmit={(values) => {
-            updateAttributes({ text: values.text, href: values.href, color: values.color });
+            updateAttributes({ text: values.text, href: values.href, color: values.color, textColor: values.textColor });
             setEditing(false);
           }}
         />
@@ -80,6 +88,7 @@ export const CtaButton = Node.create<CtaButtonOptions>({
       text: { default: 'Click here' },
       href: { default: '#' },
       color: { default: DEFAULT_COLOR },
+      textColor: { default: DEFAULT_TEXT_COLOR },
     };
   },
 
@@ -93,7 +102,7 @@ export const CtaButton = Node.create<CtaButtonOptions>({
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         'data-cta-button': 'true',
         href: node.attrs.href,
-        style: buttonStyle((node.attrs.color as string) ?? DEFAULT_COLOR),
+        style: buttonStyle((node.attrs.color as string) ?? DEFAULT_COLOR, (node.attrs.textColor as string) ?? DEFAULT_TEXT_COLOR),
       }),
       node.attrs.text,
     ];

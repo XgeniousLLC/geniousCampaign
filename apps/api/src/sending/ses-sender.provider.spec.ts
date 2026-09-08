@@ -29,14 +29,24 @@ describe('SesSenderProvider', () => {
   });
 
   it('includes one-click unsubscribe headers and the configuration set on every send', async () => {
-    const sendMail = jest.fn().mockResolvedValue({ messageId: 'ses-msg-123' });
+    // nodemailer's SES transport wraps SES's raw id as an RFC822 Message-ID
+    // in `messageId` (`<...@region.amazonses.com>`) but also returns the
+    // bare, unwrapped id separately as `response` (= AWS SDK's
+    // data.MessageId) — SNS notifications report the bare form, so that's
+    // what providerMessageId must store (see ses-sender.provider.ts).
+    const sendMail = jest.fn().mockResolvedValue({
+      messageId: '<ses-msg-123@us-east-1.amazonses.com>',
+      response: 'ses-msg-123',
+    });
     (nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail });
 
     const values: Record<string, string> = {
       AWS_REGION: 'us-east-1',
       SES_CONFIGURATION_SET: 'gc-config-set',
     };
-    const config = { get: (key: string) => values[key] } as unknown as SettingsService;
+    const config = {
+      get: (key: string) => values[key],
+    } as unknown as SettingsService;
     const provider = new SesSenderProvider(config, noopDrizzle, noopConfig);
 
     const result = await provider.send({
@@ -49,11 +59,18 @@ describe('SesSenderProvider', () => {
       messageTags: { campaignId: 'c1' },
     });
 
-    expect(result).toEqual({ provider: 'ses', providerMessageId: 'ses-msg-123' });
+    expect(result).toEqual({
+      provider: 'ses',
+      providerMessageId: 'ses-msg-123',
+    });
     expect(sendMail).toHaveBeenCalledTimes(1);
     const call = sendMail.mock.calls[0][0];
-    expect(call.headers['List-Unsubscribe']).toBe('<https://track.example.com/unsubscribe/abc>');
-    expect(call.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+    expect(call.headers['List-Unsubscribe']).toBe(
+      '<https://track.example.com/unsubscribe/abc>',
+    );
+    expect(call.headers['List-Unsubscribe-Post']).toBe(
+      'List-Unsubscribe=One-Click',
+    );
     expect(call.ses.ConfigurationSetName).toBe('gc-config-set');
     expect(call.ses.EmailTags).toEqual([{ Name: 'campaignId', Value: 'c1' }]);
   });

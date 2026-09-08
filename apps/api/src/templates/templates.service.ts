@@ -1,18 +1,35 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { templates, templateVersions, sends, emailEvents, sequenceSteps } from '../db/schema';
+import {
+  templates,
+  templateVersions,
+  sends,
+  emailEvents,
+  sequenceStepTemplates,
+  sequenceSteps,
+} from '../db/schema';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SendTestEmailDto } from './dto/send-test-email.dto';
-import { renderBodyHtml, renderBodyText, resolvePersonalization, resolveSpintax, type ProseMirrorNode } from '@genius-campaign/shared';
+import {
+  renderBodyHtml,
+  renderBodyText,
+  resolvePersonalization,
+  resolveSpintax,
+  type ProseMirrorNode,
+} from '@genius-campaign/shared';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
 
 // Sample data a test send resolves {{contact.x}} tokens against — there's
 // no real contact behind a test send, so this stands in to show what an
 // actual recipient's resolved copy would look like.
-const SAMPLE_CONTACT = { firstName: 'Alex', lastName: 'Doe', email: 'alex@example.com' };
+const SAMPLE_CONTACT = {
+  firstName: 'Alex',
+  lastName: 'Doe',
+  email: 'alex@example.com',
+};
 
 @Injectable()
 export class TemplatesService {
@@ -25,19 +42,20 @@ export class TemplatesService {
     const bodyJson = dto.bodyJson as unknown as ProseMirrorNode;
     const bodyHtml = renderBodyHtml(bodyJson);
     const bodyText = renderBodyText(bodyJson);
-    const subject = dto.subject ?? '';
+    const subjectLines = dto.subjectLines;
+    const previewTextLines = dto.previewTextLines ?? [];
 
     return db.transaction(async (tx) => {
       const [created] = await tx
         .insert(templates)
         .values({
           name: dto.name,
-          subject,
+          subjectLines,
+          previewTextLines,
           bodyJson: dto.bodyJson,
           bodyHtml,
           bodyText,
           folder: dto.folder,
-          parentTemplateId: dto.parentTemplateId,
         })
         .returning();
 
@@ -45,7 +63,8 @@ export class TemplatesService {
         templateId: created.id,
         versionNumber: 1,
         name: created.name,
-        subject: created.subject,
+        subjectLines: created.subjectLines,
+        previewTextLines: created.previewTextLines,
         bodyJson: created.bodyJson,
         bodyHtml: created.bodyHtml,
         bodyText: created.bodyText,
@@ -58,23 +77,18 @@ export class TemplatesService {
   /** Templates list screen needs per-template "uses" (sent count) and open
    * rate — computed here rather than stored, since they change as sends/opens
    * come in and would otherwise drift out of sync with the sends/email_events
-   * tables.
-   *
-   * Saved shuffle/AI variants are real template rows (sendable, have their
-   * own uses/open-rate) but are hidden from this default list — they'd just
-   * clutter it since they're not independent templates a user picks from
-   * scratch. Pass includeVariants=true (campaign compose's picker) to get
-   * everything, top-level and variants alike. */
-  async findAll(includeVariants = false) {
+   * tables. */
+  async findAll() {
     const templateRows = await this.drizzle.db.query.templates.findMany({
-      where: includeVariants ? undefined : isNull(templates.parentTemplateId),
       orderBy: (t, { desc }) => desc(t.updatedAt),
     });
 
     const useRows = await this.drizzle.db
       .select({
         templateId: sends.templateId,
-        uses: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(Number),
+        uses: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(
+          Number,
+        ),
       })
       .from(sends)
       .groupBy(sends.templateId);
@@ -83,25 +97,39 @@ export class TemplatesService {
     const openRows = await this.drizzle.db
       .select({
         templateId: sends.templateId,
-        opens: sql<number>`count(distinct ${emailEvents.sendId})`.mapWith(Number),
+        opens: sql<number>`count(distinct ${emailEvents.sendId})`.mapWith(
+          Number,
+        ),
       })
       .from(emailEvents)
       .innerJoin(sends, eq(emailEvents.sendId, sends.id))
       .where(eq(emailEvents.type, 'open'))
       .groupBy(sends.templateId);
-    const opensByTemplate = new Map(openRows.map((r) => [r.templateId, r.opens]));
+    const opensByTemplate = new Map(
+      openRows.map((r) => [r.templateId, r.opens]),
+    );
 
     // Distinct sequences a template is wired into as a step — separate from
     // "uses" (actual sent count) since a template can sit in a sequence step
-    // and never have fired a send yet.
+    // and never have fired a send yet. A step can link several templates
+    // (sequenceStepTemplates), so join through it to reach sequenceId.
     const usedInRows = await this.drizzle.db
       .select({
-        templateId: sequenceSteps.templateId,
-        usedInCount: sql<number>`count(distinct ${sequenceSteps.sequenceId})`.mapWith(Number),
+        templateId: sequenceStepTemplates.templateId,
+        usedInCount:
+          sql<number>`count(distinct ${sequenceSteps.sequenceId})`.mapWith(
+            Number,
+          ),
       })
-      .from(sequenceSteps)
-      .groupBy(sequenceSteps.templateId);
-    const usedInByTemplate = new Map(usedInRows.map((r) => [r.templateId, r.usedInCount]));
+      .from(sequenceStepTemplates)
+      .innerJoin(
+        sequenceSteps,
+        eq(sequenceStepTemplates.sequenceStepId, sequenceSteps.id),
+      )
+      .groupBy(sequenceStepTemplates.templateId);
+    const usedInByTemplate = new Map(
+      usedInRows.map((r) => [r.templateId, r.usedInCount]),
+    );
 
     return templateRows.map((t) => {
       const uses = usesByTemplate.get(t.id) ?? 0;
@@ -116,19 +144,28 @@ export class TemplatesService {
   }
 
   async findOne(id: string, db: DbOrTx = this.drizzle.db) {
-    const template = await db.query.templates.findFirst({ where: eq(templates.id, id) });
+    const template = await db.query.templates.findFirst({
+      where: eq(templates.id, id),
+    });
     if (!template) {
       throw new NotFoundException(`Template ${id} not found`);
     }
     return template;
   }
 
-  async update(id: string, dto: UpdateTemplateDto, db: DbOrTx = this.drizzle.db) {
+  async update(
+    id: string,
+    dto: UpdateTemplateDto,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     const existing = await this.findOne(id, db);
 
     const name = dto.name ?? existing.name;
-    const subject = dto.subject ?? existing.subject;
-    const bodyJson = (dto.bodyJson as unknown as ProseMirrorNode) ?? (existing.bodyJson as unknown as ProseMirrorNode);
+    const subjectLines = dto.subjectLines ?? existing.subjectLines;
+    const previewTextLines = dto.previewTextLines ?? existing.previewTextLines;
+    const bodyJson =
+      (dto.bodyJson as unknown as ProseMirrorNode) ??
+      (existing.bodyJson as unknown as ProseMirrorNode);
     const bodyHtml = renderBodyHtml(bodyJson);
     const bodyText = renderBodyText(bodyJson);
     const folder = dto.folder ?? existing.folder;
@@ -138,7 +175,8 @@ export class TemplatesService {
         .update(templates)
         .set({
           name,
-          subject,
+          subjectLines,
+          previewTextLines,
           bodyJson: bodyJson as unknown as Record<string, unknown>,
           bodyHtml,
           bodyText,
@@ -159,7 +197,8 @@ export class TemplatesService {
         templateId: id,
         versionNumber: (lastVersion?.versionNumber ?? 0) + 1,
         name: updated.name,
-        subject: updated.subject,
+        subjectLines: updated.subjectLines,
+        previewTextLines: updated.previewTextLines,
         bodyJson: updated.bodyJson,
         bodyHtml: updated.bodyHtml,
         bodyText: updated.bodyText,
@@ -167,35 +206,6 @@ export class TemplatesService {
 
       return updated;
     });
-  }
-
-  async findVariants(parentId: string) {
-    await this.findOne(parentId);
-    return this.drizzle.db.query.templates.findMany({
-      where: eq(templates.parentTemplateId, parentId),
-      orderBy: (t, { desc }) => desc(t.createdAt),
-    });
-  }
-
-  /** Sets or clears the parentTemplateId on an existing template — lets an
-   * admin retroactively designate any standalone template as a variant of
-   * another (or detach a variant back to top-level). */
-  async setVariant(id: string, parentTemplateId: string | null, db: DbOrTx = this.drizzle.db) {
-    const template = await this.findOne(id, db);
-    if (parentTemplateId) {
-      // Can't make a template a variant of itself.
-      if (parentTemplateId === id) {
-        return template;
-      }
-      // Verify the parent exists.
-      await this.findOne(parentTemplateId, db);
-    }
-    const [updated] = await db
-      .update(templates)
-      .set({ parentTemplateId, updatedAt: new Date() })
-      .where(eq(templates.id, id))
-      .returning();
-    return updated;
   }
 
   async remove(id: string, db: DbOrTx = this.drizzle.db) {
@@ -229,9 +239,15 @@ export class TemplatesService {
    * themselves; SendDispatcherService still enforces real sender quota and
    * the circuit breaker, so it can't be used to bypass either. */
   async sendTestEmail(dto: SendTestEmailDto) {
-    const resolvedSubject = resolveSpintax(resolvePersonalization(dto.subject, SAMPLE_CONTACT));
-    const resolvedHtml = resolveSpintax(resolvePersonalization(dto.bodyHtml, SAMPLE_CONTACT));
-    const resolvedText = resolveSpintax(resolvePersonalization(dto.bodyText, SAMPLE_CONTACT));
+    const resolvedSubject = resolveSpintax(
+      resolvePersonalization(dto.subject, SAMPLE_CONTACT),
+    );
+    const resolvedHtml = resolveSpintax(
+      resolvePersonalization(dto.bodyHtml, SAMPLE_CONTACT),
+    );
+    const resolvedText = resolveSpintax(
+      resolvePersonalization(dto.bodyText, SAMPLE_CONTACT),
+    );
 
     const result = await this.sendDispatcher.send({
       to: dto.to,
