@@ -1,12 +1,24 @@
-import { IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateTemplateDto {
   @IsString()
   name!: string;
 
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  subjectLines!: string[];
+
   @IsOptional()
-  @IsString()
-  subject?: string;
+  @IsArray()
+  @IsString({ each: true })
+  previewTextLines?: string[];
 
   @IsObject()
   bodyJson!: Record<string, unknown>;
@@ -14,8 +26,4 @@ export class CreateTemplateDto {
   @IsOptional()
   @IsString()
   folder?: string;
-
-  @IsOptional()
-  @IsUUID()
-  parentTemplateId?: string;
 }

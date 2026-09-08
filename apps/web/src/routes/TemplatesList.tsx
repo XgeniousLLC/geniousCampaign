@@ -22,7 +22,7 @@ export function TemplatesList() {
 
   async function handleDelete(e: React.MouseEvent, id: string, name: string) {
     e.stopPropagation();
-    if (!confirm(`Delete "${name}"? This also removes all its variants.`)) return;
+    if (!confirm(`Delete "${name}"?`)) return;
     setDeleting(id);
     try {
       await deleteTemplate(id);
@@ -55,7 +55,7 @@ export function TemplatesList() {
   async function handleBulkDelete() {
     if (selected.size === 0) return;
     const count = selected.size;
-    if (!confirm(`Delete ${count} template${count === 1 ? '' : 's'}? This also removes all their variants.`)) return;
+    if (!confirm(`Delete ${count} template${count === 1 ? '' : 's'}?`)) return;
     setBulkDeleting(true);
     try {
       await deleteTemplates(Array.from(selected));
@@ -170,7 +170,7 @@ export function TemplatesList() {
                     <Link to={`/templates/${t.id}`} className="font-medium text-text-secondary hover:text-text-primary" onClick={(e) => e.stopPropagation()}>
                       {t.name}
                     </Link>
-                    <div className="mt-0.5 truncate font-mono text-[11.5px] text-text-faint">{t.subject || 'no subject'}</div>
+                    <div className="mt-0.5 truncate font-mono text-[11.5px] text-text-faint">{t.subjectLines[0] || 'no subject'}</div>
                   </td>
                   <td className="px-3 py-2.5">
                     {t.folder ? (

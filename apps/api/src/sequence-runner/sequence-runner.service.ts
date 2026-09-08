@@ -3,9 +3,20 @@ import { SettingsService } from '../settings/settings.service';
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, lte } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { sequenceEnrollments, sequenceSteps, sequences, contacts, templates, sends } from '../db/schema';
-import { resolveNextExecutableStep, type RunnerStep } from './step-resolution.util';
-import { resolvePersonalization, resolveSpintax } from '@genius-campaign/shared';
+import {
+  sequenceEnrollments,
+  sequenceSteps,
+  sequenceStepTemplates,
+  sequences,
+  contacts,
+  templates,
+  sends,
+} from '../db/schema';
+import {
+  resolveNextExecutableStep,
+  type RunnerStep,
+} from './step-resolution.util';
+import { resolveTemplateContent } from '@genius-campaign/shared';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { SuppressionService } from '../suppression/suppression.service';
 import { TrackingService } from '../tracking/tracking.service';
@@ -37,7 +48,12 @@ export class SequenceRunnerService {
     const due = await this.drizzle.db
       .select()
       .from(sequenceEnrollments)
-      .where(and(eq(sequenceEnrollments.status, 'active'), lte(sequenceEnrollments.nextRunAt, now)));
+      .where(
+        and(
+          eq(sequenceEnrollments.status, 'active'),
+          lte(sequenceEnrollments.nextRunAt, now),
+        ),
+      );
 
     let processed = 0;
     for (const enrollment of due) {
@@ -63,7 +79,12 @@ export class SequenceRunnerService {
       if (step.type === 'exit') {
         await this.drizzle.db
           .update(sequenceEnrollments)
-          .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
+          .set({
+            status: 'completed',
+            currentStepId: null,
+            nextRunAt: null,
+            updatedAt: now,
+          })
           .where(eq(sequenceEnrollments.id, enrollmentId));
         this.events.emit('sequence.completed', {
           enrollmentId,
@@ -82,7 +103,13 @@ export class SequenceRunnerService {
       // a separate concept: auto-enrolling a contact into a sequence from an
       // external event, not a conditional step inside an already-running one.
 
-      await this.advance(fresh.sequenceId, fresh.contactId, enrollmentId, step.order, now);
+      await this.advance(
+        fresh.sequenceId,
+        fresh.contactId,
+        enrollmentId,
+        step.order,
+        now,
+      );
     } catch (err) {
       this.logger.error(
         `Sequence runner failed processing enrollment ${enrollmentId} at step ${step.id}: ${err instanceof Error ? err.message : err}`,
@@ -94,27 +121,53 @@ export class SequenceRunnerService {
     enrollment: typeof sequenceEnrollments.$inferSelect,
     step: typeof sequenceSteps.$inferSelect,
   ) {
-    const contact = await this.drizzle.db.query.contacts.findFirst({ where: eq(contacts.id, enrollment.contactId) });
+    const contact = await this.drizzle.db.query.contacts.findFirst({
+      where: eq(contacts.id, enrollment.contactId),
+    });
     if (!contact) return;
 
     // Sender is set once per sequence, not per step (revised GC-130) — every
     // send_email step in a sequence shares the same account/from name/reply-to.
-    const sequence = await this.drizzle.db.query.sequences.findFirst({ where: eq(sequences.id, enrollment.sequenceId) });
+    const sequence = await this.drizzle.db.query.sequences.findFirst({
+      where: eq(sequences.id, enrollment.sequenceId),
+    });
 
-    if (!step.templateId) {
-      await this.recordFailedSend(enrollment, step, contact.id, 'Step has no template configured');
+    // A step can link several templates (sequence_step_templates) — pick one
+    // uniformly at random per send, true A/B, replacing the old
+    // template-level parentTemplateId variant system.
+    const links = await this.drizzle.db
+      .select({ templateId: sequenceStepTemplates.templateId })
+      .from(sequenceStepTemplates)
+      .where(eq(sequenceStepTemplates.sequenceStepId, step.id));
+    if (links.length === 0) {
+      await this.recordFailedSend(
+        enrollment,
+        step,
+        contact.id,
+        'Step has no template configured',
+      );
       return;
     }
-    const template = await this.drizzle.db.query.templates.findFirst({ where: eq(templates.id, step.templateId) });
+    const pickedTemplateId =
+      links[Math.floor(Math.random() * links.length)].templateId;
+    const template = await this.drizzle.db.query.templates.findFirst({
+      where: eq(templates.id, pickedTemplateId),
+    });
     if (!template) {
-      await this.recordFailedSend(enrollment, step, contact.id, `Template ${step.templateId} not found`);
+      await this.recordFailedSend(
+        enrollment,
+        step,
+        contact.id,
+        `Template ${pickedTemplateId} not found`,
+      );
       return;
     }
 
     // Two independent gates: suppression_list and contact.status — a
     // contact can carry status 'suppressed'/'unsubscribed' without a
     // matching suppression_list row and must still never receive a send.
-    const statusBlocked = contact.status === 'suppressed' || contact.status === 'unsubscribed';
+    const statusBlocked =
+      contact.status === 'suppressed' || contact.status === 'unsubscribed';
     if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
       await this.drizzle.db.insert(sends).values({
         contactId: contact.id,
@@ -123,11 +176,14 @@ export class SequenceRunnerService {
         sequenceId: enrollment.sequenceId,
         sequenceStepId: step.id,
         provider: 'ses',
-        resolvedSubject: template.subject,
+        resolvedSubject: template.subjectLines[0] ?? '',
+        resolvedPreviewText: template.previewTextLines[0] ?? null,
         resolvedBodyHtml: template.bodyHtml,
         resolvedBodyText: template.bodyText,
         status: 'suppressed',
-        error: statusBlocked ? `${contact.email} has status "${contact.status}"` : `${contact.email} is on the suppression list`,
+        error: statusBlocked
+          ? `${contact.email} has status "${contact.status}"`
+          : `${contact.email} is on the suppression list`,
       });
       return;
     }
@@ -135,15 +191,19 @@ export class SequenceRunnerService {
     // Personalization tokens ({{contact.x}}) are resolved before spintax —
     // spintax's own {a|b} brace parser would otherwise mis-parse the doubled
     // braces of an unresolved token as a nested spintax group and eat them.
-    // Spintax itself is resolved once per send, here, never at save time (invariant 5).
-    const resolvedSubject = resolveSpintax(resolvePersonalization(template.subject, contact));
-    const resolvedBodyHtmlRaw = resolveSpintax(resolvePersonalization(template.bodyHtml, contact));
-    const resolvedBodyText = resolveSpintax(resolvePersonalization(template.bodyText, contact));
+    // Spintax itself is resolved once per send, here, never at save time
+    // (invariant 5) — resolveTemplateContent() also picks the random
+    // subject/preview-text line as the outer step, same ordering.
+    const resolved = resolveTemplateContent(template, contact);
+    const resolvedSubject = resolved.subject;
+    const resolvedBodyHtmlRaw = resolved.bodyHtml;
+    const resolvedBodyText = resolved.bodyText;
 
     const sendId = randomUUID();
     const openPixelUrl = this.tracking.buildOpenPixelUrl(sendId);
-    const htmlWithClickTracking = rewriteLinksForTracking(resolvedBodyHtmlRaw, (url) =>
-      this.tracking.buildClickUrl(sendId, url),
+    const htmlWithClickTracking = rewriteLinksForTracking(
+      resolvedBodyHtmlRaw,
+      (url) => this.tracking.buildClickUrl(sendId, url),
     );
     const resolvedBodyHtml = `${htmlWithClickTracking}<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`;
 
@@ -161,6 +221,7 @@ export class SequenceRunnerService {
       sequenceStepId: step.id,
       provider: 'ses',
       resolvedSubject,
+      resolvedPreviewText: resolved.previewText || null,
       resolvedBodyHtml,
       resolvedBodyText,
       status: 'failed',
@@ -173,19 +234,30 @@ export class SequenceRunnerService {
         html: resolvedBodyHtml,
         text: resolvedBodyText,
         unsubscribeUrl,
-        messageTags: { sequenceId: enrollment.sequenceId, sequenceStepId: step.id },
+        messageTags: {
+          sequenceId: enrollment.sequenceId,
+          sequenceStepId: step.id,
+        },
         senderAccountId: sequence?.senderAccountId ?? undefined,
         fromName: sequence?.fromName ?? undefined,
         replyTo: sequence?.replyTo ?? undefined,
       });
       await this.drizzle.db
         .update(sends)
-        .set({ status: 'sent', provider: result.provider, providerMessageId: result.providerMessageId, sentAt: new Date() })
+        .set({
+          status: 'sent',
+          provider: result.provider,
+          providerMessageId: result.providerMessageId,
+          sentAt: new Date(),
+        })
         .where(eq(sends.id, sendId));
     } catch (err) {
       await this.drizzle.db
         .update(sends)
-        .set({ status: 'failed', error: err instanceof Error ? err.message : String(err) })
+        .set({
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        })
         .where(eq(sends.id, sendId));
     }
   }
@@ -210,7 +282,13 @@ export class SequenceRunnerService {
     });
   }
 
-  private async advance(sequenceId: string, contactId: string, enrollmentId: string, fromOrder: number, now: Date) {
+  private async advance(
+    sequenceId: string,
+    contactId: string,
+    enrollmentId: string,
+    fromOrder: number,
+    now: Date,
+  ) {
     const allSteps: RunnerStep[] = await this.drizzle.db
       .select()
       .from(sequenceSteps)
@@ -222,15 +300,28 @@ export class SequenceRunnerService {
     if (resolution.done) {
       await this.drizzle.db
         .update(sequenceEnrollments)
-        .set({ status: 'completed', currentStepId: null, nextRunAt: null, updatedAt: now })
+        .set({
+          status: 'completed',
+          currentStepId: null,
+          nextRunAt: null,
+          updatedAt: now,
+        })
         .where(eq(sequenceEnrollments.id, enrollmentId));
-      this.events.emit('sequence.completed', { enrollmentId, sequenceId, contactId });
+      this.events.emit('sequence.completed', {
+        enrollmentId,
+        sequenceId,
+        contactId,
+      });
       return;
     }
 
     await this.drizzle.db
       .update(sequenceEnrollments)
-      .set({ currentStepId: resolution.stepId, nextRunAt: resolution.runAt, updatedAt: now })
+      .set({
+        currentStepId: resolution.stepId,
+        nextRunAt: resolution.runAt,
+        updatedAt: now,
+      })
       .where(eq(sequenceEnrollments.id, enrollmentId));
   }
 }

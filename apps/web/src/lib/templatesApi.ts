@@ -3,13 +3,14 @@ import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 export interface Template {
   id: string;
   name: string;
-  subject: string;
+  // Multiple subject lines — one is picked at random per send (true A/B).
+  subjectLines: string[];
+  // Preheader/preview-text lines — same shuffle pattern; empty = none set.
+  previewTextLines: string[];
   bodyJson: Record<string, unknown>;
   bodyHtml: string;
   bodyText: string;
   folder: string | null;
-  // Set when this template is a saved shuffle/AI variant of another template.
-  parentTemplateId: string | null;
   createdAt: string;
   updatedAt: string;
   // Present on list responses only (GET /templates) — computed server-side.
@@ -24,7 +25,8 @@ export interface TemplateVersion {
   templateId: string;
   versionNumber: number;
   name: string;
-  subject: string;
+  subjectLines: string[];
+  previewTextLines: string[];
   bodyJson: Record<string, unknown>;
   bodyHtml: string;
   bodyText: string;
@@ -33,13 +35,13 @@ export interface TemplateVersion {
 
 export interface SaveTemplateInput {
   name: string;
-  subject: string;
+  subjectLines: string[];
+  previewTextLines: string[];
   bodyJson: Record<string, unknown>;
-  parentTemplateId?: string;
 }
 
-export function listTemplates(opts?: { includeVariants?: boolean }) {
-  return apiGet<Template[]>(`/templates${opts?.includeVariants ? '?includeVariants=true' : ''}`);
+export function listTemplates() {
+  return apiGet<Template[]>('/templates');
 }
 
 export function getTemplate(id: string) {
@@ -58,10 +60,6 @@ export function listTemplateVersions(id: string) {
   return apiGet<TemplateVersion[]>(`/templates/${id}/versions`);
 }
 
-export function listTemplateVariants(id: string) {
-  return apiGet<Template[]>(`/templates/${id}/variants`);
-}
-
 export function sendTestEmail(input: { to: string; subject: string; bodyHtml: string; bodyText: string }) {
   return apiPost<{ sent: boolean; provider: 'ses' | 'gmail' }>('/templates/send-test', input);
 }
@@ -72,8 +70,4 @@ export function deleteTemplate(id: string) {
 
 export function deleteTemplates(ids: string[]) {
   return apiPost<{ deletedCount: number }>('/templates/bulk-delete', { ids });
-}
-
-export function setTemplateVariant(id: string, parentTemplateId: string | null) {
-  return apiPatch<Template>(`/templates/${id}/variant`, { parentTemplateId });
 }

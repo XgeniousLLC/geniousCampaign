@@ -61,11 +61,10 @@ export function CampaignCompose() {
   } | null>(null);
 
   useEffect(() => {
-    listTemplates({ includeVariants: true }).then((t) => {
+    listTemplates().then((t) => {
       setTemplates(t);
-      if (!isEditing) {
-        const topLevel = t.find((x) => !x.parentTemplateId);
-        if (topLevel) setTemplateId(topLevel.id);
+      if (!isEditing && t.length > 0) {
+        setTemplateId(t[0].id);
       }
     });
     listLists().then((l) => {
@@ -310,24 +309,16 @@ export function CampaignCompose() {
               className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary"
             >
               {templates.length === 0 && <option value="">No templates yet</option>}
-              {templates
-                .filter((t) => !t.parentTemplateId)
-                .map((t) => (
-                  <optgroup key={t.id} label={t.name}>
-                    <option value={t.id}>{t.name}</option>
-                    {templates
-                      .filter((v) => v.parentTemplateId === t.id)
-                      .map((v) => (
-                        <option key={v.id} value={v.id}>
-                          ↳ {v.name}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
             {selectedTemplate && (
               <div className="mt-2.5 text-xs text-text-muted">
-                Subject: <span className="font-mono text-text-tertiary">{selectedTemplate.subject}</span>
+                Subject: <span className="font-mono text-text-tertiary">{selectedTemplate.subjectLines[0]}</span>
+                {selectedTemplate.subjectLines.length > 1 && ` (+${selectedTemplate.subjectLines.length - 1} more)`}
               </div>
             )}
           </div>

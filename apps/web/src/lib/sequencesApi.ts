@@ -30,7 +30,9 @@ export interface SequenceStep {
   sequenceId: string;
   order: number;
   type: StepType;
-  templateId: string | null;
+  // A send_email step can link several templates — the runner picks one
+  // uniformly at random per send (true A/B).
+  templateIds: string[];
   delayValue: number | null;
   delayUnit: DelayUnit | null;
 }
@@ -75,7 +77,7 @@ export function addStep(
   sequenceId: string,
   input: {
     type: StepType;
-    templateId?: string;
+    templateIds?: string[];
     delayValue?: number;
     delayUnit?: DelayUnit;
   },
@@ -88,7 +90,7 @@ export function updateStep(
   stepId: string,
   input: Partial<{
     type: StepType;
-    templateId: string;
+    templateIds: string[];
     delayValue: number;
     delayUnit: DelayUnit;
   }>,
@@ -106,7 +108,7 @@ export function reorderSteps(sequenceId: string, stepIds: string[]) {
 
 export interface SequenceStats {
   enrolled: { active: number; paused: number; stopped: number; completed: number; total: number };
-  stepBreakdown: Array<{ stepId: string; stepNumber: number; templateId: string | null; contactCount: number }>;
+  stepBreakdown: Array<{ stepId: string; stepNumber: number; templateIds: string[]; contactCount: number }>;
   sends: {
     sentToday: number;
     sentYesterday: number;

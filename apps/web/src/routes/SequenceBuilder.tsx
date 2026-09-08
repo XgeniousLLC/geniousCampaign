@@ -136,7 +136,7 @@ export function SequenceBuilder() {
     const [seq, seqSteps, tpls, enr, allContacts, allSequences, senders, seqStats] = await Promise.all([
       getSequence(id),
       listSteps(id),
-      listTemplates({ includeVariants: true }),
+      listTemplates(),
       listEnrollmentsForSequence(id),
       listContacts(),
       listSequences(),
@@ -166,17 +166,6 @@ export function SequenceBuilder() {
 
   const blocks = useMemo(() => buildBlocks(steps), [steps]);
   const sendBlocks = blocks.filter((b) => b.sendStep);
-
-  const variantsByParent = useMemo(() => {
-    const map = new Map<string, Template[]>();
-    for (const t of templates) {
-      if (!t.parentTemplateId) continue;
-      const arr = map.get(t.parentTemplateId) ?? [];
-      arr.push(t);
-      map.set(t.parentTemplateId, arr);
-    }
-    return map;
-  }, [templates]);
 
   const totalDurationMinutes = useMemo(() => {
     return blocks.reduce((sum, b) => {
@@ -231,7 +220,7 @@ export function SequenceBuilder() {
       sequenceId: id ?? '',
       order: steps.length + 1,
       type: 'send_email',
-      templateId: null,
+      templateIds: [],
       delayValue: null,
       delayUnit: null,
     };
@@ -256,10 +245,18 @@ export function SequenceBuilder() {
     setDirty(true);
   }
 
-  function handleTemplateChange(block: Block, templateId: string) {
-    if (!block.sendStep) return;
+  function addTemplateToStep(block: Block, templateId: string) {
+    if (!block.sendStep || !templateId || block.sendStep.templateIds.includes(templateId)) return;
     setSteps((prev) =>
-      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, templateId } : s)),
+      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, templateIds: [...s.templateIds, templateId] } : s)),
+    );
+    setDirty(true);
+  }
+
+  function removeTemplateFromStep(block: Block, templateId: string) {
+    if (!block.sendStep || block.sendStep.templateIds.length <= 1) return;
+    setSteps((prev) =>
+      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, templateIds: s.templateIds.filter((t) => t !== templateId) } : s)),
     );
     setDirty(true);
   }
@@ -277,7 +274,7 @@ export function SequenceBuilder() {
         sequenceId: id ?? '',
         order: 0,
         type: 'wait',
-        templateId: null,
+        templateIds: [],
         delayValue,
         delayUnit,
       };
@@ -316,7 +313,7 @@ export function SequenceBuilder() {
           // New step — create it
           const created = await addStep(id, {
             type: step.type,
-            templateId: step.templateId ?? undefined,
+            templateIds: step.templateIds,
             delayValue: step.delayValue ?? undefined,
             delayUnit: step.delayUnit ?? undefined,
           });
@@ -325,16 +322,18 @@ export function SequenceBuilder() {
         } else {
           // Existing step — update if changed
           const orig = originalStepsRef.current.find((s) => s.id === step.id);
+          const sameTemplateIds =
+            !!orig && orig.templateIds.length === step.templateIds.length && orig.templateIds.every((t) => step.templateIds.includes(t));
           const changed =
             !orig ||
-            orig.templateId !== step.templateId ||
+            !sameTemplateIds ||
             orig.delayValue !== step.delayValue ||
             orig.delayUnit !== step.delayUnit ||
             orig.type !== step.type;
           if (changed) {
             await updateStep(id, step.id, {
               type: step.type,
-              templateId: step.templateId ?? undefined,
+              templateIds: step.templateIds,
               delayValue: step.delayValue ?? undefined,
               delayUnit: step.delayUnit ?? undefined,
             });
@@ -579,14 +578,11 @@ export function SequenceBuilder() {
             </div>
 
             {blocks.map((block, i) => {
-              const templateOptions = block.sendStep
-                ? (() => {
-                    const current = templates.find((t) => t.id === block.sendStep!.templateId);
-                    const parentId = current?.parentTemplateId ?? current?.id;
-                    const variants = parentId ? variantsByParent.get(parentId) ?? [] : [];
-                    const parent = parentId ? templates.find((t) => t.id === parentId) : undefined;
-                    return parent ? [parent, ...variants] : [];
-                  })()
+              const linkedTemplates = block.sendStep
+                ? block.sendStep.templateIds.map((tid) => templates.find((t) => t.id === tid)).filter((t): t is Template => !!t)
+                : [];
+              const addableTemplates = block.sendStep
+                ? templates.filter((t) => !block.sendStep!.templateIds.includes(t.id))
                 : [];
 
               return (
@@ -639,19 +635,17 @@ export function SequenceBuilder() {
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">Send email</div>
                           <select
-                            value={block.sendStep!.templateId ?? ''}
-                            onChange={(e) => handleTemplateChange(block, e.target.value)}
+                            value=""
+                            onChange={(e) => addTemplateToStep(block, e.target.value)}
                             disabled={!canWrite}
                             className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
                           >
-                            <option value="">Select a template…</option>
-                            {templates
-                              .filter((t) => !t.parentTemplateId)
-                              .map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.name}
-                                </option>
-                              ))}
+                            <option value="">{linkedTemplates.length > 0 ? 'Add another template…' : 'Select a template…'}</option>
+                            {addableTemplates.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         {canWrite && (
@@ -664,29 +658,28 @@ export function SequenceBuilder() {
                           </>
                         )}
                       </div>
-                      {templateOptions.length > 0 && (
+                      {linkedTemplates.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pl-[50px]">
-                          {templateOptions.map((opt) => (
-                            <button
-                              key={opt.id}
-                              onClick={() => handleTemplateChange(block, opt.id)}
-                              className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
-                                opt.id === block.sendStep!.templateId
-                                  ? 'border-accent/30 bg-accent/10 text-accent-tint'
-                                  : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
-                              }`}
+                          {linkedTemplates.map((t) => (
+                            <span
+                              key={t.id}
+                              className="flex items-center gap-1 rounded-md border border-accent/30 bg-accent/10 py-0.5 pl-2 pr-1 text-[11px] font-medium text-accent-tint"
                             >
-                              {opt.parentTemplateId ? opt.name : 'Original'}
-                            </button>
+                              {t.name}
+                              {canWrite && (
+                                <button
+                                  onClick={() => removeTemplateFromStep(block, t.id)}
+                                  disabled={linkedTemplates.length <= 1}
+                                  className="rounded px-0.5 text-accent-tint/70 hover:text-danger disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  <CloseIcon />
+                                </button>
+                              )}
+                            </span>
                           ))}
-                          <Link
-                            to={`/templates/${templateOptions[0]?.id}`}
-                            target="_blank"
-                            className="flex items-center gap-1 rounded-md border border-dashed border-border-emphasis px-2 py-0.5 text-[11px] font-medium text-text-quaternary hover:text-text-secondary"
-                          >
-                            + Manage variants
-                          </Link>
-                          <span className="text-[10.5px] text-text-meta">Variants can be A/B tested — configure in the template editor</span>
+                          {linkedTemplates.length > 1 && (
+                            <span className="text-[10.5px] text-text-meta">Multiple templates rotate randomly for A/B testing</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -900,14 +893,21 @@ export function SequenceBuilder() {
                 ) : (
                   <div className="flex flex-col gap-3">
                     {stats.stepBreakdown.map((s) => {
-                      const template = templates.find((t) => t.id === s.templateId);
+                      const template = templates.find((t) => t.id === s.templateIds[0]);
+                      const extra = s.templateIds.length - 1;
                       const max = Math.max(1, ...stats.stepBreakdown.map((b) => b.contactCount));
                       return (
                         <div key={s.stepId}>
                           <div className="mb-1.5 flex items-center justify-between text-xs">
                             <span className="text-text-tertiary">
                               Step {s.stepNumber}
-                              {template && <span className="text-text-faint"> — {template.name}</span>}
+                              {template && (
+                                <span className="text-text-faint">
+                                  {' '}
+                                  — {template.name}
+                                  {extra > 0 ? ` +${extra}` : ''}
+                                </span>
+                              )}
                             </span>
                             <span className="font-mono font-medium text-text-secondary">{s.contactCount}</span>
                           </div>

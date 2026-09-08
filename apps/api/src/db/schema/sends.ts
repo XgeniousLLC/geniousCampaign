@@ -1,16 +1,34 @@
-import { pgTable, pgEnum, uuid, text, integer, boolean, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  pgEnum,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  index,
+} from 'drizzle-orm/pg-core';
 import { contacts } from './contacts';
 import { templates } from './templates';
 import { sequences, sequenceSteps } from './sequences';
 import { sequenceEnrollments } from './enrollments';
 import { senderAccounts } from './sender-accounts';
 
-export const campaignStatusEnum = pgEnum('campaign_status', ['draft', 'sending', 'sent', 'failed']);
+export const campaignStatusEnum = pgEnum('campaign_status', [
+  'draft',
+  'sending',
+  'sent',
+  'failed',
+]);
 // GC-070 — a campaign targets exactly one of these; which id column(s) are
 // populated depends on this value (enforced in CampaignsService.create(),
 // not a DB constraint, same as other "one of several optional FKs" shapes
 // already in this schema e.g. sends' sequence/campaign columns).
-export const campaignAudienceTypeEnum = pgEnum('campaign_audience_type', ['list', 'tags', 'contacts']);
+export const campaignAudienceTypeEnum = pgEnum('campaign_audience_type', [
+  'list',
+  'tags',
+  'contacts',
+]);
 
 export const campaigns = pgTable('campaigns', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -18,7 +36,9 @@ export const campaigns = pgTable('campaigns', {
   templateId: uuid('template_id')
     .notNull()
     .references(() => templates.id, { onDelete: 'restrict' }),
-  audienceType: campaignAudienceTypeEnum('audience_type').notNull().default('list'),
+  audienceType: campaignAudienceTypeEnum('audience_type')
+    .notNull()
+    .default('list'),
   // Only one of listIds/tagIds/contactIds is ever set, matching audienceType.
   // GC-112 — listIds is an array (was a single listId) so "list" audience
   // can target several lists at once (union). excludeListIds applies
@@ -54,17 +74,31 @@ export const campaigns = pgTable('campaigns', {
   // if that account is inactive/exhausted rather than silently falling back
   // — a picked-but-unusable sender should never surprise the caller with a
   // different From address than what they configured.
-  senderAccountId: uuid('sender_account_id').references(() => senderAccounts.id, { onDelete: 'set null' }),
+  senderAccountId: uuid('sender_account_id').references(
+    () => senderAccounts.id,
+    { onDelete: 'set null' },
+  ),
   // Per-campaign From display name override — falls back to the picked
   // sender account's own displayName when unset.
   fromName: text('from_name'),
   replyTo: text('reply_to'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const sendProviderEnum = pgEnum('send_provider', ['ses', 'gmail']);
-export const sendStatusEnum = pgEnum('send_status', ['sent', 'failed', 'suppressed', 'bounced', 'complained', 'delivered']);
+export const sendStatusEnum = pgEnum('send_status', [
+  'sent',
+  'failed',
+  'suppressed',
+  'bounced',
+  'complained',
+  'delivered',
+]);
 
 export const sends = pgTable(
   'sends',
@@ -73,23 +107,38 @@ export const sends = pgTable(
     contactId: uuid('contact_id')
       .notNull()
       .references(() => contacts.id, { onDelete: 'cascade' }),
-    templateId: uuid('template_id').references(() => templates.id, { onDelete: 'set null' }),
-    campaignId: uuid('campaign_id').references(() => campaigns.id, { onDelete: 'set null' }),
-    sequenceEnrollmentId: uuid('sequence_enrollment_id').references(() => sequenceEnrollments.id, {
+    templateId: uuid('template_id').references(() => templates.id, {
       onDelete: 'set null',
     }),
-    sequenceId: uuid('sequence_id').references(() => sequences.id, { onDelete: 'set null' }),
-    sequenceStepId: uuid('sequence_step_id').references(() => sequenceSteps.id, { onDelete: 'set null' }),
+    campaignId: uuid('campaign_id').references(() => campaigns.id, {
+      onDelete: 'set null',
+    }),
+    sequenceEnrollmentId: uuid('sequence_enrollment_id').references(
+      () => sequenceEnrollments.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    sequenceId: uuid('sequence_id').references(() => sequences.id, {
+      onDelete: 'set null',
+    }),
+    sequenceStepId: uuid('sequence_step_id').references(
+      () => sequenceSteps.id,
+      { onDelete: 'set null' },
+    ),
     provider: sendProviderEnum('provider').notNull().default('ses'),
     providerMessageId: text('provider_message_id'),
     resolvedSubject: text('resolved_subject').notNull(),
+    resolvedPreviewText: text('resolved_preview_text'),
     resolvedBodyHtml: text('resolved_body_html').notNull(),
     resolvedBodyText: text('resolved_body_text').notNull(),
     status: sendStatusEnum('status').notNull(),
     error: text('error'),
     isDryRun: boolean('is_dry_run').notNull().default(false),
     sentAt: timestamp('sent_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   // FK constraints don't implicitly create an index in Postgres — without
   // this, every per-contact "last activity" lookup (contacts list, contact
@@ -98,7 +147,13 @@ export const sends = pgTable(
   (table) => [index('sends_contact_id_idx').on(table.contactId)],
 );
 
-export const emailEventTypeEnum = pgEnum('email_event_type', ['open', 'click', 'bounce', 'complaint', 'delivery']);
+export const emailEventTypeEnum = pgEnum('email_event_type', [
+  'open',
+  'click',
+  'bounce',
+  'complaint',
+  'delivery',
+]);
 
 export const emailEvents = pgTable(
   'email_events',
@@ -110,7 +165,9 @@ export const emailEvents = pgTable(
     type: emailEventTypeEnum('type').notNull(),
     url: text('url'),
     metadata: text('metadata'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [index('email_events_send_id_idx').on(table.sendId)],
 );

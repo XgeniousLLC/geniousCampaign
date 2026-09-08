@@ -1,9 +1,20 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { sequences, sequenceSteps, sequenceEnrollments, sends, emailEvents } from '../db/schema';
+import {
+  sequences,
+  sequenceSteps,
+  sequenceStepTemplates,
+  sequenceEnrollments,
+  sends,
+  emailEvents,
+} from '../db/schema';
 import { CreateSequenceDto } from './dto/create-sequence.dto';
 import { UpdateSequenceDto } from './dto/update-sequence.dto';
 import { CreateStepDto } from './dto/create-step.dto';
@@ -33,33 +44,50 @@ export class SequencesService {
    * needs real numbers, not placeholders — computed the same aggregation
    * style already used for templates/campaigns, not stored on the row. */
   async findAll() {
-    const sequenceRows = await this.drizzle.db.query.sequences.findMany({ orderBy: (s, { desc }) => desc(s.createdAt) });
+    const sequenceRows = await this.drizzle.db.query.sequences.findMany({
+      orderBy: (s, { desc }) => desc(s.createdAt),
+    });
 
     const stepCountRows = await this.drizzle.db
-      .select({ sequenceId: sequenceSteps.sequenceId, count: sql<number>`count(*)`.mapWith(Number) })
+      .select({
+        sequenceId: sequenceSteps.sequenceId,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
       .from(sequenceSteps)
       .groupBy(sequenceSteps.sequenceId);
-    const stepCountBySequence = new Map(stepCountRows.map((r) => [r.sequenceId, r.count]));
+    const stepCountBySequence = new Map(
+      stepCountRows.map((r) => [r.sequenceId, r.count]),
+    );
 
     const enrollmentRows = await this.drizzle.db
       .select({
         sequenceId: sequenceEnrollments.sequenceId,
         total: sql<number>`count(*)`.mapWith(Number),
-        active: sql<number>`count(*) filter (where ${sequenceEnrollments.status} = 'active')`.mapWith(Number),
+        active:
+          sql<number>`count(*) filter (where ${sequenceEnrollments.status} = 'active')`.mapWith(
+            Number,
+          ),
       })
       .from(sequenceEnrollments)
       .groupBy(sequenceEnrollments.sequenceId);
-    const enrollmentBySequence = new Map(enrollmentRows.map((r) => [r.sequenceId, r]));
+    const enrollmentBySequence = new Map(
+      enrollmentRows.map((r) => [r.sequenceId, r]),
+    );
 
     const eventRows = await this.drizzle.db
       .select({
         sequenceId: sends.sequenceId,
-        opens: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(Number),
+        opens:
+          sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(
+            Number,
+          ),
       })
       .from(emailEvents)
       .innerJoin(sends, eq(emailEvents.sendId, sends.id))
       .groupBy(sends.sequenceId);
-    const opensBySequence = new Map(eventRows.map((r) => [r.sequenceId, r.opens]));
+    const opensBySequence = new Map(
+      eventRows.map((r) => [r.sequenceId, r.opens]),
+    );
 
     return sequenceRows.map((s) => {
       const enrollment = enrollmentBySequence.get(s.id);
@@ -77,14 +105,20 @@ export class SequencesService {
   }
 
   async findOne(id: string, db: DbOrTx = this.drizzle.db) {
-    const sequence = await db.query.sequences.findFirst({ where: eq(sequences.id, id) });
+    const sequence = await db.query.sequences.findFirst({
+      where: eq(sequences.id, id),
+    });
     if (!sequence) {
       throw new NotFoundException(`Sequence ${id} not found`);
     }
     return sequence;
   }
 
-  async update(id: string, dto: UpdateSequenceDto, db: DbOrTx = this.drizzle.db) {
+  async update(
+    id: string,
+    dto: UpdateSequenceDto,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     await this.findOne(id, db);
     const [updated] = await db
       .update(sequences)
@@ -100,21 +134,58 @@ export class SequencesService {
     return { id };
   }
 
-  listSteps(sequenceId: string, db: DbOrTx = this.drizzle.db) {
-    return db.query.sequenceSteps.findMany({
+  /** Attaches each step's linked template ids (sequenceStepTemplates is a
+   * many-to-many join — a send_email step can have several templates
+   * linked as A/B variants, picked from at random at send time). */
+  private async attachTemplateIds<T extends { id: string }>(
+    steps: T[],
+    db: DbOrTx,
+  ): Promise<(T & { templateIds: string[] })[]> {
+    if (steps.length === 0) return [];
+    const links = await db
+      .select({
+        stepId: sequenceStepTemplates.sequenceStepId,
+        templateId: sequenceStepTemplates.templateId,
+      })
+      .from(sequenceStepTemplates)
+      .where(
+        inArray(
+          sequenceStepTemplates.sequenceStepId,
+          steps.map((s) => s.id),
+        ),
+      );
+    const byStep = new Map<string, string[]>();
+    for (const link of links) {
+      const arr = byStep.get(link.stepId) ?? [];
+      arr.push(link.templateId);
+      byStep.set(link.stepId, arr);
+    }
+    return steps.map((s) => ({ ...s, templateIds: byStep.get(s.id) ?? [] }));
+  }
+
+  async listSteps(sequenceId: string, db: DbOrTx = this.drizzle.db) {
+    const steps = await db.query.sequenceSteps.findMany({
       where: eq(sequenceSteps.sequenceId, sequenceId),
       orderBy: asc(sequenceSteps.order),
     });
+    return this.attachTemplateIds(steps, db);
   }
 
-  async addStep(sequenceId: string, dto: CreateStepDto, db: DbOrTx = this.drizzle.db) {
+  async addStep(
+    sequenceId: string,
+    dto: CreateStepDto,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     await this.findOne(sequenceId, db);
 
     const currentSteps = await db
       .select({ order: sequenceSteps.order })
       .from(sequenceSteps)
       .where(eq(sequenceSteps.sequenceId, sequenceId));
-    const nextOrder = currentSteps.length > 0 ? Math.max(...currentSteps.map((s) => s.order)) + 1 : 0;
+    const nextOrder =
+      currentSteps.length > 0
+        ? Math.max(...currentSteps.map((s) => s.order)) + 1
+        : 0;
 
     const [created] = await db
       .insert(sequenceSteps)
@@ -122,46 +193,105 @@ export class SequencesService {
         sequenceId,
         order: nextOrder,
         type: dto.type,
-        templateId: dto.templateId,
         delayValue: dto.delayValue,
         delayUnit: dto.delayUnit,
       })
       .returning();
-    return created;
+
+    const templateIds = dto.templateIds ?? [];
+    if (templateIds.length > 0) {
+      await db
+        .insert(sequenceStepTemplates)
+        .values(
+          templateIds.map((templateId) => ({
+            sequenceStepId: created.id,
+            templateId,
+          })),
+        );
+    }
+    return { ...created, templateIds };
   }
 
-  async updateStep(sequenceId: string, stepId: string, dto: UpdateStepDto, db: DbOrTx = this.drizzle.db) {
+  async updateStep(
+    sequenceId: string,
+    stepId: string,
+    dto: UpdateStepDto,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     await this.findOne(sequenceId, db);
-    const step = await db.query.sequenceSteps.findFirst({ where: eq(sequenceSteps.id, stepId) });
+    const step = await db.query.sequenceSteps.findFirst({
+      where: eq(sequenceSteps.id, stepId),
+    });
     if (!step || step.sequenceId !== sequenceId) {
-      throw new NotFoundException(`Step ${stepId} not found in sequence ${sequenceId}`);
+      throw new NotFoundException(
+        `Step ${stepId} not found in sequence ${sequenceId}`,
+      );
     }
 
+    const { templateIds, ...rest } = dto;
     const [updated] = await db
       .update(sequenceSteps)
-      .set({ ...dto, updatedAt: new Date() })
+      .set({ ...rest, updatedAt: new Date() })
       .where(eq(sequenceSteps.id, stepId))
       .returning();
-    return updated;
+
+    if (templateIds !== undefined) {
+      await db
+        .delete(sequenceStepTemplates)
+        .where(eq(sequenceStepTemplates.sequenceStepId, stepId));
+      if (templateIds.length > 0) {
+        await db
+          .insert(sequenceStepTemplates)
+          .values(
+            templateIds.map((templateId) => ({
+              sequenceStepId: stepId,
+              templateId,
+            })),
+          );
+      }
+    }
+
+    const [{ templateIds: finalTemplateIds }] = await this.attachTemplateIds(
+      [updated],
+      db,
+    );
+    return { ...updated, templateIds: finalTemplateIds };
   }
 
-  async removeStep(sequenceId: string, stepId: string, db: DbOrTx = this.drizzle.db) {
+  async removeStep(
+    sequenceId: string,
+    stepId: string,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     await this.findOne(sequenceId, db);
-    const step = await db.query.sequenceSteps.findFirst({ where: eq(sequenceSteps.id, stepId) });
+    const step = await db.query.sequenceSteps.findFirst({
+      where: eq(sequenceSteps.id, stepId),
+    });
     if (!step || step.sequenceId !== sequenceId) {
-      throw new NotFoundException(`Step ${stepId} not found in sequence ${sequenceId}`);
+      throw new NotFoundException(
+        `Step ${stepId} not found in sequence ${sequenceId}`,
+      );
     }
     await db.delete(sequenceSteps).where(eq(sequenceSteps.id, stepId));
     return { id: stepId };
   }
 
-  async reorderSteps(sequenceId: string, dto: ReorderStepsDto, db: DbOrTx = this.drizzle.db) {
+  async reorderSteps(
+    sequenceId: string,
+    dto: ReorderStepsDto,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     await this.findOne(sequenceId, db);
     const existing = await this.listSteps(sequenceId, db);
     const existingIds = new Set(existing.map((s) => s.id));
 
-    if (dto.stepIds.length !== existing.length || !dto.stepIds.every((id) => existingIds.has(id))) {
-      throw new BadRequestException('stepIds must be exactly the set of this sequence\'s current step IDs');
+    if (
+      dto.stepIds.length !== existing.length ||
+      !dto.stepIds.every((id) => existingIds.has(id))
+    ) {
+      throw new BadRequestException(
+        "stepIds must be exactly the set of this sequence's current step IDs",
+      );
     }
 
     await db.transaction(async (tx) => {
@@ -187,14 +317,22 @@ export class SequencesService {
     const sendSteps = steps.filter((s) => s.type === 'send_email');
 
     const enrollmentStatusRows = await db
-      .select({ status: sequenceEnrollments.status, count: sql<number>`count(*)`.mapWith(Number) })
+      .select({
+        status: sequenceEnrollments.status,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
       .from(sequenceEnrollments)
       .where(eq(sequenceEnrollments.sequenceId, sequenceId))
       .groupBy(sequenceEnrollments.status);
-    const enrolledByStatus = Object.fromEntries(enrollmentStatusRows.map((r) => [r.status, r.count]));
+    const enrolledByStatus = Object.fromEntries(
+      enrollmentStatusRows.map((r) => [r.status, r.count]),
+    );
 
     const stepCountRows = await db
-      .select({ stepId: sequenceEnrollments.currentStepId, count: sql<number>`count(*)`.mapWith(Number) })
+      .select({
+        stepId: sequenceEnrollments.currentStepId,
+        count: sql<number>`count(*)`.mapWith(Number),
+      })
       .from(sequenceEnrollments)
       .where(
         and(
@@ -203,44 +341,72 @@ export class SequencesService {
         ),
       )
       .groupBy(sequenceEnrollments.currentStepId);
-    const countByStepId = new Map(stepCountRows.map((r) => [r.stepId, r.count]));
+    const countByStepId = new Map(
+      stepCountRows.map((r) => [r.stepId, r.count]),
+    );
 
     const stepBreakdown = sendSteps.map((step, i) => ({
       stepId: step.id,
       stepNumber: i + 1,
-      templateId: step.templateId,
+      templateIds: step.templateIds,
       contactCount: countByStepId.get(step.id) ?? 0,
     }));
 
     const [sendCounts] = await db
       .select({
-        sentToday: sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) and ${sends.sentAt} < date_trunc('day', now()) + interval '1 day')`.mapWith(
-          Number,
-        ),
-        sentYesterday: sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) - interval '1 day' and ${sends.sentAt} < date_trunc('day', now()))`.mapWith(
-          Number,
-        ),
-        totalSent: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(Number),
-        bounced: sql<number>`count(*) filter (where ${sends.status} = 'bounced')`.mapWith(Number),
-        complained: sql<number>`count(*) filter (where ${sends.status} = 'complained')`.mapWith(Number),
-        failed: sql<number>`count(*) filter (where ${sends.status} = 'failed')`.mapWith(Number),
+        sentToday:
+          sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) and ${sends.sentAt} < date_trunc('day', now()) + interval '1 day')`.mapWith(
+            Number,
+          ),
+        sentYesterday:
+          sql<number>`count(*) filter (where ${sends.sentAt} >= date_trunc('day', now()) - interval '1 day' and ${sends.sentAt} < date_trunc('day', now()))`.mapWith(
+            Number,
+          ),
+        totalSent:
+          sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(
+            Number,
+          ),
+        bounced:
+          sql<number>`count(*) filter (where ${sends.status} = 'bounced')`.mapWith(
+            Number,
+          ),
+        complained:
+          sql<number>`count(*) filter (where ${sends.status} = 'complained')`.mapWith(
+            Number,
+          ),
+        failed:
+          sql<number>`count(*) filter (where ${sends.status} = 'failed')`.mapWith(
+            Number,
+          ),
       })
       .from(sends)
       .where(eq(sends.sequenceId, sequenceId));
 
     const [scheduledRow] = await db
       .select({
-        scheduledTomorrow: sql<number>`count(*) filter (where ${sequenceEnrollments.nextRunAt} >= date_trunc('day', now()) + interval '1 day' and ${sequenceEnrollments.nextRunAt} < date_trunc('day', now()) + interval '2 day')`.mapWith(
-          Number,
-        ),
+        scheduledTomorrow:
+          sql<number>`count(*) filter (where ${sequenceEnrollments.nextRunAt} >= date_trunc('day', now()) + interval '1 day' and ${sequenceEnrollments.nextRunAt} < date_trunc('day', now()) + interval '2 day')`.mapWith(
+            Number,
+          ),
       })
       .from(sequenceEnrollments)
-      .where(and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.status, 'active')));
+      .where(
+        and(
+          eq(sequenceEnrollments.sequenceId, sequenceId),
+          eq(sequenceEnrollments.status, 'active'),
+        ),
+      );
 
     const [eventRow] = await db
       .select({
-        opens: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(Number),
-        clicks: sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'click')`.mapWith(Number),
+        opens:
+          sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'open')`.mapWith(
+            Number,
+          ),
+        clicks:
+          sql<number>`count(distinct ${emailEvents.sendId}) filter (where ${emailEvents.type} = 'click')`.mapWith(
+            Number,
+          ),
       })
       .from(emailEvents)
       .innerJoin(sends, eq(emailEvents.sendId, sends.id))
@@ -256,7 +422,10 @@ export class SequencesService {
         paused: enrolledByStatus.paused ?? 0,
         stopped: enrolledByStatus.stopped ?? 0,
         completed: enrolledByStatus.completed ?? 0,
-        total: Object.values(enrolledByStatus).reduce((a: number, b) => a + (b as number), 0),
+        total: Object.values(enrolledByStatus).reduce(
+          (a: number, b) => a + (b as number),
+          0,
+        ),
       },
       stepBreakdown,
       sends: {

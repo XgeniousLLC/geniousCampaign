@@ -52,7 +52,7 @@ export function CampaignDetail() {
       getCampaign(id),
       getCampaignSends(id),
       listContacts(),
-      listTemplates({ includeVariants: true }),
+      listTemplates(),
       listLists(),
     ]);
     setCampaign(c);
