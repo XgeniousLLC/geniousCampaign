@@ -46,9 +46,10 @@ function textAlignStyle(node: ProseMirrorNode): string {
 }
 
 const DEFAULT_BUTTON_COLOR = '#6366F1';
+const DEFAULT_BUTTON_TEXT_COLOR = '#ffffff';
 
-function buttonStyle(color: string): string {
-  return `display:inline-block;padding:10px 22px;background:${color};color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px`;
+function buttonStyle(color: string, textColor: string): string {
+  return `display:inline-block;padding:10px 22px;background:${color};color:${textColor};border-radius:6px;text-decoration:none;font-weight:600;font-size:14px`;
 }
 
 function renderNodeHtml(node: ProseMirrorNode): string {
@@ -83,7 +84,9 @@ function renderNodeHtml(node: ProseMirrorNode): string {
       const text = typeof node.attrs?.text === 'string' ? node.attrs.text : '';
       const rawColor = typeof node.attrs?.color === 'string' ? node.attrs.color : DEFAULT_BUTTON_COLOR;
       const color = /^#[0-9a-fA-F]{3,8}$/.test(rawColor) ? rawColor : DEFAULT_BUTTON_COLOR;
-      return `<a href="${escapeHtml(href)}" style="${buttonStyle(color)}">${escapeHtml(text)}</a>`;
+      const rawTextColor = typeof node.attrs?.textColor === 'string' ? node.attrs.textColor : DEFAULT_BUTTON_TEXT_COLOR;
+      const textColor = /^#[0-9a-fA-F]{3,8}$/.test(rawTextColor) ? rawTextColor : DEFAULT_BUTTON_TEXT_COLOR;
+      return `<a href="${escapeHtml(href)}" style="${buttonStyle(color, textColor)}">${escapeHtml(text)}</a>`;
     }
     case 'text':
       return applyMarks(escapeHtml(node.text ?? ''), node.marks);
