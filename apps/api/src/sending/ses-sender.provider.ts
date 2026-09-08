@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
@@ -8,7 +12,11 @@ import { SettingsService } from '../settings/settings.service';
 import { DrizzleService } from '../db/drizzle.service';
 import { senderAccounts } from '../db/schema';
 import { decryptToken, appEncryptionSecret } from './token-encryption.util';
-import type { EmailSenderProvider, SendEmailParams, SendEmailResult } from './email-sender-provider.interface';
+import type {
+  EmailSenderProvider,
+  SendEmailParams,
+  SendEmailResult,
+} from './email-sender-provider.interface';
 
 @Injectable()
 export class SesSenderProvider implements EmailSenderProvider {
@@ -28,19 +36,32 @@ export class SesSenderProvider implements EmailSenderProvider {
   // DB-overrides-env pattern used everywhere else in this app.
   private async buildTransporter(
     senderAccountId?: string,
-  ): Promise<{ transporter: nodemailer.Transporter<SESTransport.SentMessageInfo, SESTransport.Options>; configurationSet?: string } | null> {
+  ): Promise<{
+    transporter: nodemailer.Transporter<
+      SESTransport.SentMessageInfo,
+      SESTransport.Options
+    >;
+    configurationSet?: string;
+  } | null> {
     let region = this.settings.get('AWS_REGION');
-    let configurationSet = this.settings.get('SES_CONFIGURATION_SET') || undefined;
+    let configurationSet =
+      this.settings.get('SES_CONFIGURATION_SET') || undefined;
     let accessKeyId: string | undefined;
     let secretAccessKey: string | undefined;
 
     if (senderAccountId) {
-      const account = await this.drizzle.db.query.senderAccounts.findFirst({ where: eq(senderAccounts.id, senderAccountId) });
+      const account = await this.drizzle.db.query.senderAccounts.findFirst({
+        where: eq(senderAccounts.id, senderAccountId),
+      });
       if (account?.awsRegion) region = account.awsRegion;
-      if (account?.sesConfigurationSet) configurationSet = account.sesConfigurationSet;
+      if (account?.sesConfigurationSet)
+        configurationSet = account.sesConfigurationSet;
       if (account?.awsAccessKeyId) accessKeyId = account.awsAccessKeyId;
       if (account?.awsSecretAccessKeyEncrypted) {
-        secretAccessKey = decryptToken(account.awsSecretAccessKeyEncrypted, appEncryptionSecret(this.config));
+        secretAccessKey = decryptToken(
+          account.awsSecretAccessKeyEncrypted,
+          appEncryptionSecret(this.config),
+        );
       }
     }
 
@@ -57,9 +78,13 @@ export class SesSenderProvider implements EmailSenderProvider {
       // per-account key pair is set, so the SDK falls through to its
       // default credential provider chain (process.env / IAM role) exactly
       // as before this per-account support existed.
-      ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
+      ...(accessKeyId && secretAccessKey
+        ? { credentials: { accessKeyId, secretAccessKey } }
+        : {}),
     });
-    const transporter = nodemailer.createTransport({ SES: { sesClient, SendEmailCommand } });
+    const transporter = nodemailer.createTransport({
+      SES: { sesClient, SendEmailCommand },
+    });
     return { transporter, configurationSet };
   }
 
@@ -86,14 +111,27 @@ export class SesSenderProvider implements EmailSenderProvider {
         ses: {
           ConfigurationSetName: config.configurationSet,
           EmailTags: params.messageTags
-            ? Object.entries(params.messageTags).map(([Name, Value]) => ({ Name, Value }))
+            ? Object.entries(params.messageTags).map(([Name, Value]) => ({
+                Name,
+                Value,
+              }))
             : undefined,
         },
       });
 
-      return { provider: 'ses', providerMessageId: info.messageId };
+      // nodemailer's `info.messageId` wraps SES's raw id as an RFC822
+      // Message-ID (`<id@region.amazonses.com>`) — SNS notifications report
+      // `mail.messageId` as the bare id with no wrapping, so storing the
+      // wrapped form here made the SNS-webhook lookup in ses-sns.controller.ts
+      // never match, silently breaking delivered/bounced/complained status
+      // updates for every real send. `info.response` is nodemailer's own
+      // unwrapped copy of the same id (= AWS SDK's `data.MessageId`) — store
+      // that instead so it matches what SNS reports back.
+      return { provider: 'ses', providerMessageId: info.response };
     } catch (err) {
-      this.logger.error(`SES send failed: ${err instanceof Error ? err.message : err}`);
+      this.logger.error(
+        `SES send failed: ${err instanceof Error ? err.message : err}`,
+      );
       throw new InternalServerErrorException(
         `SES send failed: ${err instanceof Error ? err.message : String(err)}`,
       );

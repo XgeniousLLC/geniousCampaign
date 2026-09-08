@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Logger,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Logger, Post, Req, UseGuards } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { eq } from 'drizzle-orm';
@@ -86,9 +79,8 @@ export class SesSnsController {
   }
 
   // Read-only, so Settings > Integrations can show the exact URL to paste
-  // into the SNS topic's HTTPS subscription — same req.hostname derivation
-  // TrackingDomainController uses for its CNAME target, kept auth-gated
-  // (unlike the POST handler below, which SNS itself calls with no auth).
+  // into the SNS topic's HTTPS subscription, kept auth-gated (unlike the
+  // POST handler below, which SNS itself calls with no auth).
   @Get('webhook-url')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner')
@@ -101,7 +93,9 @@ export class SesSnsController {
     const rawBody = req.rawBody ?? Buffer.alloc(0);
     const bodyString = rawBody.toString();
     const contentType = req.get('content-type');
-    this.logger.debug(`[SNS_RECEIVED] content-type: ${contentType}, length: ${bodyString.length}, first 100 chars: ${bodyString.substring(0, 100)}`);
+    this.logger.debug(
+      `[SNS_RECEIVED] content-type: ${contentType}, length: ${bodyString.length}, first 100 chars: ${bodyString.substring(0, 100)}`,
+    );
 
     let envelope: SnsEnvelope;
     try {
@@ -117,7 +111,10 @@ export class SesSnsController {
         // Store what AWS actually sent, not just the parse error — `payload:
         // null` here was a dead end for debugging, since the Webhooks page
         // showed no way to see the raw bytes that failed to parse.
-        payload: { contentType: contentType ?? null, rawBody: bodyString.slice(0, 4000) },
+        payload: {
+          contentType: contentType ?? null,
+          rawBody: bodyString.slice(0, 4000),
+        },
         headers: this.extractHeaders(req),
         error: `Failed to parse JSON: ${err instanceof Error ? err.message : String(err)}`,
       });

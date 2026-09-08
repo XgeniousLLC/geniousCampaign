@@ -30,35 +30,46 @@ export class TrackingService {
   private get secret(): string {
     const secret = this.settings.get('TRACKING_SIGNING_SECRET');
     if (!secret) {
-      throw new Error('TRACKING_SIGNING_SECRET is not set — cannot sign tracking tokens');
+      throw new Error(
+        'TRACKING_SIGNING_SECRET is not set — cannot sign tracking tokens',
+      );
     }
     return secret;
   }
 
+  // Fully internal, zero-setup: always the API's own public URL
+  // (VITE_API_BASE_URL) — already-mandatory config, since the frontend
+  // can't reach the API without it, so this is always correctly set in
+  // production with no admin action. No custom/dedicated tracking domain
+  // concept exists anymore (removed 2026-09-08 — see CLAUDE.md invariant
+  // 15) — one less moving part that could silently be misconfigured.
   get baseUrl(): string {
-    const domain = this.settings.get('TRACKING_DOMAIN');
-    if (domain && domain !== 'track.yourdomain.com') {
-      return `https://${domain}`;
+    const apiBaseUrl = this.config.get<string>('VITE_API_BASE_URL');
+    if (apiBaseUrl) {
+      return apiBaseUrl.replace(/\/+$/, '');
     }
-    // Local dev fallback — production must set a real TRACKING_DOMAIN.
+    // Only a fully bare checkout (no .env at all) reaches this.
     return `http://localhost:${this.config.get<string>('PORT') ?? 3000}`;
   }
 
   buildOpenPixelUrl(sendId: string): string {
-    const token = signTrackingToken(this.secret, { sendId } satisfies OpenPayload);
-    const url = `${this.baseUrl}/t/o/${token}`;
-    const domain = this.settings.get('TRACKING_DOMAIN');
-    if (!domain || domain === 'track.yourdomain.com') {
+    const token = signTrackingToken(this.secret, {
+      sendId,
+    } satisfies OpenPayload);
+    if (!this.config.get<string>('VITE_API_BASE_URL')) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[TRACKING] TRACKING_DOMAIN not configured; tracking pixels will use fallback ${this.baseUrl} and may be unreachable from email clients`
+        `[TRACKING] VITE_API_BASE_URL is not configured; tracking pixels will use fallback ${this.baseUrl} and may be unreachable from email clients`,
       );
     }
-    return url;
+    return `${this.baseUrl}/t/o/${token}`;
   }
 
   buildClickUrl(sendId: string, url: string): string {
-    const token = signTrackingToken(this.secret, { sendId, url } satisfies ClickPayload);
+    const token = signTrackingToken(this.secret, {
+      sendId,
+      url,
+    } satisfies ClickPayload);
     return `${this.baseUrl}/t/c/${token}`;
   }
 
@@ -90,7 +101,9 @@ export class TrackingService {
   }
 
   async recordOpen(sendId: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
+    const send = await this.drizzle.db.query.sends.findFirst({
+      where: eq(sends.id, sendId),
+    });
     if (!send) {
       await this.debugLog.record({
         source: 'backend',
@@ -100,7 +113,9 @@ export class TrackingService {
       return;
     }
     try {
-      await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'open' });
+      await this.drizzle.db
+        .insert(emailEvents)
+        .values({ sendId, type: 'open' });
       await this.debugLog.record({
         source: 'backend',
         message: `[TRACKING_SUCCESS] Open event inserted for sendId: ${sendId}, contactId: ${send.contactId}`,
@@ -112,15 +127,26 @@ export class TrackingService {
         source: 'backend',
         message: `[TRACKING_ERROR] Failed to record open event for sendId: ${sendId}`,
         stack: err instanceof Error ? err.stack : String(err),
-        context: { sendId, error: err instanceof Error ? err.message : String(err) },
+        context: {
+          sendId,
+          error: err instanceof Error ? err.message : String(err),
+        },
       });
     }
   }
 
   async recordClick(sendId: string, url: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({ where: eq(sends.id, sendId) });
+    const send = await this.drizzle.db.query.sends.findFirst({
+      where: eq(sends.id, sendId),
+    });
     if (!send) return;
-    await this.drizzle.db.insert(emailEvents).values({ sendId, type: 'click', url });
-    this.events.emit('email.clicked', { sendId, contactId: send.contactId, url });
+    await this.drizzle.db
+      .insert(emailEvents)
+      .values({ sendId, type: 'click', url });
+    this.events.emit('email.clicked', {
+      sendId,
+      contactId: send.contactId,
+      url,
+    });
   }
 }

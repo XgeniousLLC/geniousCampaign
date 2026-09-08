@@ -9,11 +9,6 @@ export interface SettingDef {
   // LLM_PROVIDER) are left without `options` here and handled by
   // category-specific rendering logic on the frontend instead.
   options?: string[];
-  // Set on fields that can never be saved through the generic bulk PATCH —
-  // e.g. TRACKING_DOMAIN, which must pass a DNS CNAME check first. The
-  // frontend renders these with a dedicated component instead of a plain
-  // input, and excludes them from the category's normal "Save" payload.
-  verifyOnly?: boolean;
   // Marks a secret the frontend can offer to fill with a random value
   // (Web Crypto, client-side) rather than requiring the admin to invent or
   // source one externally — e.g. TRACKING_SIGNING_SECRET is an internal
@@ -47,10 +42,23 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     description: 'Template image uploads.',
     fields: [
       { key: 'CLOUDFLARE_R2_ACCOUNT_ID', label: 'Account ID', secret: false },
-      { key: 'CLOUDFLARE_R2_ACCESS_KEY_ID', label: 'Access key ID', secret: true },
-      { key: 'CLOUDFLARE_R2_SECRET_ACCESS_KEY', label: 'Secret access key', secret: true },
+      {
+        key: 'CLOUDFLARE_R2_ACCESS_KEY_ID',
+        label: 'Access key ID',
+        secret: true,
+      },
+      {
+        key: 'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+        label: 'Secret access key',
+        secret: true,
+      },
       { key: 'CLOUDFLARE_R2_BUCKET', label: 'Bucket', secret: false },
-      { key: 'CLOUDFLARE_R2_PUBLIC_BASE_URL', label: 'Public base URL', secret: false, placeholder: 'https://assets.yourdomain.com' },
+      {
+        key: 'CLOUDFLARE_R2_PUBLIC_BASE_URL',
+        label: 'Public base URL',
+        secret: false,
+        placeholder: 'https://assets.yourdomain.com',
+      },
     ],
     instructions: [
       'Log into the Cloudflare dashboard and open "R2 Object Storage".',
@@ -65,8 +73,18 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     label: 'AI-assisted copy',
     description: 'Template editor AI Assist + variant generation.',
     fields: [
-      { key: 'LLM_PROVIDER', label: 'Provider', secret: false, options: ['openai', 'deepseek'] },
-      { key: 'LLM_MODEL', label: 'Model', secret: false, placeholder: 'gpt-5.4-mini' },
+      {
+        key: 'LLM_PROVIDER',
+        label: 'Provider',
+        secret: false,
+        options: ['openai', 'deepseek'],
+      },
+      {
+        key: 'LLM_MODEL',
+        label: 'Model',
+        secret: false,
+        placeholder: 'gpt-5.4-mini',
+      },
       { key: 'OPENAI_API_KEY', label: 'OpenAI API key', secret: true },
       { key: 'DEEPSEEK_API_KEY', label: 'DeepSeek API key', secret: true },
     ],
@@ -74,11 +92,21 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   {
     key: 'verification',
     label: 'Email verification',
-    description: 'Paid deliverability checks (default provider primary, the other as fallback).',
+    description:
+      'Paid deliverability checks (default provider primary, the other as fallback).',
     fields: [
-      { key: 'VERIFICATION_PROVIDER', label: 'Default provider', secret: false, options: ['reoon', 'neverbounce'] },
+      {
+        key: 'VERIFICATION_PROVIDER',
+        label: 'Default provider',
+        secret: false,
+        options: ['reoon', 'neverbounce'],
+      },
       { key: 'REOON_API_KEY', label: 'Reoon API key', secret: true },
-      { key: 'NEVERBOUNCE_API_KEY', label: 'NeverBounce API key', secret: true },
+      {
+        key: 'NEVERBOUNCE_API_KEY',
+        label: 'NeverBounce API key',
+        secret: true,
+      },
     ],
     instructions: [
       'Reoon (cheapest — required to get started): sign up at reoon.com, open the API section of your dashboard, and copy your API key.',
@@ -91,10 +119,15 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
   {
     key: 'google_oauth',
     label: 'Gmail sending (Google OAuth)',
-    description: 'OAuth app used to connect Gmail Workspace mailboxes as sender accounts.',
+    description:
+      'OAuth app used to connect Gmail Workspace mailboxes as sender accounts.',
     fields: [
       { key: 'GOOGLE_OAUTH_CLIENT_ID', label: 'Client ID', secret: false },
-      { key: 'GOOGLE_OAUTH_CLIENT_SECRET', label: 'Client secret', secret: true },
+      {
+        key: 'GOOGLE_OAUTH_CLIENT_SECRET',
+        label: 'Client secret',
+        secret: true,
+      },
       {
         key: 'GOOGLE_OAUTH_REDIRECT_URI',
         label: 'Redirect URI',
@@ -117,37 +150,39 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     label: 'Open/click tracking',
     description: 'Pixel + link tracking and unsubscribe link signing.',
     fields: [
-      { key: 'TRACKING_DOMAIN', label: 'Tracking domain', secret: false, verifyOnly: true },
-      { key: 'TRACKING_SIGNING_SECRET', label: 'Signing secret', secret: true, generatable: true },
+      {
+        key: 'TRACKING_SIGNING_SECRET',
+        label: 'Signing secret',
+        secret: true,
+        generatable: true,
+      },
     ],
     instructions: [
-      'Simplest option: enter this API\'s own domain (the one this app is already deployed at) and click "Check DNS" — it verifies instantly with no DNS changes, since that domain already resolves here with a valid TLS certificate.',
-      'Otherwise, pick a subdomain of your actual sending domain instead — e.g. track.yourdomain.com. Every open pixel and click-through link in outgoing email points here, so it needs to resolve to this app and hold a valid TLS certificate.',
-      'Type the domain below and click "Check DNS" — this shows the exact CNAME record to add at your DNS provider (host = your tracking domain, value = this API\'s own hostname).',
-      'Add that CNAME record at your registrar/DNS provider. Propagation can take a few minutes to a few hours depending on the provider.',
-      'Click "Check DNS" again once it\'s live — the domain is only saved here after the CNAME actually resolves, so a typo or a domain you don\'t control can\'t silently become the tracking host.',
-      'No SPF/DKIM/DMARC records are needed for this domain — that\'s a separate concern handled by your sending domain (SES), not the tracking domain.',
-      'Signing secret below is generated automatically the first time the app starts — nothing to configure. Leave it blank to keep the current one, or paste a replacement if you\'re rotating it.',
+      "Nothing to configure — pixel/click/unsubscribe links always use this API's own public URL (VITE_API_BASE_URL, already required for the frontend to work at all), so tracking works correctly from the moment the app is deployed.",
+      "Signing secret below is generated automatically the first time the app starts — nothing to configure. Leave it blank to keep the current one, or paste a replacement if you're rotating it.",
     ],
   },
   {
     // No fields — nothing here is a stored credential. The URL shown by the
-    // frontend is derived from the request host (GET /webhooks/ses/sns/webhook-url),
-    // same pattern as TRACKING_DOMAIN's CNAME target, just with no save step
-    // since SNS confirms its own subscription via the SubscribeURL handshake.
+    // frontend is derived from the request host (GET /webhooks/ses/sns/webhook-url)
+    // with no save step, since SNS confirms its own subscription via the
+    // SubscribeURL handshake.
     key: 'ses_sns',
-    label: 'SES bounce/complaint webhook',
-    description: 'AWS SNS → this app, so hard bounces and complaints auto-suppress.',
+    label: 'SES bounce/complaint/delivery webhook',
+    description:
+      'AWS SNS → this app, so hard bounces and complaints auto-suppress and delivered status updates.',
     fields: [],
     instructions: [
-      'This makes SES bounce and complaint notifications reach the suppression list automatically (a hard bounce suppresses immediately; 3+ soft bounces to the same address suppress it too) — without it, bounces are never reported back and the same bad addresses keep getting sent to.',
+      'This makes SES bounce and complaint notifications reach the suppression list automatically (a hard bounce suppresses immediately; 3+ soft bounces to the same address suppress it too) — without it, bounces are never reported back and the same bad addresses keep getting sent to. It also updates each send\'s status to "delivered" once SES confirms it, and "bounced"/"complained" for the matching cases.',
       'In the AWS SNS console, create a new Standard topic (e.g. "ses-notifications").',
       'Create a subscription on that topic: protocol "HTTPS", endpoint = the webhook URL shown below.',
       'SNS immediately sends a subscription-confirmation request to that URL — this app auto-confirms it, so the subscription should show "Confirmed" in the SNS console within a few seconds. If it stays "Pending confirmation," the URL isn\'t reachable from the internet yet (check DNS/firewall/deploy status).',
-      'In the SES console, open your verified sending identity (or the configuration set you use for sending — SES_CONFIGURATION_SET) and add a new Event destination of type "SNS" for the Bounce and Complaint event types, pointing at the topic you just created.',
-      'Send a real email to one of SES\'s mailbox simulator addresses (e.g. bounce@simulator.amazonses.com) to confirm a bounce round-trips into Settings > Suppression list.',
+      'In the SES console, open your verified sending identity (or the configuration set you use for sending — SES_CONFIGURATION_SET) and add a new Event destination of type "SNS" for the Bounce, Complaint, and Delivery event types, pointing at the topic you just created. Delivery is easy to miss since bounce/complaint suppression is the more obvious reason to set this up — skipping it means delivered status never updates even though bounce/complaint handling works fine.',
+      "Send a real email to one of SES's mailbox simulator addresses (e.g. bounce@simulator.amazonses.com) to confirm a bounce round-trips into Settings > Suppression list.",
     ],
   },
 ];
 
-export const ALL_SETTING_KEYS = new Set(SETTING_CATEGORIES.flatMap((c) => c.fields.map((f) => f.key)));
+export const ALL_SETTING_KEYS = new Set(
+  SETTING_CATEGORIES.flatMap((c) => c.fields.map((f) => f.key)),
+);

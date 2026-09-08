@@ -3,9 +3,8 @@ import { getSesSnsWebhookUrl } from '../lib/settingsApi';
 import { CopyIcon, CheckCircleIcon } from './icons';
 
 // Nothing here is saved through Settings — the URL is derived from the
-// request host (mirrors TrackingDomainController's CNAME target), and SNS
-// confirms its own subscription via the SubscribeURL handshake server-side,
-// so there's no "Check" step the way TRACKING_DOMAIN's DNS check has one.
+// request host, and SNS confirms its own subscription via the SubscribeURL
+// handshake server-side, so there's no "Check" step needed.
 export function SesSnsWebhookUrlField() {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

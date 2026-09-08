@@ -4,7 +4,11 @@ import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { appSettings } from '../db/schema';
-import { encryptToken, decryptToken, appEncryptionSecret } from '../sending/token-encryption.util';
+import {
+  encryptToken,
+  decryptToken,
+  appEncryptionSecret,
+} from '../sending/token-encryption.util';
 import { SETTING_CATEGORIES, ALL_SETTING_KEYS } from './known-settings';
 
 export interface SettingFieldStatus {
@@ -19,10 +23,6 @@ export interface SettingFieldStatus {
   // Static option list for fields that should render as a <select> on the
   // frontend (e.g. LLM_PROVIDER) — undefined for plain text/secret fields.
   options?: string[];
-  // TRACKING_DOMAIN-style fields that require a side-channel check (DNS
-  // verification) before they can be saved — the frontend renders a
-  // dedicated component instead of a plain input for these.
-  verifyOnly?: boolean;
 }
 
 export interface SettingCategoryStatus {
@@ -54,12 +54,16 @@ export class SettingsService implements OnModuleInit {
   // feature works. Runs once per boot; a value already set (DB or .env)
   // is left untouched, so this never overwrites a real deployment's secret.
   private async generateMissingSecrets() {
-    const generatableFields = SETTING_CATEGORIES.flatMap((c) => c.fields).filter((f) => f.generatable);
+    const generatableFields = SETTING_CATEGORIES.flatMap(
+      (c) => c.fields,
+    ).filter((f) => f.generatable);
     for (const field of generatableFields) {
       if (this.get(field.key)) continue;
       const generated = randomBytes(32).toString('hex');
       await this.setMany({ [field.key]: generated });
-      this.logger.log(`Auto-generated missing setting "${field.key}" on startup`);
+      this.logger.log(
+        `Auto-generated missing setting "${field.key}" on startup`,
+      );
     }
   }
 
@@ -71,7 +75,9 @@ export class SettingsService implements OnModuleInit {
       try {
         this.cache.set(row.key, decryptToken(row.value, secret));
       } catch {
-        this.logger.warn(`Failed to decrypt stored setting "${row.key}" — ignoring (JWT_SECRET changed since it was saved?)`);
+        this.logger.warn(
+          `Failed to decrypt stored setting "${row.key}" — ignoring (JWT_SECRET changed since it was saved?)`,
+        );
       }
     }
   }
@@ -99,7 +105,10 @@ export class SettingsService implements OnModuleInit {
       await this.drizzle.db
         .insert(appSettings)
         .values({ key, value: encrypted })
-        .onConflictDoUpdate({ target: appSettings.key, set: { value: encrypted, updatedAt: new Date() } });
+        .onConflictDoUpdate({
+          target: appSettings.key,
+          set: { value: encrypted, updatedAt: new Date() },
+        });
       this.cache.set(key, value);
       // Belt-and-suspenders: the AWS SDK's default credential provider chain
       // reads AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY directly from
@@ -132,7 +141,11 @@ export class SettingsService implements OnModuleInit {
         const dbValue = this.cache.get(field.key) || undefined;
         const envValue = this.config.get<string>(field.key) || undefined;
         const effective = dbValue || envValue;
-        const source: SettingFieldStatus['source'] = dbValue ? 'db' : envValue ? 'env' : 'unset';
+        const source: SettingFieldStatus['source'] = dbValue
+          ? 'db'
+          : envValue
+            ? 'env'
+            : 'unset';
         return {
           key: field.key,
           label: field.label,
@@ -141,7 +154,6 @@ export class SettingsService implements OnModuleInit {
           source,
           value: field.secret ? null : (effective ?? null),
           options: field.options,
-          verifyOnly: field.verifyOnly,
         };
       }),
     }));
