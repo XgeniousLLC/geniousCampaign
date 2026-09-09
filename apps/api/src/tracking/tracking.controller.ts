@@ -21,28 +21,9 @@ export class TrackingController {
   @Header('Cache-Control', 'no-store')
   async open(@Param('token') token: string, @Res() res: Response) {
     const tokenPreview = token.substring(0, 20);
-    this.logger.log(`[PIXEL_REQUEST] Open pixel requested with token: ${tokenPreview}...`);
-    await this.debugLog.record({
-      source: 'backend',
-      message: `[PIXEL_REQUEST] Open pixel requested with token: ${tokenPreview}...`,
-      context: { endpoint: '/t/o/:token', tokenPreview },
-    });
-
     const payload = this.tracking.verifyOpenToken(token);
     if (payload) {
-      this.logger.log(`[PIXEL_VALID] Token verified for sendId: ${payload.sendId}`);
-      await this.debugLog.record({
-        source: 'backend',
-        message: `[PIXEL_VALID] Token verified for sendId: ${payload.sendId}`,
-        context: { sendId: payload.sendId },
-      });
       await this.tracking.recordOpen(payload.sendId);
-      this.logger.log(`[PIXEL_RECORDED] Open event recorded for sendId: ${payload.sendId}`);
-      await this.debugLog.record({
-        source: 'backend',
-        message: `[PIXEL_RECORDED] Open event recorded for sendId: ${payload.sendId}`,
-        context: { sendId: payload.sendId },
-      });
     } else {
       this.logger.warn(`[PIXEL_INVALID] Token verification failed for token: ${tokenPreview}...`);
       await this.debugLog.record({

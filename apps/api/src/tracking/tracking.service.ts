@@ -140,11 +140,6 @@ export class TrackingService implements OnModuleInit {
       await this.drizzle.db
         .insert(emailEvents)
         .values({ sendId, type: 'open' });
-      await this.debugLog.record({
-        source: 'backend',
-        message: `[TRACKING_SUCCESS] Open event inserted for sendId: ${sendId}, contactId: ${send.contactId}`,
-        context: { sendId, contactId: send.contactId },
-      });
       this.events.emit('email.opened', { sendId, contactId: send.contactId });
     } catch (err) {
       await this.debugLog.record({
