@@ -90,11 +90,44 @@ export class TrackingService implements OnModuleInit {
   }
 
   buildClickUrl(sendId: string, url: string): string {
+    this.checkClickUrlIsClean(sendId, url);
     const token = signTrackingToken(this.secret, {
       sendId,
       url,
     } satisfies ClickPayload);
     return `${this.baseUrl}/t/c/${token}`;
+  }
+
+  // Runs once the link URL is fully resolved (personalization + spintax
+  // substituted, HTML entities decoded by rewrite-links.util.ts) and about
+  // to be signed into the click-tracking token — the last point before it's
+  // baked into an email a real recipient will click. Root cause of a real
+  // bug (2026-09-10): a leftover `&amp;` from HTML-attribute escaping ended
+  // up literally embedded in the redirect target, breaking the destination
+  // URL's query string. This is a safety net for that class of bug, not a
+  // hard gate — one malformed link in one template shouldn't abort the
+  // whole campaign send, so it logs to Debug Log (Settings > Debug Log)
+  // rather than throwing.
+  private checkClickUrlIsClean(sendId: string, url: string) {
+    const problems: string[] = [];
+    if (/&(amp|lt|gt|quot|#39|apos);/i.test(url)) {
+      problems.push('contains a leftover HTML entity (e.g. &amp;) — an HTML-escaped link was not fully decoded');
+    }
+    if (/\{\{[^}]*\}\}/.test(url)) {
+      problems.push('contains an unresolved {{...}} personalization token');
+    }
+    try {
+      new URL(url);
+    } catch {
+      problems.push('is not a valid absolute URL');
+    }
+    if (problems.length > 0) {
+      void this.debugLog.record({
+        source: 'backend',
+        message: `[TRACKING_CLICK_URL_MALFORMED] Click-tracking target for send ${sendId} ${problems.join('; ')}`,
+        context: { sendId, url },
+      });
+    }
   }
 
   verifyOpenToken(token: string): OpenPayload | null {
