@@ -1,7 +1,7 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 
 export type CampaignStatus = 'draft' | 'sending' | 'sent' | 'failed';
-export type SendStatus = 'sent' | 'failed' | 'suppressed' | 'bounced' | 'complained';
+export type SendStatus = 'sent' | 'delivered' | 'failed' | 'suppressed' | 'bounced' | 'complained';
 
 export type CampaignAudienceType = 'list' | 'tags' | 'contacts';
 
@@ -89,6 +89,10 @@ export function updateCampaign(id: string, input: Partial<CampaignInput>) {
 
 export function sendCampaign(id: string, confirmed?: boolean, scheduledAt?: string) {
   return apiPost<SendCampaignResult>(`/campaigns/${id}/send`, { confirmed, scheduledAt });
+}
+
+export function runCampaignForReal(id: string) {
+  return apiPost<Campaign>(`/campaigns/${id}/run-for-real`, {});
 }
 
 export function cancelCampaignSchedule(id: string) {

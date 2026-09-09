@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, deleteCampaign, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
+import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, deleteCampaign, runCampaignForReal, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
 import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, type List } from '../lib/contactsApi';
@@ -13,7 +13,9 @@ const STATUS_STYLES: Record<CampaignStatus, string> = {
   failed: 'bg-danger/10 text-danger border-danger/25',
 };
 
-type RecipientTab = 'all' | 'opened' | 'clicked' | 'bounced';
+type RecipientTab = 'all' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'bounced' | 'failed';
+
+const RECIPIENTS_PAGE_SIZE = 20;
 
 function pct(n: number, of: number): string {
   return of > 0 ? `${((n / of) * 100).toFixed(1)}%` : '0.0%';
@@ -40,6 +42,8 @@ export function CampaignDetail() {
   const [template, setTemplate] = useState<Template | null>(null);
   const [campaignLists, setCampaignLists] = useState<List[]>([]);
   const [tab, setTab] = useState<RecipientTab>('all');
+  const [recipientSearch, setRecipientSearch] = useState('');
+  const [visibleCount, setVisibleCount] = useState(RECIPIENTS_PAGE_SIZE);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{ recipientCount: number; threshold: number } | null>(null);
@@ -108,6 +112,20 @@ export function CampaignDetail() {
     }
   }
 
+  async function handleRunForReal() {
+    if (!id) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const created = await runCampaignForReal(id);
+      navigate(`/campaigns/${created.id}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleCancelSchedule() {
     if (!id) return;
     setActionBusy(true);
@@ -124,11 +142,17 @@ export function CampaignDetail() {
 
   const stats = useMemo(() => {
     const total = sends.length;
+    // "Delivered" here (used by the KPI card + ratio stats below) means
+    // "handed off to the provider" (status 'sent') — distinct from
+    // deliveredConfirmed, the SES-webhook-confirmed 'delivered' status used
+    // by the recipient filter tabs.
     const delivered = sends.filter((s) => s.status === 'sent').length;
+    const deliveredConfirmed = sends.filter((s) => s.status === 'delivered').length;
     const opened = sends.filter((s) => s.opened).length;
     const clicked = sends.filter((s) => s.clicked).length;
     const bounced = sends.filter((s) => s.status === 'bounced').length;
-    return { total, delivered, opened, clicked, bounced };
+    const failed = sends.filter((s) => s.status === 'failed').length;
+    return { total, delivered, deliveredConfirmed, opened, clicked, bounced, failed };
   }, [sends]);
 
   const dominantProvider = useMemo(() => {
@@ -138,11 +162,26 @@ export function CampaignDetail() {
   }, [sends]);
 
   const filteredSends = useMemo(() => {
-    if (tab === 'opened') return sends.filter((s) => s.opened);
-    if (tab === 'clicked') return sends.filter((s) => s.clicked);
-    if (tab === 'bounced') return sends.filter((s) => s.status === 'bounced');
-    return sends;
-  }, [sends, tab]);
+    let result = sends;
+    if (tab === 'sent') result = result.filter((s) => s.status === 'sent');
+    else if (tab === 'delivered') result = result.filter((s) => s.status === 'delivered');
+    else if (tab === 'opened') result = result.filter((s) => s.opened);
+    else if (tab === 'clicked') result = result.filter((s) => s.clicked);
+    else if (tab === 'bounced') result = result.filter((s) => s.status === 'bounced');
+    else if (tab === 'failed') result = result.filter((s) => s.status === 'failed');
+
+    const query = recipientSearch.trim().toLowerCase();
+    if (query) {
+      result = result.filter((s) => {
+        const c = contact(s.contactId);
+        const email = c?.email ?? s.contactId;
+        const name = c ? displayName(c) : '';
+        return email.toLowerCase().includes(query) || name.toLowerCase().includes(query);
+      });
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sends, tab, recipientSearch, contacts]);
 
   if (!campaign) {
     return (
@@ -223,9 +262,12 @@ export function CampaignDetail() {
 
   const tabs: { key: RecipientTab; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: stats.total },
+    { key: 'sent', label: 'Sent', count: stats.delivered },
+    { key: 'delivered', label: 'Delivered', count: stats.deliveredConfirmed },
     { key: 'opened', label: 'Opened', count: stats.opened },
     { key: 'clicked', label: 'Clicked', count: stats.clicked },
     { key: 'bounced', label: 'Bounced', count: stats.bounced },
+    { key: 'failed', label: 'Failed', count: stats.failed },
   ];
 
   return (
@@ -312,6 +354,22 @@ export function CampaignDetail() {
         </div>
       )}
 
+      {canWrite && campaign.isDryRun && (campaign.status === 'sent' || campaign.status === 'failed') && (
+        <div className="mb-4 flex max-w-[820px] items-center gap-2.5 rounded-md border border-warning/25 bg-warning/10 px-3.5 py-2.5">
+          <div className="flex-1 text-xs text-text-secondary">
+            This was a dry run — no real email was sent. Run it for real to send to the same audience.
+          </div>
+          {actionError && <div className="text-[11px] text-danger">{actionError}</div>}
+          <button
+            onClick={handleRunForReal}
+            disabled={actionBusy}
+            className="h-8 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {actionBusy ? 'Creating…' : 'Run for real'}
+          </button>
+        </div>
+      )}
+
       <div className="grid max-w-[820px] grid-cols-4 gap-3">
         <div className="rounded-md border border-border-default bg-panel p-3.5">
           <div className="text-xs text-text-muted">Delivered</div>
@@ -370,22 +428,36 @@ export function CampaignDetail() {
       </div>
 
       <div className="mt-4 max-w-[820px]">
-        <div className="mb-3 flex gap-1.5">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${
-                tab === t.key ? 'border-accent/30 bg-accent/10 text-accent-tint' : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
-              }`}
-            >
-              {t.label}
-              <span className={`font-mono text-[11px] ${tab === t.key ? 'text-accent-light' : 'text-text-meta'}`}>{t.count}</span>
-            </button>
-          ))}
+        <div className="mb-3 flex flex-wrap items-center gap-2.5">
+          <input
+            value={recipientSearch}
+            onChange={(e) => {
+              setRecipientSearch(e.target.value);
+              setVisibleCount(RECIPIENTS_PAGE_SIZE);
+            }}
+            placeholder="Search by name or email…"
+            className="h-8 w-56 rounded-md border border-border-subtle bg-surface px-2.5 text-xs text-text-primary placeholder:text-text-faint"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => {
+                  setTab(t.key);
+                  setVisibleCount(RECIPIENTS_PAGE_SIZE);
+                }}
+                className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${
+                  tab === t.key ? 'border-accent/30 bg-accent/10 text-accent-tint' : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
+                }`}
+              >
+                {t.label}
+                <span className={`font-mono text-[11px] ${tab === t.key ? 'text-accent-light' : 'text-text-meta'}`}>{t.count}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
-          {filteredSends.map((s) => {
+          {filteredSends.slice(0, visibleCount).map((s) => {
             const c = contact(s.contactId);
             const detail = s.status === 'bounced' ? 'Bounced' : s.clicked ? 'Clicked' : s.opened ? 'Opened' : s.status;
             return (
@@ -412,8 +484,22 @@ export function CampaignDetail() {
               </div>
             );
           })}
-          {filteredSends.length === 0 && <div className="px-3.5 py-8 text-center text-xs text-text-muted">No recipients in this view.</div>}
+          {filteredSends.length === 0 && (
+            <div className="px-3.5 py-8 text-center text-xs text-text-muted">
+              {recipientSearch.trim() ? `No recipients match "${recipientSearch.trim()}".` : 'No recipients in this view.'}
+            </div>
+          )}
         </div>
+        {filteredSends.length > visibleCount && (
+          <div className="mt-3 flex justify-center">
+            <button
+              onClick={() => setVisibleCount((v) => v + RECIPIENTS_PAGE_SIZE)}
+              className="h-8 rounded-md border border-border-subtle px-3.5 text-xs font-medium text-text-secondary hover:bg-raised"
+            >
+              Load more ({filteredSends.length - visibleCount} remaining)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

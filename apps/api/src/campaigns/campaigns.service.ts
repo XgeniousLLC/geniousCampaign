@@ -313,6 +313,40 @@ export class CampaignsService {
     return { id };
   }
 
+  /** A dry-run campaign's row is the historical record of what that dry run
+   * actually did — `update()`/`send()` both require status === 'draft', so
+   * a completed dry run (status 'sent'/'failed') can never be turned into a
+   * real send in place. Instead this clones the same
+   * template/audience/sender config into a brand-new 'draft' campaign with
+   * isDryRun: false, so the normal review → send flow (large-send
+   * confirmation, edit, "Send now") applies unchanged rather than adding a
+   * second send path. */
+  async runForReal(id: string, db: DbOrTx = this.drizzle.db) {
+    const campaign = await this.findOne(id);
+    if (!campaign.isDryRun) {
+      throw new BadRequestException(`Campaign ${id} is not a dry run`);
+    }
+
+    const [created] = await db
+      .insert(campaigns)
+      .values({
+        name: `${campaign.name} (real send)`,
+        templateId: campaign.templateId,
+        audienceType: campaign.audienceType,
+        listIds: campaign.listIds,
+        tagIds: campaign.tagIds,
+        contactIds: campaign.contactIds,
+        excludeListIds: campaign.excludeListIds,
+        isDryRun: false,
+        sendToEmail: campaign.sendToEmail,
+        senderAccountId: campaign.senderAccountId,
+        fromName: campaign.fromName,
+        replyTo: campaign.replyTo,
+      })
+      .returning();
+    return created;
+  }
+
   /** Cancels a pending schedule (GC-113) — removes the not-yet-fired delayed
    * BullMQ job (jobId === campaignId, same id `send()` used) and clears
    * scheduledAt so the campaign reverts to a plain unsent draft. Only valid

@@ -18,6 +18,7 @@ const STATUS_FILTERS: { label: string; value: SendStatus | 'all' }[] = [
 
 const STATUS_STYLES: Record<SendStatus, string> = {
   sent: 'text-success',
+  delivered: 'text-success',
   failed: 'text-danger',
   suppressed: 'text-warning',
   bounced: 'text-danger',
