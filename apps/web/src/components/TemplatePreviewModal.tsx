@@ -1,12 +1,66 @@
-import { useState } from 'react';
-import { resolvePersonalization, resolveSpintax } from '@genius-campaign/shared';
+import { useMemo, useState } from 'react';
+import { resolveConditionals, resolvePersonalization, resolveSpintax } from '@genius-campaign/shared';
 import { CloseIcon } from './icons';
 import { SendTestEmailModal } from './SendTestEmailModal';
 
 // Same placeholder shape the backend's send-test resolves against
 // (TemplatesService.SAMPLE_CONTACT) — kept in sync manually since it's a
 // tiny, low-drift-risk display default, not core resolution logic.
-const SAMPLE_CONTACT = { firstName: 'Alex', lastName: 'Doe', email: 'alex@example.com' };
+const SAMPLE_CONTACT = {
+  firstName: 'Alex',
+  lastName: 'Doe',
+  email: 'alex@example.com',
+  customFields: {} as Record<string, string>,
+};
+
+type PreviewContact = typeof SAMPLE_CONTACT;
+
+function extractVariables(sources: string[]): { builtins: Map<string, string | undefined>; customs: Map<string, string | undefined> } {
+  const builtins = new Map<string, string | undefined>();
+  const customs = new Map<string, string | undefined>();
+  const combined = sources.join('\n');
+
+  // Tokens: {{contact.firstName|fallback}}, {{contact.custom.key|fallback}}, {{bareKey|fallback}}
+  const tokenRe = /\{\{(contact\.(?:custom\.[a-zA-Z0-9_]+|firstName|lastName|email)|[a-zA-Z0-9_]+)(?:\|([^}]*))?\}\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(combined))) {
+    const field = m[1];
+    const fallback = m[2];
+    if (field.startsWith('contact.')) {
+      if (field === 'contact.firstName' || field === 'contact.lastName' || field === 'contact.email') {
+        if (!builtins.has(field) ) builtins.set(field, fallback);
+      } else if (field.startsWith('contact.custom.')) {
+        const key = field.slice('contact.custom.'.length);
+        if (!customs.has(key)) customs.set(key, fallback);
+      }
+    } else {
+      if (m[1] === 'else' || m[1] === 'if') continue;
+      if (!customs.has(field)) customs.set(field, fallback);
+    }
+  }
+
+  // Conditionals: {{#if <expr>}} — extract var names before ==/!= or solo truthiness
+  const condRe = /\{\{#if\s+([^}]+)\}\}/g;
+  while ((m = condRe.exec(combined))) {
+    const expr = m[1].trim();
+    // Grab first identifier before operator or alone
+    const idMatch = expr.match(/^\s*(\{\{)?\s*(contact\.(?:custom\.[a-zA-Z0-9_]+|firstName|lastName|email)|[a-zA-Z0-9_]+)/);
+    if (!idMatch) continue;
+    const field = idMatch[2];
+    if (field.startsWith('contact.')) {
+      if (field === 'contact.firstName' || field === 'contact.lastName' || field === 'contact.email') {
+        if (!builtins.has(field)) builtins.set(field, undefined);
+      } else if (field.startsWith('contact.custom.')) {
+        const key = field.slice('contact.custom.'.length);
+        if (!customs.has(key)) customs.set(key, undefined);
+      }
+    } else {
+      if (!customs.has(field)) customs.set(field, undefined);
+    }
+  }
+
+  return { builtins, customs };
+}
 
 const CLIENTS = [
   { key: 'gmail', label: 'Gmail' },
@@ -85,9 +139,35 @@ export function TemplatePreviewModal({
   const [client, setClient] = useState<ClientKey>('gmail');
   const [viewport, setViewport] = useState<ViewportKey>('desktop');
   const [showSendTest, setShowSendTest] = useState(false);
+  const [showVariables, setShowVariables] = useState(false);
 
-  const resolvedSubject = resolveSpintax(resolvePersonalization(subject, SAMPLE_CONTACT));
-  const resolvedHtml = resolveSpintax(resolvePersonalization(bodyHtml, SAMPLE_CONTACT));
+  const { builtins, customs } = useMemo(() => extractVariables([subject, bodyHtml, bodyText]), [subject, bodyHtml, bodyText]);
+
+  const [previewContact, setPreviewContact] = useState<PreviewContact>(() => {
+    const base = { ...SAMPLE_CONTACT, customFields: { ...SAMPLE_CONTACT.customFields } as Record<string, string> };
+    // Prefill custom fields with token defaults where available — so preview shows fallback value immediately,
+    // not blank, when a variable has {{var|default}} and no real contact value.
+    customs.forEach((fallback, key) => {
+      if (fallback !== undefined && base.customFields[key] === undefined) base.customFields[key] = fallback;
+    });
+    // Builtins already have Alex/Doe values, but respect fallback if somehow empty
+    builtins.forEach((fallback, field) => {
+      const short = field.replace('contact.', '');
+      if (short === 'firstName' && !base.firstName && fallback) base.firstName = fallback;
+      if (short === 'lastName' && !base.lastName && fallback) base.lastName = fallback;
+      if (short === 'email' && !base.email && fallback) base.email = fallback;
+    });
+    return base;
+  });
+
+  // Keep previewContact in sync if template variables change (e.g. switching templates while modal open)
+  // without wiping user edits for keys that still exist.
+  const hasVars = builtins.size > 0 || customs.size > 0;
+
+  const resolveField = (text: string) =>
+    resolveSpintax(resolvePersonalization(resolveConditionals(text, previewContact as never), previewContact as never));
+  const resolvedSubject = resolveField(subject);
+  const resolvedHtml = resolveField(bodyHtml);
   const width = VIEWPORTS.find((v) => v.key === viewport)!.width;
 
   return (
@@ -136,20 +216,77 @@ export function TemplatePreviewModal({
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-surface p-0.5">
-            {VIEWPORTS.map((v) => (
+          <div className="flex items-center gap-2">
+            {hasVars && (
               <button
-                key={v.key}
-                onClick={() => setViewport(v.key)}
-                className={`rounded px-2.5 py-1 text-xs font-medium ${
-                  viewport === v.key ? 'bg-raised2 text-text-primary' : 'text-text-muted hover:text-text-primary'
+                onClick={() => setShowVariables((v) => !v)}
+                className={`rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  showVariables ? 'border-amber-400/30 bg-amber-400/10 text-amber-300' : 'border-border-strong bg-field text-text-secondary hover:bg-raised'
                 }`}
               >
-                {v.label}
+                Variables {showVariables ? '▴' : '▾'}
               </button>
-            ))}
+            )}
+            <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-surface p-0.5">
+              {VIEWPORTS.map((v) => (
+                <button
+                  key={v.key}
+                  onClick={() => setViewport(v.key)}
+                  className={`rounded px-2.5 py-1 text-xs font-medium ${
+                    viewport === v.key ? 'bg-raised2 text-text-primary' : 'text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+
+        {showVariables && hasVars && (
+          <div className="border-b border-border-default bg-surface px-[18px] py-3">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-meta">
+              Preview variables — edit to see conditionals & defaults live
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from(builtins.entries()).map(([field, fallback]) => {
+                const key = field.replace('contact.', '') as keyof PreviewContact;
+                const label = field === 'contact.firstName' ? 'First name' : field === 'contact.lastName' ? 'Last name' : 'Email';
+                return (
+                  <div key={field}>
+                    <label className="mb-1 block text-[11px] font-medium text-text-secondary">
+                      {label} <span className="font-mono text-[10px] text-text-faint">{field}</span>
+                      {fallback !== undefined && <span className="ml-1 text-[10px] text-amber-300">default: {fallback || '(empty)'}</span>}
+                    </label>
+                    <input
+                      value={(previewContact[key] as string) ?? ''}
+                      onChange={(e) => setPreviewContact((p) => ({ ...p, [key]: e.target.value }))}
+                      placeholder={fallback ?? ''}
+                      className="h-8 w-full rounded-md border border-border-subtle bg-panel2 px-2.5 text-xs text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
+                    />
+                  </div>
+                );
+              })}
+              {Array.from(customs.entries()).map(([key, fallback]) => (
+                <div key={key}>
+                  <label className="mb-1 block text-[11px] font-medium text-text-secondary">
+                    {key} <span className="font-mono text-[10px] text-text-faint">contact.custom.{key} / {'{{'}{key}{'}}'}</span>
+                    {fallback !== undefined && <span className="ml-1 text-[10px] text-amber-300">default: {fallback || '(empty)'}</span>}
+                  </label>
+                  <input
+                    value={previewContact.customFields[key] ?? ''}
+                    onChange={(e) => setPreviewContact((p) => ({ ...p, customFields: { ...p.customFields, [key]: e.target.value } }))}
+                    placeholder={fallback ?? `e.g. ${key === 'checkout_source' ? 'pricing' : key === 'plan_id' ? '123' : 'value'}`}
+                    className="h-8 w-full rounded-md border border-border-subtle bg-panel2 px-2.5 font-mono text-xs text-text-primary outline-none placeholder:text-text-faint focus:border-accent"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-[11px] leading-snug text-text-faint">
+              Tokens written as <span className="font-mono text-text-secondary">{'{{var|default}}'}</span> fall back to <span className="font-mono text-text-secondary">default</span> when the contact has no value — empty custom fields above simulate a missing value and show the default; typing here overrides it for this preview only.
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto bg-[#0c0d11] p-6">
           <div className="mx-auto overflow-hidden rounded-lg border border-border-subtle shadow-xl transition-[width]" style={{ width }}>

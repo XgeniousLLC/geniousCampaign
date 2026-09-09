@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { SubjectHighlightInput, type SubjectHighlightInputHandle } from './SubjectHighlightInput';
 import { PERSONALIZATION_TOKENS } from './TemplateEditorToolbar';
+import { ConditionalBuilderModal } from './ConditionalBuilderModal';
 import { CloseIcon } from './icons';
 
 // One row of a multi-line shuffle field (subject lines, preview-text
@@ -22,6 +23,7 @@ export function TemplateLineField({
 }) {
   const inputRef = useRef<SubjectHighlightInputHandle>(null);
   const [tokenOpen, setTokenOpen] = useState(false);
+  const [conditionalOpen, setConditionalOpen] = useState(false);
   const [customKey, setCustomKey] = useState('');
   const customKeyValid = /^[a-zA-Z0-9_]+$/.test(customKey.trim());
   const [fallback, setFallback] = useState('');
@@ -45,6 +47,13 @@ export function TemplateLineField({
         className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-accent-light/25 bg-accent-light/10 px-2 text-[11px] font-semibold text-accent-lighter hover:bg-accent-light/15"
       >
         Spintax
+      </button>
+      <button
+        type="button"
+        onClick={() => setConditionalOpen(true)}
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-amber-400/25 bg-amber-400/10 px-2 text-[11px] font-semibold text-amber-300 hover:bg-amber-400/15"
+      >
+        Condition
       </button>
       <div className="relative shrink-0">
         <button
@@ -118,6 +127,9 @@ export function TemplateLineField({
           </div>
         )}
       </div>
+      {conditionalOpen && (
+        <ConditionalBuilderModal onClose={() => setConditionalOpen(false)} onInsert={insert} />
+      )}
       {onRemove && (
         <button
           type="button"

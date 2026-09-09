@@ -17,6 +17,9 @@ export interface PersonalizableContact {
 // a typo in the sent email ("Hi ,") rather than a deliberate default.
 const BUILTIN_TOKEN_RE = /\{\{contact\.(firstName|lastName|email)(?:\|([^}]*))?\}\}/g;
 const CUSTOM_TOKEN_RE = /\{\{contact\.custom\.([a-zA-Z0-9_]+)(?:\|([^}]*))?\}\}/g;
+// Bare shorthand e.g. {{plan_id}} → alias for {{contact.custom.plan_id}}. Same fallback semantics.
+// Excludes the conditional tags {{#if}}, {{else}}, {{/if}} which contain non-identifier chars.
+const BARE_TOKEN_RE = /\{\{([a-zA-Z0-9_]+)(?:\|([^}]*))?\}\}/g;
 
 /**
  * Resolved before spintax, never after — spintax's `{a|b}` parser mis-parses
@@ -32,6 +35,15 @@ export function resolvePersonalization(text: string, contact: PersonalizableCont
     .replace(CUSTOM_TOKEN_RE, (_match, key: string, fallback?: string) => {
       const customFields = contact.customFields as Record<string, unknown> | null | undefined;
       const value = customFields?.[key];
-      return value != null ? String(value) : (fallback ?? '');
+      const str = value != null ? String(value) : '';
+      return str ? str : (fallback ?? '');
+    })
+    .replace(BARE_TOKEN_RE, (match, key: string, fallback?: string) => {
+      // Don't consume conditional keywords that may remain from malformed blocks
+      if (key === 'else' || key === 'if') return match;
+      const customFields = contact.customFields as Record<string, unknown> | null | undefined;
+      const value = customFields?.[key];
+      const str = value != null ? String(value) : '';
+      return str ? str : (fallback ?? '');
     });
 }
