@@ -116,11 +116,7 @@ TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>
 GMAIL_DEFAULT_DAILY_LIMIT=300
 ```
 
-Add this only if you want Slack circuit-breaker/large-send notifications — there's currently no in-app UI for it (removed in GC-080), so it's `.env`-only:
-
-```
-SLACK_WEBHOOK_URL=
-```
+Slack circuit-breaker/large-send notifications are entirely optional and no longer need setting here at all (GC-148 re-added a **Settings > Integrations > Slack notifications** page) — leave `SLACK_WEBHOOK_URL` unset in Coolify and configure it from the running app after first deploy instead, same as R2/verification/etc.
 
 Everything else in `.env.example` (AWS SES, Cloudflare R2, Reoon/NeverBounce, Gmail OAuth client, OpenAI/DeepSeek) can be left unset here — configure those from the running app itself after first deploy (see the table below for exactly where each one lives). Deploy the resource.
 
@@ -225,7 +221,7 @@ Every variable is documented with inline comments in `.env.example`. The key thi
 | Tracking | `TRACKING_SIGNING_SECRET` | Signing open/click/unsubscribe tokens | **Settings > Integrations** — DB, no env needed |
 | Tracking domain | `TRACKING_DOMAIN` | Open/click tracking host | **Settings > Integrations** only — DNS-verified, never settable via `.env` at all |
 | Webhooks | `OUTBOUND_WEBHOOK_HMAC_SECRET` | Outbound webhook signing | **env-only** — feature not implemented yet (GC-037/043), harmless to leave blank today |
-| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications | **env-only** — no Settings UI exists for this (removed in GC-080); set it in `.env`/Coolify or skip the feature |
+| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications (optional) | **Settings > Integrations** — DB, no env needed (GC-148 re-added this after GC-080 removed it) |
 | AI-assisted copy | `LLM_PROVIDER`, `LLM_MODEL`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` | Template editor AI Assist | **Settings > Integrations** — DB, no env needed |
 
 Notes on the two DB-only rows:

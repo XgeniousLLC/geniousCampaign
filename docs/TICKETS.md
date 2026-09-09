@@ -144,6 +144,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-146 | Email Log: add "clear log" action (last 7 days / last 30 days / all) | 4 | S | Not Started | — |
 | GC-147 | Campaign detail page: skeleton loading state while data loads | 4 | S | Done | GC-069 |
 | GC-148 | Slack notifications: stop logging a warning when simply unconfigured (already optional/default-off, just noisy) | 4 | S | Done | GC-051, GC-080 |
+| GC-149 | Settings > Integrations: re-add a Slack notifications page (reverses GC-080's removal, so `SLACK_WEBHOOK_URL` no longer needs `.env`/Coolify to configure) | 4 | S | Done | GC-051, GC-080, GC-148 |
 
 ---
 
@@ -1564,6 +1565,13 @@ They already were effectively optional — `SLACK_WEBHOOK_URL` unset means the f
 **Fix** (`slack/slack-notification.service.ts`): `sendBestEffort()` now returns immediately, silently, when `SLACK_WEBHOOK_URL` isn't set — the unset case is a normal no-op, not a warning-worthy one. A webhook that *is* configured but fails to actually deliver (network error, bad URL, Slack outage) still logs its `warn` as before — that's a real, actionable signal. No env var or Settings UI added; presence/absence of `SLACK_WEBHOOK_URL` remains the only toggle, matching GC-080's original call not to reintroduce config for something this optional.
 
 Verified: `apps/api` typechecks clean. No existing test file for this service to extend.
+
+### GC-149 — Settings > Integrations: re-add a Slack notifications page (2026-09-09)
+Requested, right after GC-148: a dedicated Settings page for Slack, so `SLACK_WEBHOOK_URL` never needs touching `.env`/Coolify — a deliberate reversal of GC-080's "remove Slack from Settings UI entirely" call, specifically for Slack.
+
+**Change**: added a `slack` category to `known-settings.ts` (one field, `SLACK_WEBHOOK_URL`, marked `secret`, with instructions for creating a Slack Incoming Webhook). That's the entire change — `SettingsService.get()`/`getAllForDisplay()`/`setMany()`/`clear()` already work generically off `SETTING_CATEGORIES`/`ALL_SETTING_KEYS` (same mechanism every other category uses, per GC-081's "generic, not a one-off" design), and `SlackNotificationService.send()` already reads `SLACK_WEBHOOK_URL` via `this.settings.get()` — it was already DB-override-aware, just missing a UI surface to write that override from. `Settings.tsx`'s category rendering is equally generic (no per-category special-casing needed for a single plain secret field), so the frontend needed zero changes; the new sub-tab appears automatically. Updated `DEPLOY.md` (env-var table + the Coolify API-resource env list) to reflect Slack no longer being env-only.
+
+Verified live against the real dev DB via direct API calls (rebuilt + restarted the local prod-mode API, minted a short-lived JWT for the existing dev owner account since the browser session was stale — same workaround as earlier in this session): `GET /settings/integrations` lists `slack` between `tracking` and `ses_sns` with the expected field/instructions; `PATCH /settings/integrations {values:{SLACK_WEBHOOK_URL:...}}` persists it (`source: "db"`, `configured: true`); `DELETE /settings/integrations/SLACK_WEBHOOK_URL` clears it back to `source: "unset"`. Not yet visually confirmed in the browser (same stale-session blocker as GC-147). `apps/api` typechecks clean.
 
 ### GC-146 — Email Log: "clear log" action (backlog, not started)
 Requested: on the Email Log page, add an option to clear log entries older than 7 days, older than 30 days, or clear the entire log. Not yet scoped or implemented — added to the backlog per Sharifur's request.

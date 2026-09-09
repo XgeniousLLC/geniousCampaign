@@ -163,6 +163,27 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
     ],
   },
   {
+    key: 'slack',
+    label: 'Slack notifications',
+    description: 'Optional: circuit-breaker trips, campaign completions, large-send confirmations.',
+    fields: [
+      {
+        key: 'SLACK_WEBHOOK_URL',
+        label: 'Webhook URL',
+        secret: true,
+        placeholder: 'https://hooks.slack.com/services/…',
+      },
+    ],
+    instructions: [
+      'Entirely optional — leave this blank and nothing is sent; notifications only fire once a webhook URL is saved here.',
+      'In Slack, go to https://api.slack.com/apps and create a new app (or pick an existing one) "From scratch".',
+      'Open "Incoming Webhooks" in the app\'s settings sidebar and toggle it on.',
+      'Click "Add New Webhook to Workspace", pick the channel notifications should post to, and authorize.',
+      'Copy the generated webhook URL (starts with https://hooks.slack.com/services/) into the field below and Save.',
+      'You should see a message in that Slack channel the next time a circuit breaker trips, a campaign finishes sending, or a large send is confirmed.',
+    ],
+  },
+  {
     // No fields — nothing here is a stored credential. The URL shown by the
     // frontend is derived from the request host (GET /webhooks/ses/sns/webhook-url)
     // with no save step, since SNS confirms its own subscription via the
