@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import { EnrollmentService } from './enrollment.service';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts, sequences, sequenceSteps } from '../db/schema';
+import { contacts, sequences, sequenceSteps, sends } from '../db/schema';
 
 describe('EnrollmentService (integration, real DB)', () => {
   let service: EnrollmentService;
@@ -48,6 +48,27 @@ describe('EnrollmentService (integration, real DB)', () => {
     expect(enrollment.status).toBe('active');
     expect(enrollment.currentStepId).toBe(step1Id);
     expect(enrollment.nextRunAt).not.toBeNull();
+  });
+
+  it('surfaces the last executed step/time via listForContact, derived from sends', async () => {
+    const enrollment = await service.findActiveForContactInSequence(sequenceId, contactId);
+    const sentAt = new Date();
+    await drizzle.db.insert(sends).values({
+      contactId,
+      sequenceEnrollmentId: enrollment.id,
+      sequenceId,
+      sequenceStepId: step1Id,
+      resolvedSubject: 'Test',
+      resolvedBodyHtml: '<p>Test</p>',
+      resolvedBodyText: 'Test',
+      status: 'sent',
+      sentAt,
+    });
+
+    const [listed] = await service.listForContact(contactId);
+    expect(listed.currentStepNumber).toBe(1);
+    expect(listed.lastStepNumber).toBe(1);
+    expect(listed.lastExecutedAt).toEqual(sentAt);
   });
 
   it('rejects a duplicate enroll attempt while active', async () => {

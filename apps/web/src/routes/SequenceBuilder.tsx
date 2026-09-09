@@ -426,12 +426,6 @@ export function SequenceBuilder() {
     }
   }
 
-  function stepLabelFor(currentStepId: string | null): string {
-    if (!currentStepId) return '—';
-    const block = sendBlocks.find((b) => b.sendStep?.id === currentStepId);
-    return block ? `Step ${block.index}` : '—';
-  }
-
   const enrolledContacts = enrollments
     .filter((e) => e.status === 'active' || e.status === 'paused')
     .map((e) => e.contactId);
@@ -811,7 +805,10 @@ export function SequenceBuilder() {
             <thead>
               <tr className="border-b border-border-default bg-surface text-[11px] uppercase tracking-wide text-text-meta">
                 <th className="px-3.5 py-2 text-left font-medium">Contact</th>
+                <th className="px-3 py-2 text-left font-medium">Enrolled</th>
                 <th className="px-3 py-2 text-left font-medium">Current step</th>
+                <th className="px-3 py-2 text-left font-medium">Last step</th>
+                <th className="px-3 py-2 text-left font-medium">Last executed</th>
                 <th className="px-3 py-2 text-left font-medium">Status</th>
                 {canWrite && <th className="px-3.5 py-2 text-right font-medium">Actions</th>}
               </tr>
@@ -836,7 +833,10 @@ export function SequenceBuilder() {
                         <span className="font-mono text-text-faint">{e.contactId}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-text-tertiary">{stepLabelFor(e.currentStepId)}</td>
+                    <td className="px-3 py-2.5 font-mono text-text-tertiary">{new Date(e.enrolledAt).toLocaleDateString()}</td>
+                    <td className="px-3 py-2.5 font-mono text-text-tertiary">{e.currentStepNumber ? `Step ${e.currentStepNumber}` : '—'}</td>
+                    <td className="px-3 py-2.5 font-mono text-text-tertiary">{e.lastStepNumber ? `Step ${e.lastStepNumber}` : '—'}</td>
+                    <td className="px-3 py-2.5 font-mono text-text-tertiary">{e.lastExecutedAt ? new Date(e.lastExecutedAt).toLocaleString() : '—'}</td>
                     <td className="px-3 py-2.5">
                       <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[11px] font-medium ${ENROLLMENT_STATUS_STYLES[e.status]}`}>{e.status}</span>
                     </td>
@@ -869,7 +869,7 @@ export function SequenceBuilder() {
               })}
               {enrollments.length === 0 && (
                 <tr>
-                  <td colSpan={canWrite ? 4 : 3} className="px-3.5 py-8 text-center text-text-muted">
+                  <td colSpan={canWrite ? 7 : 6} className="px-3.5 py-8 text-center text-text-muted">
                     No contacts enrolled yet.
                   </td>
                 </tr>
