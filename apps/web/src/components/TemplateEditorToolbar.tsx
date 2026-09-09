@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Editor } from '@tiptap/react';
 import { getMarkRange } from '@tiptap/core';
 import { renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 import { useImageUpload } from '../lib/useImageUpload';
+import { listCustomFieldDefs, ensureCustomFieldDef, type CustomFieldDef } from '../lib/customFieldsApi';
 import { AiAssistModal } from './AiAssistModal';
 import { PromptDialog } from './PromptDialog';
 import { ConditionalBuilderModal } from './ConditionalBuilderModal';
@@ -85,7 +86,10 @@ function getLinkTextRange(editor: Editor) {
 
 export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [tokenOpen, setTokenOpen] = useState(false);
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([]);
   const [customFieldKey, setCustomFieldKey] = useState('');
+  const [customFieldBusy, setCustomFieldBusy] = useState(false);
+  const [customFieldError, setCustomFieldError] = useState<string | null>(null);
   const customFieldValid = /^[a-zA-Z0-9_]+$/.test(customFieldKey.trim());
   // Shared by both the fixed tokens and the custom field below — applies to
   // whichever one gets inserted, so the contact having no value for that
@@ -97,7 +101,48 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [conditionalOpen, setConditionalOpen] = useState(false);
   const { inputRef, uploading, error, openFilePicker, handleFileChange } = useImageUpload(editor);
 
+  useEffect(() => {
+    listCustomFieldDefs()
+      .then(setCustomFieldDefs)
+      .catch(() => setCustomFieldDefs([]));
+  }, []);
+
   if (!editor || editor.isDestroyed) return null;
+
+  function insertCustomFieldToken(def: CustomFieldDef) {
+    if (!editor || editor.isDestroyed) return;
+    const fallback = tokenFallback.trim() || undefined;
+    editor.chain().focus().insertPersonalizationToken({ field: `contact.custom.${def.key}`, label: def.label, fallback }).run();
+    setCustomFieldKey('');
+    setCustomFieldError(null);
+    setTokenOpen(false);
+  }
+
+  // Typing a slug that already matches a known field inserts it directly
+  // (no network round trip); an unrecognized slug is auto-registered as a
+  // new text-type custom field (matching the webhook/public-API
+  // auto-create pattern) before being inserted, so it shows up in
+  // Contacts/Settings the same as one defined up front.
+  async function handleInsertManualCustomField() {
+    if (!customFieldValid || !editor || editor.isDestroyed) return;
+    const key = customFieldKey.trim().toLowerCase();
+    const existing = customFieldDefs.find((d) => d.key === key);
+    if (existing) {
+      insertCustomFieldToken(existing);
+      return;
+    }
+    setCustomFieldBusy(true);
+    setCustomFieldError(null);
+    try {
+      const created = await ensureCustomFieldDef(key);
+      setCustomFieldDefs((prev) => (prev.some((d) => d.key === created.key) ? prev : [...prev, created]));
+      insertCustomFieldToken(created);
+    } catch (err) {
+      setCustomFieldError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCustomFieldBusy(false);
+    }
+  }
 
   const currentHeading = editor.isActive('heading', { level: 1 })
     ? 'h1'
@@ -254,34 +299,42 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
             </div>
             <div className="mt-1 border-t border-border-subtle p-2 pt-2">
               <div className="mb-1.5 text-[10px] uppercase tracking-wide text-text-meta">Custom field</div>
+              {customFieldDefs.length > 0 && (
+                <div className="mb-1.5 max-h-28 overflow-y-auto rounded border border-border-subtle">
+                  {customFieldDefs.map((def) => (
+                    <button
+                      key={def.id}
+                      type="button"
+                      onClick={() => insertCustomFieldToken(def)}
+                      className="flex w-full items-center gap-1 border-t border-border-subtle px-2 py-1.5 text-left font-mono text-xs text-text-tertiary first:border-t-0 hover:bg-raised"
+                    >
+                      <span className="text-accent-light">{'{{'}</span>
+                      {def.label}
+                      <span className="text-accent-light">{'}}'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-1">
                 <input
                   value={customFieldKey}
-                  onChange={(e) => setCustomFieldKey(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter' || !customFieldValid) return;
-                    const key = customFieldKey.trim();
-                    const fallback = tokenFallback.trim() || undefined;
-                    editor.chain().focus().insertPersonalizationToken({ field: `contact.custom.${key}`, label: key, fallback }).run();
-                    setCustomFieldKey('');
-                    setTokenOpen(false);
+                  onChange={(e) => {
+                    setCustomFieldKey(e.target.value);
+                    setCustomFieldError(null);
                   }}
-                  placeholder="field key"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleInsertManualCustomField();
+                  }}
+                  placeholder="or type a new/existing field key"
                   className="h-7 min-w-0 flex-1 rounded border border-border-subtle bg-surface px-1.5 font-mono text-xs text-text-primary placeholder:text-text-faint"
                 />
                 <button
                   type="button"
-                  disabled={!customFieldValid}
-                  onClick={() => {
-                    const key = customFieldKey.trim();
-                    const fallback = tokenFallback.trim() || undefined;
-                    editor.chain().focus().insertPersonalizationToken({ field: `contact.custom.${key}`, label: key, fallback }).run();
-                    setCustomFieldKey('');
-                    setTokenOpen(false);
-                  }}
+                  disabled={!customFieldValid || customFieldBusy}
+                  onClick={handleInsertManualCustomField}
                   className="h-7 shrink-0 rounded border border-accent/25 bg-accent/10 px-2 text-xs font-semibold text-accent-light hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Insert
+                  {customFieldBusy ? '…' : 'Insert'}
                 </button>
               </div>
               <div className="mt-1 font-mono text-[10.5px] text-text-faint">
@@ -290,6 +343,12 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
                 {tokenFallback.trim() ? `|${tokenFallback.trim()}` : ''}
                 {'}}'}
               </div>
+              {!customFieldDefs.some((d) => d.key === customFieldKey.trim().toLowerCase()) && customFieldValid && (
+                <div className="mt-1 text-[10.5px] leading-snug text-text-faint">
+                  No field named "{customFieldKey.trim()}" yet — inserting will create it.
+                </div>
+              )}
+              {customFieldError && <div className="mt-1 text-[10.5px] leading-snug text-danger">{customFieldError}</div>}
             </div>
           </div>
         )}

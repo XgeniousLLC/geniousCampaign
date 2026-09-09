@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
@@ -9,6 +10,7 @@ import { PersonalizationToken } from '../lib/tiptap/personalization-token';
 import { SpintaxBlock } from '../lib/tiptap/spintax-block';
 import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
+import { uploadImageFile } from '../lib/imageUploadPipeline';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
 import { TemplateLineField } from '../components/TemplateLineField';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
@@ -73,8 +75,55 @@ export function TemplateEditor() {
         setLinkPopup(null);
         return false;
       },
+      // Pasting an image (e.g. a clipboard screenshot) routes through the
+      // same compress/presign/R2-upload pipeline as the toolbar button —
+      // it must never fall through to ProseMirror/TipTap's default paste
+      // handling, which would embed the clipboard image as a base64 data
+      // URI (invariant 6).
+      handlePaste(view, event) {
+        if (!view.editable) return false;
+        const files = Array.from(event.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'));
+        if (files.length === 0) return false;
+        event.preventDefault();
+        uploadImageFilesIntoView(view, files);
+        return true;
+      },
+      // Dragging an image file in from outside the browser (Finder, another
+      // app). `moved` is true when the drag is an in-editor content move
+      // (e.g. dragging an existing image node around) — that already has a
+      // real R2 URL and default ProseMirror handling is correct for it.
+      handleDrop(view, event, _slice, moved) {
+        if (!view.editable || moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const coords = { left: event.clientX, top: event.clientY };
+        const dropPos = view.posAtCoords(coords)?.pos ?? view.state.selection.to;
+        uploadImageFilesIntoView(view, files, dropPos);
+        return true;
+      },
     },
   });
+
+  // Uploads each dropped/pasted image file in turn and inserts it as a real
+  // R2-backed image node once its upload completes — never a local
+  // blob/data URL (invariant 6). `insertPos` pins drop location; paste
+  // (no insertPos) always inserts at the current selection.
+  function uploadImageFilesIntoView(view: EditorView, files: File[], insertPos?: number) {
+    (async () => {
+      for (const file of files) {
+        try {
+          const publicUrl = await uploadImageFile(file);
+          if (view.isDestroyed) return;
+          const node = view.state.schema.nodes.image.create({ src: publicUrl });
+          const pos = insertPos ?? view.state.selection.to;
+          view.dispatch(view.state.tr.insert(pos, node));
+        } catch (err) {
+          toast(err instanceof Error ? err.message : 'Image upload failed.', 'error');
+        }
+      }
+    })();
+  }
 
   useEffect(() => {
     if (!id || !editor) return;
@@ -168,6 +217,9 @@ export function TemplateEditor() {
 
   return (
     <div className="flex flex-col gap-4">
+      <RouterLink to="/templates" className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary">
+        ← Templates
+      </RouterLink>
       {showLibrary && canWrite && (
         <TemplateLibraryModal onPick={applyLibraryTemplate} onBlank={() => setShowLibrary(false)} />
       )}

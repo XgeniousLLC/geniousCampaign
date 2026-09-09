@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { CustomFieldsService } from './custom-fields.service';
 import { CreateCustomFieldDefDto } from './dto/create-custom-field-def.dto';
+import { EnsureCustomFieldDefDto } from './dto/ensure-custom-field-def.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -29,6 +30,19 @@ export class CustomFieldsController {
     const created = await this.customFields.create(dto);
     await this.auditLog.record(user, 'custom_fields.create', 'custom_field_def', created.id, { key: created.key });
     return created;
+  }
+
+  // Lightweight auto-register, distinct from the explicit owner-only
+  // `create` above: used when a template editor (owner or editor — same
+  // role scope as writing templates) references a merge-field slug that
+  // isn't a defined field yet. Matches the webhook/public-API auto-create
+  // pattern (CLAUDE.md invariant 14) rather than the deliberate
+  // inputType/options schema decision `create` represents, so it's scoped
+  // to template-write roles, not owner-only.
+  @Post('ensure')
+  @Roles('owner', 'editor')
+  ensure(@Body() dto: EnsureCustomFieldDefDto) {
+    return this.customFields.getOrCreateByKey(dto.key);
   }
 
   @Delete(':id')
