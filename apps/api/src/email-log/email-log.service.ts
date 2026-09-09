@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, lt, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { sends, emailEvents, contacts, type sendStatusEnum } from '../db/schema';
 
@@ -10,6 +10,12 @@ export interface EmailLogFilter {
   page?: number;
   limit?: number;
 }
+
+// Retention presets a "Clear logs" control can offer — validated against
+// server-side too (never trust the query param alone) so a stray/typo'd
+// value can't accidentally wipe more than intended.
+export const EMAIL_LOG_KEEP_DAYS_OPTIONS = [7, 30, 90, 180] as const;
+export type EmailLogKeepDays = (typeof EMAIL_LOG_KEEP_DAYS_OPTIONS)[number];
 
 @Injectable()
 export class EmailLogService {
@@ -57,5 +63,19 @@ export class EmailLogService {
       recipientEmail: row.contactEmail || '',
       events,
     };
+  }
+
+  /** Deletes every `sends` row older than `keepDays`, keeping the rest —
+   * `email_events.sendId` cascades (schema onDelete: 'cascade'), so each
+   * pruned send's open/click/bounce/complaint history goes with it. Safe to
+   * prune freely: suppression's soft-bounce counting lives in its own
+   * `soft_bounce_counts` table, not derived from `sends`/`email_events`
+   * history, so this never weakens suppression decisions. This only trims
+   * the email log's audit trail, not `campaigns.sentCount` etc. (those are
+   * counters stored at send time, not computed from `sends` rows). */
+  async clearOlderThan(keepDays: EmailLogKeepDays) {
+    const cutoff = new Date(Date.now() - keepDays * 24 * 60 * 60 * 1000);
+    const deleted = await this.drizzle.db.delete(sends).where(lt(sends.createdAt, cutoff)).returning({ id: sends.id });
+    return { deletedCount: deleted.length };
   }
 }
