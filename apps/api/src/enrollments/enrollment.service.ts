@@ -1,8 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { sequenceEnrollments, sequenceSteps, sequences, contacts } from '../db/schema';
+import { sequenceEnrollments, sequenceSteps, sequences, contacts, sends } from '../db/schema';
 import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.util';
 
 /**
@@ -163,17 +163,78 @@ export class EnrollmentService {
     return stopped;
   }
 
-  listForContact(contactId: string) {
-    return this.drizzle.db.query.sequenceEnrollments.findMany({
+  async listForContact(contactId: string) {
+    const enrollments = await this.drizzle.db.query.sequenceEnrollments.findMany({
       where: eq(sequenceEnrollments.contactId, contactId),
       orderBy: (e, { desc }) => desc(e.enrolledAt),
     });
+    return this.attachHistory(enrollments);
   }
 
-  listForSequence(sequenceId: string) {
-    return this.drizzle.db.query.sequenceEnrollments.findMany({
+  async listForSequence(sequenceId: string) {
+    const enrollments = await this.drizzle.db.query.sequenceEnrollments.findMany({
       where: eq(sequenceEnrollments.sequenceId, sequenceId),
       orderBy: (e, { desc }) => desc(e.enrolledAt),
+    });
+    return this.attachHistory(enrollments);
+  }
+
+  /** Adds display-only history to each enrollment row — the "step N" number
+   * for currentStepId (matching the Steps tab's send-step-only numbering,
+   * SequenceBuilder.tsx's buildBlocks) plus the last step actually executed
+   * and when, derived from `sends` (the enrollment row itself only tracks
+   * what's next per invariant 3 — it never stored what already ran). */
+  private async attachHistory(enrollments: (typeof sequenceEnrollments.$inferSelect)[]) {
+    if (enrollments.length === 0) return [];
+    const enrollmentIds = enrollments.map((e) => e.id);
+    const sequenceIds = [...new Set(enrollments.map((e) => e.sequenceId))];
+
+    const [lastSends, allSteps] = await Promise.all([
+      this.drizzle.db
+        .select({
+          sequenceEnrollmentId: sends.sequenceEnrollmentId,
+          sequenceStepId: sends.sequenceStepId,
+          sentAt: sends.sentAt,
+          createdAt: sends.createdAt,
+        })
+        .from(sends)
+        .where(inArray(sends.sequenceEnrollmentId, enrollmentIds))
+        .orderBy(desc(sends.createdAt)),
+      this.drizzle.db
+        .select()
+        .from(sequenceSteps)
+        .where(inArray(sequenceSteps.sequenceId, sequenceIds))
+        .orderBy(asc(sequenceSteps.order)),
+    ]);
+
+    // `lastSends` is ordered newest-first, so the first row seen per
+    // enrollment is its most recent send.
+    const lastSendByEnrollment = new Map<string, (typeof lastSends)[number]>();
+    for (const send of lastSends) {
+      if (send.sequenceEnrollmentId && !lastSendByEnrollment.has(send.sequenceEnrollmentId)) {
+        lastSendByEnrollment.set(send.sequenceEnrollmentId, send);
+      }
+    }
+
+    // Step numbers count only send_email steps in order, per sequence —
+    // wait/condition/exit steps aren't numbered (same rule as buildBlocks).
+    const stepNumberByStepId = new Map<string, number>();
+    const sendStepCountBySequence = new Map<string, number>();
+    for (const step of allSteps) {
+      if (step.type !== 'send_email') continue;
+      const count = (sendStepCountBySequence.get(step.sequenceId) ?? 0) + 1;
+      sendStepCountBySequence.set(step.sequenceId, count);
+      stepNumberByStepId.set(step.id, count);
+    }
+
+    return enrollments.map((e) => {
+      const lastSend = lastSendByEnrollment.get(e.id);
+      return {
+        ...e,
+        currentStepNumber: e.currentStepId ? stepNumberByStepId.get(e.currentStepId) ?? null : null,
+        lastStepNumber: lastSend?.sequenceStepId ? stepNumberByStepId.get(lastSend.sequenceStepId) ?? null : null,
+        lastExecutedAt: lastSend ? lastSend.sentAt ?? lastSend.createdAt : null,
+      };
     });
   }
 

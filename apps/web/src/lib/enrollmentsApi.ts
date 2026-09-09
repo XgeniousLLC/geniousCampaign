@@ -11,6 +11,12 @@ export interface Enrollment {
   nextRunAt: string | null;
   enrolledAt: string;
   updatedAt: string;
+  /** "Step N" numbers (send_email steps only, matching the Steps tab), and
+   * when the last send actually went out — derived from `sends`, since
+   * currentStepId only ever points at what's next (invariant 3). */
+  currentStepNumber: number | null;
+  lastStepNumber: number | null;
+  lastExecutedAt: string | null;
 }
 
 export function listEnrollmentsForContact(contactId: string) {

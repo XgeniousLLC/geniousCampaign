@@ -104,6 +104,12 @@ export function ContactEnrollments({ contactId }: { contactId: string }) {
                 {e.status}
               </span>
             </div>
+            <div className="mb-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-text-faint">
+              <span>Enrolled {new Date(e.enrolledAt).toLocaleDateString()}</span>
+              <span>Current step {e.currentStepNumber ? `Step ${e.currentStepNumber}` : '—'}</span>
+              <span>Last step {e.lastStepNumber ? `Step ${e.lastStepNumber}` : '—'}</span>
+              <span>Last executed {e.lastExecutedAt ? new Date(e.lastExecutedAt).toLocaleString() : '—'}</span>
+            </div>
             {canWrite && (e.status === 'active' || e.status === 'paused') && (
               <div className="flex gap-1.5">
                 {e.status === 'active' && (
