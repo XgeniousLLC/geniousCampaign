@@ -12,6 +12,32 @@ import {
 } from '../lib/contactsApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { PanelListSkeleton } from '../components/skeletons';
+import { CopyIcon, CheckCircleIcon } from '../components/icons';
+
+// Same copy-to-clipboard shape used elsewhere (Settings API keys, SES SNS
+// webhook URL field) — each button owns its own "copied" flicker so many
+// can sit in a list without sharing state.
+function CopyIdButton({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : `Copy ID: ${id}`}
+      className="shrink-0 rounded p-1 text-text-faint hover:bg-raised2 hover:text-text-secondary"
+    >
+      {copied ? <CheckCircleIcon className="text-success" /> : <CopyIcon />}
+    </button>
+  );
+}
 
 export function ListsAndTags() {
   const [lists, setLists] = useState<(List & { memberCount: number })[]>([]);
@@ -86,6 +112,7 @@ export function ListsAndTags() {
                 <th className="px-3.5 py-2 font-medium">Name</th>
                 <th className="px-2.5 py-2 font-medium">Type</th>
                 <th className="px-2.5 py-2 text-right font-medium">Members</th>
+                <th className="w-9" />
               </tr>
             </thead>
             <tbody>
@@ -106,11 +133,14 @@ export function ListsAndTags() {
                     </span>
                   </td>
                   <td className="px-2.5 py-2.5 text-right font-mono text-text-tertiary">{l.memberCount}</td>
+                  <td className="px-1.5 py-2.5 text-right">
+                    <CopyIdButton id={l.id} />
+                  </td>
                 </tr>
               ))}
               {lists.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-3.5 py-6 text-center text-text-muted">
+                  <td colSpan={4} className="px-3.5 py-6 text-center text-text-muted">
                     No lists yet.
                   </td>
                 </tr>
@@ -153,6 +183,7 @@ export function ListsAndTags() {
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
                 <span className="flex-1 text-xs text-text-secondary">{t.name}</span>
                 <span className="font-mono text-[11px] text-text-faint">{t.memberCount}</span>
+                <CopyIdButton id={t.id} />
               </div>
             ))}
             {tags.length === 0 && <div className="px-2 py-4 text-center text-xs text-text-faint">No tags yet.</div>}
