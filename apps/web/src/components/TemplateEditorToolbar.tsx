@@ -5,6 +5,7 @@ import { renderBodyText, type ProseMirrorNode } from '@genius-campaign/shared';
 import { useImageUpload } from '../lib/useImageUpload';
 import { AiAssistModal } from './AiAssistModal';
 import { PromptDialog } from './PromptDialog';
+import { ConditionalBuilderModal } from './ConditionalBuilderModal';
 import { aiTextToDoc } from '../lib/aiTextToDoc';
 import {
   BoldIcon,
@@ -93,6 +94,7 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [buttonDialogOpen, setButtonDialogOpen] = useState(false);
+  const [conditionalOpen, setConditionalOpen] = useState(false);
   const { inputRef, uploading, error, openFilePicker, handleFileChange } = useImageUpload(editor);
 
   if (!editor || editor.isDestroyed) return null;
@@ -206,6 +208,13 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       >
         Spintax
       </button>
+      <button
+        type="button"
+        onClick={() => setConditionalOpen(true)}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-amber-400/25 bg-amber-400/10 px-2.5 text-xs font-semibold text-amber-300 hover:bg-amber-400/15"
+      >
+        Condition
+      </button>
       <div className="relative">
         <button
           type="button"
@@ -292,6 +301,15 @@ export function TemplateEditorToolbar({ editor }: { editor: Editor | null }) {
       >
         ✦ AI Assist
       </button>
+      {conditionalOpen && (
+        <ConditionalBuilderModal
+          onClose={() => setConditionalOpen(false)}
+          onInsert={(text) => {
+            if (editor.isDestroyed) return;
+            editor.chain().focus().insertContent(text).run();
+          }}
+        />
+      )}
       {aiOpen && (
         <AiAssistModal
           onClose={() => setAiOpen(false)}

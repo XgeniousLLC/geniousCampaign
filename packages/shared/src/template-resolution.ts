@@ -1,3 +1,4 @@
+import { resolveConditionals } from './conditionals';
 import { resolvePersonalization, type PersonalizableContact } from './personalize';
 import { resolveSpintax } from './spintax';
 
@@ -20,21 +21,24 @@ export interface ResolvedTemplateContent {
   bodyText: string;
 }
 
+function resolveField(text: string, contact: PersonalizableContact): string {
+  // Conditionals outermost (branch selection), then personalize, then spintax — preserves invariant 5 ordering
+  return resolveSpintax(resolvePersonalization(resolveConditionals(text, contact), contact));
+}
+
 /**
  * Turns a template row into the exact content for one send: pick one
  * subject line and one preview-text line at random (uniform, independent of
- * each other — true A/B), then resolve personalization tokens before
- * spintax on every field (CLAUDE.md invariant 5). The random line-pick is
- * the outer step — same ordering discipline invariant 5 already calls out
- * for a future third resolution pass.
+ * each other — true A/B), then resolve conditionals → personalization → spintax
+ * on every field (CLAUDE.md invariant 5, extended with conditionals as outermost).
  */
 export function resolveTemplateContent(template: ResolvableTemplate, contact: PersonalizableContact): ResolvedTemplateContent {
   const subjectLine = pickRandom(template.subjectLines);
   const previewTextLine = pickRandom(template.previewTextLines);
   return {
-    subject: resolveSpintax(resolvePersonalization(subjectLine, contact)),
-    previewText: previewTextLine ? resolveSpintax(resolvePersonalization(previewTextLine, contact)) : '',
-    bodyHtml: resolveSpintax(resolvePersonalization(template.bodyHtml, contact)),
-    bodyText: resolveSpintax(resolvePersonalization(template.bodyText, contact)),
+    subject: resolveField(subjectLine, contact),
+    previewText: previewTextLine ? resolveField(previewTextLine, contact) : '',
+    bodyHtml: resolveField(template.bodyHtml, contact),
+    bodyText: resolveField(template.bodyText, contact),
   };
 }

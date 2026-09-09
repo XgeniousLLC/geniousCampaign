@@ -68,3 +68,66 @@ export function StatCardSkeleton({ count = 4 }: { count?: number }) {
     </div>
   );
 }
+
+export function TemplateEditorSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col rounded-md border border-border-default bg-panel">
+        {/* Header: name + actions */}
+        <div className="flex items-center justify-between gap-4 border-b border-border-default px-5 py-3">
+          <div className="h-4 w-44 animate-pulse rounded bg-raised2" />
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-16 animate-pulse rounded-md bg-raised2" />
+            <div className="h-8 w-20 animate-pulse rounded-md bg-raised2" />
+            <div className="h-8 w-20 animate-pulse rounded-md bg-raised2" />
+          </div>
+        </div>
+
+        {/* Subject lines */}
+        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
+          <div className="flex items-center justify-between">
+            <div className="h-2.5 w-56 animate-pulse rounded bg-raised2" />
+            <div className="h-3 w-20 animate-pulse rounded bg-raised2" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-[38px] flex-1 animate-pulse rounded-md bg-raised2" />
+            <div className="h-7 w-16 animate-pulse rounded bg-raised2" />
+            <div className="h-7 w-24 animate-pulse rounded bg-raised2" />
+          </div>
+        </div>
+
+        {/* Preview text */}
+        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
+          <div className="flex items-center justify-between">
+            <div className="h-2.5 w-64 animate-pulse rounded bg-raised2" />
+            <div className="h-3 w-24 animate-pulse rounded bg-raised2" />
+          </div>
+          <div className="h-3 w-32 animate-pulse rounded bg-raised2 opacity-60" />
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-1 border-b border-border-default bg-surface px-3 py-2">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <div key={i} className="h-8 w-8 animate-pulse rounded bg-raised2" />
+          ))}
+          <div className="ml-1 h-8 w-16 animate-pulse rounded bg-raised2" />
+          <div className="h-8 w-28 animate-pulse rounded bg-raised2" />
+        </div>
+
+        {/* Body */}
+        <div className="max-w-2xl px-6 py-5">
+          <div className="space-y-3">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-raised2" />
+            <div className="h-4 w-full animate-pulse rounded bg-raised2" />
+            <div className="h-4 w-5/6 animate-pulse rounded bg-raised2" />
+            <div className="pt-2">
+              <div className="h-4 w-2/3 animate-pulse rounded bg-raised2" />
+            </div>
+            <div className="h-4 w-full animate-pulse rounded bg-raised2" />
+            <div className="h-4 w-4/5 animate-pulse rounded bg-raised2" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -17,6 +17,7 @@ import { SendTestEmailModal } from '../components/SendTestEmailModal';
 import { LinkClickPopover } from '../components/LinkClickPopover';
 import { PromptDialog } from '../components/PromptDialog';
 import { CheckCircleIcon, XCircleIcon } from '../components/icons';
+import { TemplateEditorSkeleton } from '../components/skeletons';
 import { createTemplate, getTemplate, updateTemplate, deleteTemplate } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
@@ -162,7 +163,7 @@ export function TemplateEditor() {
   }
 
   if (!loaded) {
-    return <div className="text-sm text-text-muted">Loading template…</div>;
+    return <TemplateEditorSkeleton />;
   }
 
   return (

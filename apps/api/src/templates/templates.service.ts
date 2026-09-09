@@ -16,6 +16,7 @@ import { SendTestEmailDto } from './dto/send-test-email.dto';
 import {
   renderBodyHtml,
   renderBodyText,
+  resolveConditionals,
   resolvePersonalization,
   resolveSpintax,
   type ProseMirrorNode,
@@ -239,15 +240,11 @@ export class TemplatesService {
    * themselves; SendDispatcherService still enforces real sender quota and
    * the circuit breaker, so it can't be used to bypass either. */
   async sendTestEmail(dto: SendTestEmailDto) {
-    const resolvedSubject = resolveSpintax(
-      resolvePersonalization(dto.subject, SAMPLE_CONTACT),
-    );
-    const resolvedHtml = resolveSpintax(
-      resolvePersonalization(dto.bodyHtml, SAMPLE_CONTACT),
-    );
-    const resolvedText = resolveSpintax(
-      resolvePersonalization(dto.bodyText, SAMPLE_CONTACT),
-    );
+    const resolveField = (text: string) =>
+      resolveSpintax(resolvePersonalization(resolveConditionals(text, SAMPLE_CONTACT as never), SAMPLE_CONTACT as never));
+    const resolvedSubject = resolveField(dto.subject);
+    const resolvedHtml = resolveField(dto.bodyHtml);
+    const resolvedText = resolveField(dto.bodyText);
 
     const result = await this.sendDispatcher.send({
       to: dto.to,
