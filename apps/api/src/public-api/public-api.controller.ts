@@ -141,9 +141,33 @@ export class PublicApiController {
   // already exist (404 if not) — this endpoint never creates one as a side
   // effect. EnrollmentService itself 404s on an unknown sequenceId and 409s
   // if the contact already has an active/paused enrollment in it.
+  //
+  // Idempotency check below is specific to this endpoint, not a change to
+  // enroll() itself: external callers (Zapier, a cart-abandon webhook) can
+  // and do call this repeatedly for the same event — without this, a
+  // contact who already completed/stopped the sequence gets a brand-new
+  // duplicate enrollment row on every retry, since enroll() only rejects
+  // while active/paused (by design — invariant 1 still allows a fresh row
+  // after stop/complete for admin/trigger-driven re-enrollment). Here we
+  // instead report the existing enrollment as success so the caller stops
+  // retrying, rather than erroring or silently multiplying rows.
   @Post('contacts/:email/enroll')
   async enroll(@Param('email') email: string, @Body() dto: EnrollPublicContactDto) {
     const contact = await this.contacts.findByEmail(email);
+
+    const existing = await this.enrollments.findMostRecentForContactInSequence(dto.sequenceId, contact.id);
+    if (existing) {
+      return {
+        enrollmentId: existing.id,
+        contactId: contact.id,
+        email: contact.email,
+        sequenceId: existing.sequenceId,
+        status: existing.status,
+        currentStepId: existing.currentStepId,
+        alreadyEnrolled: true,
+      };
+    }
+
     const enrollment = await this.enrollments.enroll(dto.sequenceId, contact.id);
     return {
       enrollmentId: enrollment.id,

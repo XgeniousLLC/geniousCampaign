@@ -25,8 +25,13 @@ export class SlackNotificationService {
 
   /** Every listener catches its own failure rather than letting a Slack
    * outage break the event it's reacting to — a notification is
-   * best-effort, never load-bearing for the actual feature. */
+   * best-effort, never load-bearing for the actual feature. Slack is
+   * opt-in (unset `SLACK_WEBHOOK_URL` = feature off, the default for
+   * every install that hasn't configured it) — that's a normal, silent
+   * no-op, not a warning-worthy failure. Only a genuinely configured
+   * webhook that then fails to deliver logs anything. */
   async sendBestEffort(text: string) {
+    if (!this.settings.get('SLACK_WEBHOOK_URL')) return;
     try {
       await this.send(text);
     } catch (err) {

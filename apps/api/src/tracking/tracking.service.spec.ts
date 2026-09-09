@@ -14,7 +14,7 @@ const noopSettings = {} as unknown as SettingsService;
 const noopEvents = {} as unknown as EventEmitter2;
 const noopDebugLog = {} as unknown as DebugLogService;
 
-function makeService(configValues: Record<string, string | undefined>) {
+function makeService(configValues: Record<string, string | undefined>, debugLog: DebugLogService = noopDebugLog) {
   const config = {
     get: (key: string) => configValues[key],
   } as unknown as ConfigService;
@@ -23,7 +23,7 @@ function makeService(configValues: Record<string, string | undefined>) {
     config,
     noopSettings,
     noopEvents,
-    noopDebugLog,
+    debugLog,
   );
 }
 
@@ -45,5 +45,40 @@ describe('TrackingService.baseUrl', () => {
   it('only falls back to localhost when nothing at all is configured (bare local dev)', () => {
     const service = makeService({ PORT: '4100' });
     expect(service.baseUrl).toBe('http://localhost:4100');
+  });
+});
+
+describe('TrackingService.onModuleInit — production misconfiguration guard', () => {
+  function makeDebugLog() {
+    return { record: jest.fn() } as unknown as DebugLogService;
+  }
+
+  it('records a misconfiguration when VITE_API_BASE_URL is unset in production', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ NODE_ENV: 'production' }, debugLog);
+    service.onModuleInit();
+    expect(debugLog.record).toHaveBeenCalledTimes(1);
+    expect((debugLog.record as jest.Mock).mock.calls[0][0].message).toContain('[TRACKING_MISCONFIGURED]');
+  });
+
+  it('records a misconfiguration when VITE_API_BASE_URL points at localhost in production', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ NODE_ENV: 'production', VITE_API_BASE_URL: 'http://localhost:3000' }, debugLog);
+    service.onModuleInit();
+    expect(debugLog.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when VITE_API_BASE_URL is a real URL in production', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ NODE_ENV: 'production', VITE_API_BASE_URL: 'https://campaign-api.example.com' }, debugLog);
+    service.onModuleInit();
+    expect(debugLog.record).not.toHaveBeenCalled();
+  });
+
+  it('does nothing outside production even when unset', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ NODE_ENV: 'development' }, debugLog);
+    service.onModuleInit();
+    expect(debugLog.record).not.toHaveBeenCalled();
   });
 });

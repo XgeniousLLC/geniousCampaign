@@ -102,7 +102,10 @@ REDIS_URL=<from step 1>
 JWT_SECRET=<openssl rand -hex 32>
 PORT=3000
 ADMIN_APP_URL=<the public URL of the web app, e.g. https://app.yourdomain.com>
+VITE_API_BASE_URL=<the public URL of this same API resource, e.g. https://api.yourdomain.com>
 ```
+
+`VITE_API_BASE_URL` here is **not** a build-time/frontend concern despite the name — `TrackingService.baseUrl` (invariant 15) reads it via `process.env` at runtime on the API itself, to build tracking-pixel/click/unsubscribe URLs. It's easy to set this only on the **web** resource (step 3 below) and skip it here since the name reads as frontend-only; if you do, `TrackingService` silently falls back to `http://localhost:$PORT` with a one-line `[TRACKING]` warning in the API logs — pixels/links get baked into real sent emails pointing at localhost, unreachable from any real mail client. Set the same value on both resources. Adding/changing it here only needs a restart, not a rebuild (runtime env, not baked into a bundle).
 
 If `DATABASE_URL` points at a Coolify-managed Postgres (self-signed/internal cert), use `sslmode=no-verify`, not `require` — newer `pg-connection-string` versions treat `require` as an alias for `verify-full` (full CA chain verification), which fails against a self-signed cert with `unable to verify the first certificate` / `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. `no-verify` still encrypts the connection, it just skips CA verification.
 
@@ -212,7 +215,7 @@ Every variable is documented with inline comments in `.env.example`. The key thi
 | Area | Variables | Required for | Set via |
 |---|---|---|---|
 | Core | `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `PORT` | Everything | **env-only**, required |
-| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time) | **env-only**, required (build-time) |
+| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time), **and** the API itself to build tracking pixel/click/unsubscribe URLs (runtime, invariant 15) | **env-only**, required on both the web resource (build-time) and the API resource (runtime) — see the Coolify API step above |
 | Gmail token encryption | `TOKEN_ENCRYPTION_KEY`, `ADMIN_APP_URL`, `GMAIL_DEFAULT_DAILY_LIMIT` | Encrypting stored Gmail refresh tokens at rest; correct password-reset/OAuth-redirect links | **env-only** if using Gmail sending — not settable from the UI even though the OAuth client credentials below are |
 | AWS SES | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET`, `SES_FROM_EMAIL` | Primary/bulk email sending | **Sender Accounts** page — add an SES account with its own credentials there; `.env` values are only used as a fallback default for accounts left blank |
 | SES bounce/complaint webhook | none (URL only, no env var) | Auto-suppressing hard bounces/complaints | **Settings > Integrations** shows the webhook URL to paste into an AWS SNS subscription — no field to save here, just a manual AWS-console wiring step. See [`docs/SES_SNS_SETUP.md`](docs/SES_SNS_SETUP.md). |
