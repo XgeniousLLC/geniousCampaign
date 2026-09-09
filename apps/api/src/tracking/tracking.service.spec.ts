@@ -14,14 +14,18 @@ const noopSettings = {} as unknown as SettingsService;
 const noopEvents = {} as unknown as EventEmitter2;
 const noopDebugLog = {} as unknown as DebugLogService;
 
-function makeService(configValues: Record<string, string | undefined>, debugLog: DebugLogService = noopDebugLog) {
+function makeService(
+  configValues: Record<string, string | undefined>,
+  debugLog: DebugLogService = noopDebugLog,
+  settings: SettingsService = noopSettings,
+) {
   const config = {
     get: (key: string) => configValues[key],
   } as unknown as ConfigService;
   return new TrackingService(
     noopDrizzle,
     config,
-    noopSettings,
+    settings,
     noopEvents,
     debugLog,
   );
@@ -80,5 +84,49 @@ describe('TrackingService.onModuleInit — production misconfiguration guard', (
     const service = makeService({ NODE_ENV: 'development' }, debugLog);
     service.onModuleInit();
     expect(debugLog.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('TrackingService.buildClickUrl — malformed URL guard', () => {
+  function makeDebugLog() {
+    return { record: jest.fn() } as unknown as DebugLogService;
+  }
+  function makeSettings() {
+    return { get: () => 'test-secret' } as unknown as SettingsService;
+  }
+
+  it('logs nothing for a clean, fully-resolved URL', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ VITE_API_BASE_URL: 'https://api.example.com' }, debugLog, makeSettings());
+    service.buildClickUrl('send-1', 'https://taskip.net/checkout?source=offer&planId=agency-pro');
+    expect(debugLog.record).not.toHaveBeenCalled();
+  });
+
+  it('flags a leftover HTML entity (the &amp; bug) without throwing', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ VITE_API_BASE_URL: 'https://api.example.com' }, debugLog, makeSettings());
+    expect(() =>
+      service.buildClickUrl('send-1', 'https://taskip.net/checkout?source=offer&amp;planId=agency-pro'),
+    ).not.toThrow();
+    expect(debugLog.record).toHaveBeenCalledTimes(1);
+    const call = (debugLog.record as jest.Mock).mock.calls[0][0];
+    expect(call.message).toContain('[TRACKING_CLICK_URL_MALFORMED]');
+    expect(call.message).toContain('&amp;');
+  });
+
+  it('flags an unresolved {{...}} personalization token', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ VITE_API_BASE_URL: 'https://api.example.com' }, debugLog, makeSettings());
+    service.buildClickUrl('send-1', 'https://taskip.net/checkout?plan={{contact.custom.plan_id}}');
+    expect(debugLog.record).toHaveBeenCalledTimes(1);
+    expect((debugLog.record as jest.Mock).mock.calls[0][0].message).toContain('unresolved');
+  });
+
+  it('flags a URL that fails to parse', () => {
+    const debugLog = makeDebugLog();
+    const service = makeService({ VITE_API_BASE_URL: 'https://api.example.com' }, debugLog, makeSettings());
+    service.buildClickUrl('send-1', 'not a url');
+    expect(debugLog.record).toHaveBeenCalledTimes(1);
+    expect((debugLog.record as jest.Mock).mock.calls[0][0].message).toContain('not a valid absolute URL');
   });
 });
