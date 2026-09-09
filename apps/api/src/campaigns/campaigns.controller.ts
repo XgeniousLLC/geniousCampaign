@@ -60,6 +60,16 @@ export class CampaignsController {
     return result;
   }
 
+  @Post(':id/run-for-real')
+  @Roles('owner', 'editor')
+  runForReal(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.drizzle.db.transaction(async (tx) => {
+      const created = await this.campaigns.runForReal(id, tx);
+      await this.auditLog.record(user, 'campaign.run_for_real', 'campaign', created.id, { sourceCampaignId: id }, tx);
+      return created;
+    });
+  }
+
   @Delete(':id')
   @Roles('owner', 'editor')
   remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {

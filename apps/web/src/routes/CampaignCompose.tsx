@@ -44,7 +44,6 @@ export function CampaignCompose() {
   const [isDryRun, setIsDryRun] = useState(true);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
-  const [sendToEmail, setSendToEmail] = useState('');
   const [senderAccountId, setSenderAccountId] = useState('');
   const [fromName, setFromName] = useState('');
   const [replyTo, setReplyTo] = useState('');
@@ -96,7 +95,6 @@ export function CampaignCompose() {
       setIsDryRun(c.isDryRun);
       setIsScheduled(!!c.scheduledAt);
       setScheduleDate(c.scheduledAt ? new Date(c.scheduledAt) : null);
-      setSendToEmail(c.sendToEmail ?? '');
       setSenderAccountId(c.senderAccountId ?? '');
       setFromName(c.fromName ?? '');
       setReplyTo(c.replyTo ?? '');
@@ -210,7 +208,6 @@ export function CampaignCompose() {
       tagIds: audienceType === 'tags' ? selectedTagIds : undefined,
       contactIds: audienceType === 'contacts' ? selectedContactIds : undefined,
       isDryRun,
-      sendToEmail: sendToEmail.trim() || undefined,
       senderAccountId: senderAccountId || undefined,
       fromName: fromName.trim() || undefined,
       replyTo: replyTo.trim() || undefined,
@@ -526,19 +523,6 @@ export function CampaignCompose() {
                   className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
                 />
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-border-default bg-panel p-4">
-            <label className="mb-2 block text-xs font-semibold text-text-secondary">Send-to-self (optional)</label>
-            <input
-              value={sendToEmail}
-              onChange={(e) => setSendToEmail(e.target.value)}
-              placeholder="you@company.com — redirect every send here for QA"
-              className="h-9 w-full rounded-md border border-border-subtle bg-surface px-2.5 text-sm text-text-primary placeholder:text-text-faint"
-            />
-            <div className="mt-1.5 text-[11px] text-text-faint">
-              A real send, redirected to this address for every recipient — useful for QA before a real campaign.
             </div>
           </div>
         </div>
