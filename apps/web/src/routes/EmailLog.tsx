@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
-import { listEmailLog, getEmailLogDetail, resendEmail, type EmailLogRow, type EmailLogDetail } from '../lib/emailLogApi';
+import {
+  listEmailLog,
+  getEmailLogDetail,
+  resendEmail,
+  clearEmailLog,
+  EMAIL_LOG_KEEP_DAYS_OPTIONS,
+  type EmailLogRow,
+  type EmailLogDetail,
+} from '../lib/emailLogApi';
 import { listContacts, type Contact } from '../lib/contactsApi';
 import type { SendStatus } from '../lib/campaignsApi';
 import { PaginationBar } from '../components/PaginationBar';
 import { TableSkeleton } from '../components/skeletons';
+import { useAuthStore } from '../stores/useAuthStore';
 
 const PAGE_SIZE = 50;
 
@@ -26,6 +35,7 @@ const STATUS_STYLES: Record<SendStatus, string> = {
 };
 
 export function EmailLog() {
+  const isOwner = useAuthStore((s) => s.user?.role === 'owner');
   const [rows, setRows] = useState<EmailLogRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -36,6 +46,9 @@ export function EmailLog() {
   const [loading, setLoading] = useState(true);
   const [resending, setResending] = useState(false);
   const [resendResult, setResendResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [clearMenuOpen, setClearMenuOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearNotice, setClearNotice] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -86,11 +99,60 @@ export function EmailLog() {
     }
   }
 
+  async function handleClearLogs(keepDays: (typeof EMAIL_LOG_KEEP_DAYS_OPTIONS)[number]) {
+    setClearMenuOpen(false);
+    if (!confirm(`Permanently delete every email log entry older than ${keepDays} days? This cannot be undone.`)) return;
+    setClearing(true);
+    setClearNotice(null);
+    try {
+      const result = await clearEmailLog(keepDays);
+      setClearNotice(`Deleted ${result.deletedCount} entr${result.deletedCount === 1 ? 'y' : 'ies'} older than ${keepDays} days.`);
+      setPage(1);
+      load();
+    } catch (err) {
+      setClearNotice(err instanceof Error ? err.message : 'Failed to clear log.');
+    } finally {
+      setClearing(false);
+      setTimeout(() => setClearNotice(null), 5000);
+    }
+  }
+
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-text-heading">Email Log</h1>
-        <p className="mt-1 text-xs text-text-muted">Every individual send, with delivery and engagement events.</p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold text-text-heading">Email Log</h1>
+          <p className="mt-1 text-xs text-text-muted">Every individual send, with delivery and engagement events.</p>
+        </div>
+        {isOwner && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setClearMenuOpen((o) => !o)}
+              disabled={clearing}
+              className="h-8 rounded-md border border-border-default bg-panel px-2.5 text-xs font-medium text-text-secondary hover:border-danger/25 hover:text-danger disabled:opacity-50"
+            >
+              {clearing ? 'Clearing…' : 'Clear logs ▾'}
+            </button>
+            {clearMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setClearMenuOpen(false)} />
+                <div className="absolute right-0 top-9 z-20 w-52 rounded-md border border-border-modal bg-panel2 p-1 shadow-lg">
+                  <div className="px-2 py-1.5 text-[10px] uppercase tracking-wide text-text-meta">Keep only the last…</div>
+                  {EMAIL_LOG_KEEP_DAYS_OPTIONS.map((days) => (
+                    <button
+                      key={days}
+                      onClick={() => handleClearLogs(days)}
+                      className="block w-full rounded px-2 py-1.5 text-left text-xs text-text-secondary hover:bg-raised"
+                    >
+                      {days} days
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {clearNotice && <div className="absolute right-0 top-9 z-20 w-56 text-right text-[11px] text-text-faint">{clearNotice}</div>}
+          </div>
+        )}
       </div>
 
       <div className="mb-3 flex items-center gap-2">

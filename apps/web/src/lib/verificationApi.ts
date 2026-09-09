@@ -17,8 +17,10 @@ export function localCheckEmail(email: string) {
   return apiPost<LocalVerifyResult>('/verification/local-check', { email });
 }
 
-// The paid Reoon/NeverBounce step — only ever called one-at-a-time from an
-// explicit user click (the per-contact verify icon), never in bulk/automatically.
+// The paid Reoon/NeverBounce step — only ever called one contact at a time
+// from an explicit user action (the per-contact verify icon, or the
+// Contacts list's select-all "Verify" button looping this sequentially,
+// never Promise.all'd), never fired automatically on a schedule/import.
 // Fails cleanly server-side if no real REOON_API_KEY/NEVERBOUNCE_API_KEY is
 // configured, per CLAUDE.md — no cost is incurred either way.
 export function verifyEmail(email: string) {

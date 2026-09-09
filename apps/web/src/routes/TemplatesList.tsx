@@ -166,11 +166,21 @@ export function TemplatesList() {
                       />
                     </td>
                   )}
-                  <td className="px-3.5 py-2.5">
-                    <Link to={`/templates/${t.id}`} className="font-medium text-text-secondary hover:text-text-primary" onClick={(e) => e.stopPropagation()}>
+                  <td className="w-full max-w-0 px-3.5 py-2.5">
+                    <Link
+                      to={`/templates/${t.id}`}
+                      title={t.name}
+                      className="block max-w-[480px] truncate font-medium text-text-secondary hover:text-text-primary"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {t.name}
                     </Link>
-                    <div className="mt-0.5 truncate font-mono text-[11.5px] text-text-faint">{t.subjectLines[0] || 'no subject'}</div>
+                    <div
+                      title={t.subjectLines[0] || 'no subject'}
+                      className="mt-0.5 max-w-[480px] truncate font-mono text-[11.5px] text-text-faint"
+                    >
+                      {t.subjectLines[0] || 'no subject'}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     {t.folder ? (

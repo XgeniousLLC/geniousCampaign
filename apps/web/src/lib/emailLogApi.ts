@@ -1,5 +1,8 @@
-import { apiGet, apiPost, type Page } from './api';
+import { apiGet, apiPost, apiDelete, type Page } from './api';
 import type { SendStatus } from './campaignsApi';
+
+export const EMAIL_LOG_KEEP_DAYS_OPTIONS = [7, 30, 90, 180] as const;
+export type EmailLogKeepDays = (typeof EMAIL_LOG_KEEP_DAYS_OPTIONS)[number];
 
 export interface EmailLogRow {
   id: string;
@@ -43,4 +46,10 @@ export function getEmailLogDetail(id: string) {
 
 export function resendEmail(id: string) {
   return apiPost<{ success: boolean; message: string }>(`/email-log/${id}/resend`, {});
+}
+
+// Permanently deletes every log entry older than keepDays — owner-only,
+// cannot be undone.
+export function clearEmailLog(keepDays: EmailLogKeepDays) {
+  return apiDelete<{ deletedCount: number }>(`/email-log?keepDays=${keepDays}`);
 }

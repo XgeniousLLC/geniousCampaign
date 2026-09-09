@@ -13,7 +13,7 @@ import {
 } from '../lib/contactsApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
-import { localCheckEmail, verifyEmail } from '../lib/verificationApi';
+import { verifyEmail } from '../lib/verificationApi';
 import { manualSuppress, manualUnsubscribe } from '../lib/suppressionApi';
 import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi';
 import { CsvImportModal } from '../components/CsvImportModal';
@@ -251,21 +251,60 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     setBusy(false);
   }
 
+  // Shared by the per-row verify icon and the bulk-select "Verify" button —
+  // the real paid Reoon/NeverBounce check (never the free local check),
+  // updating verifyingIds/contacts/contactCache in place so both the row
+  // spinner and the resolved status icon reflect each contact the instant
+  // its own check completes, not after the whole batch finishes.
+  async function verifyOneContact(c: Contact) {
+    setVerifyingIds((s) => new Set(s).add(c.id));
+    try {
+      const result = await verifyEmail(c.email);
+      setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
+      const cached = contactCache.current.get(c.id);
+      if (cached) contactCache.current.set(c.id, { ...cached, verificationStatus: result.status });
+      return result;
+    } finally {
+      setVerifyingIds((s) => {
+        const next = new Set(s);
+        next.delete(c.id);
+        return next;
+      });
+    }
+  }
+
+  // Runs the real verification one contact at a time (sequential awaits,
+  // not Promise.all) — each row updates live as its own check lands, and a
+  // contact already suppressed, unsubscribed, or already carrying a
+  // verificationStatus (already checked) is skipped rather than re-spending
+  // a paid check on it.
   async function runBulkVerify() {
-    setBusy(true);
     const allTargets = [...selected].map((id) => contactCache.current.get(id)).filter((c): c is Contact => !!c);
-    const targets = allTargets.filter((c) => c.status !== 'suppressed');
+    const targets = allTargets.filter(
+      (c) => c.status !== 'suppressed' && c.status !== 'unsubscribed' && !c.verificationStatus && !verifyingIds.has(c.id),
+    );
     const skipped = allTargets.length - targets.length;
+    if (targets.length === 0) {
+      toast(`Nothing to verify — ${skipped} selected contact(s) are already suppressed, unsubscribed, or checked.`, 'info');
+      setSelected(new Set());
+      return;
+    }
+    setBusy(true);
     let valid = 0;
+    let failed = 0;
     for (const c of targets) {
-      const result = await localCheckEmail(c.email);
-      if (result.valid) valid++;
+      try {
+        const result = await verifyOneContact(c);
+        if (result.status === 'valid') valid++;
+      } catch {
+        failed++;
+      }
     }
     toast(
-      `Local check: ${valid} of ${targets.length} passed syntax/MX check (not a paid deliverability verification).${
-        skipped ? ` Skipped ${skipped} suppressed contact(s).` : ''
+      `Verified ${targets.length - failed} of ${targets.length} contact(s): ${valid} valid${failed ? `, ${failed} failed` : ''}.${
+        skipped ? ` Skipped ${skipped} (suppressed, unsubscribed, or already checked).` : ''
       }`,
-      'info',
+      failed > 0 && valid === 0 ? 'error' : 'success',
     );
     setSelected(new Set());
     setBusy(false);
@@ -320,22 +359,12 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
 
   async function handleVerify(c: Contact) {
     if (verifyingIds.has(c.id)) return;
-    setVerifyingIds((s) => new Set(s).add(c.id));
     try {
-      const result = await verifyEmail(c.email);
-      setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, verificationStatus: result.status } : x)));
-      const cached = contactCache.current.get(c.id);
-      if (cached) contactCache.current.set(c.id, { ...cached, verificationStatus: result.status });
+      const result = await verifyOneContact(c);
       const t = VERIFY_TOAST[result.status] ?? { text: `Verified: ${result.status}.`, tone: 'info' as const };
       toast(t.text, t.tone, VERIFY_ICON[result.status]);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Verification failed.', 'error');
-    } finally {
-      setVerifyingIds((s) => {
-        const next = new Set(s);
-        next.delete(c.id);
-        return next;
-      });
     }
   }
 
