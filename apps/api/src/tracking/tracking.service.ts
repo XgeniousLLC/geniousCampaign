@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
@@ -18,7 +18,9 @@ interface ClickPayload {
 }
 
 @Injectable()
-export class TrackingService {
+export class TrackingService implements OnModuleInit {
+  private readonly logger = new Logger(TrackingService.name);
+
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly config: ConfigService,
@@ -26,6 +28,31 @@ export class TrackingService {
     private readonly events: EventEmitter2,
     private readonly debugLog: DebugLogService,
   ) {}
+
+  // Fail loud once at boot, not silently-and-repeatedly per email. Root
+  // cause of a real production incident (2026-09-09): the only prior
+  // signal was a console.warn buried in per-send server logs — invisible
+  // unless someone thought to grep for it, and it never distinguished
+  // "genuinely unconfigured" from "configured but pointing at localhost"
+  // (e.g. a stray `http://localhost:3000` value saved by mistake, or an
+  // env var change applied to the wrong Coolify resource/not yet
+  // redeployed). A misconfiguration here silently breaks every open
+  // pixel, click link, AND the List-Unsubscribe header in every email
+  // sent until someone happens to inspect a raw email's source — this
+  // surfaces it immediately, in both the server logs and the in-app
+  // Debug Log page (Settings > Debug Log), the moment the process boots.
+  onModuleInit() {
+    if (this.config.get<string>('NODE_ENV') !== 'production') return;
+    const configured = this.config.get<string>('VITE_API_BASE_URL');
+    const looksLocal = !configured || /localhost|127\.0\.0\.1/i.test(configured);
+    if (!looksLocal) return;
+
+    const message = configured
+      ? `VITE_API_BASE_URL is set to "${configured}" in production — that looks like a local/loopback address, not a public URL. Every tracking pixel, click link, and unsubscribe link in every email sent will be unreachable from real mail clients/recipients.`
+      : `VITE_API_BASE_URL is not set in production. Every tracking pixel, click link, and unsubscribe link in every email sent will fall back to ${this.baseUrl}, unreachable from real mail clients/recipients.`;
+    this.logger.error(`[TRACKING_MISCONFIGURED] ${message} Set it as a RUNTIME env var on the API resource itself (not just the web/frontend resource) and restart.`);
+    void this.debugLog.record({ source: 'backend', message: `[TRACKING_MISCONFIGURED] ${message}` });
+  }
 
   private get secret(): string {
     const secret = this.settings.get('TRACKING_SIGNING_SECRET');
@@ -52,16 +79,13 @@ export class TrackingService {
     return `http://localhost:${this.config.get<string>('PORT') ?? 3000}`;
   }
 
+  // Misconfiguration is reported once at boot (onModuleInit above), not
+  // per-pixel here — a large campaign would otherwise spam the same
+  // warning hundreds/thousands of times for a single root cause.
   buildOpenPixelUrl(sendId: string): string {
     const token = signTrackingToken(this.secret, {
       sendId,
     } satisfies OpenPayload);
-    if (!this.config.get<string>('VITE_API_BASE_URL')) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[TRACKING] VITE_API_BASE_URL is not configured; tracking pixels will use fallback ${this.baseUrl} and may be unreachable from email clients`,
-      );
-    }
     return `${this.baseUrl}/t/o/${token}`;
   }
 

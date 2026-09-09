@@ -144,7 +144,69 @@ export function CampaignDetail() {
     return sends;
   }, [sends, tab]);
 
-  if (!campaign) return null;
+  if (!campaign) {
+    return (
+      <div className="animate-pulse">
+        <div className="mb-3 h-3 w-24 rounded bg-surface" />
+        <div className="mb-1 flex items-center gap-2.5">
+          <div className="h-5 w-48 rounded bg-surface" />
+          <div className="h-5 w-16 rounded-full bg-surface" />
+        </div>
+        <div className="mb-5 h-3 w-64 rounded bg-surface" />
+
+        <div className="grid max-w-[820px] grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map((n) => (
+            <div key={n} className="rounded-md border border-border-default bg-panel p-3.5">
+              <div className="h-3 w-14 rounded bg-surface" />
+              <div className="mt-2.5 h-6 w-10 rounded bg-surface" />
+              <div className="mt-2 h-2.5 w-10 rounded bg-surface" />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 grid max-w-[820px] grid-cols-2 gap-3">
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <div className="mb-3.5 h-3.5 w-32 rounded bg-surface" />
+            <div className="flex flex-col gap-3">
+              {[0, 1, 2].map((n) => (
+                <div key={n} className="h-8 rounded bg-surface" />
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md border border-border-default bg-panel p-4">
+            <div className="mb-3.5 h-3.5 w-24 rounded bg-surface" />
+            <div className="grid grid-cols-2 gap-3.5">
+              {[0, 1, 2, 3].map((n) => (
+                <div key={n}>
+                  <div className="h-3 w-16 rounded bg-surface" />
+                  <div className="mt-1.5 h-4 w-12 rounded bg-surface" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex gap-5 border-b border-border-default pb-2.5">
+          <div className="h-4 w-8 rounded bg-surface" />
+          <div className="h-4 w-14 rounded bg-surface" />
+          <div className="h-4 w-14 rounded bg-surface" />
+          <div className="h-4 w-16 rounded bg-surface" />
+        </div>
+        <div className="mt-4 overflow-hidden rounded-md border border-border-default bg-panel">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <div key={n} className="flex items-center gap-3 border-t border-border-subtle p-3 first:border-t-0">
+              <div className="h-7 w-7 shrink-0 rounded-full bg-surface" />
+              <div className="flex-1">
+                <div className="h-3 w-40 rounded bg-surface" />
+                <div className="mt-1.5 h-2.5 w-28 rounded bg-surface" />
+              </div>
+              <div className="h-4 w-16 rounded bg-surface" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const funnel = [
     { label: 'Delivered', value: stats.delivered, pctLabel: pct(stats.delivered, stats.total), pct: stats.total > 0 ? (stats.delivered / stats.total) * 100 : 0, color: '#818CF8' },

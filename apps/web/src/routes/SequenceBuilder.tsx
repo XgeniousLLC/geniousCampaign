@@ -100,6 +100,17 @@ function formatPercent(ratio: number): string {
   return `${(ratio * 100).toFixed(1)}%`;
 }
 
+function delayMinutes(step: SequenceStep | null): number {
+  if (!step || step.delayValue == null || !step.delayUnit) return 0;
+  const mult = step.delayUnit === 'days' ? 60 * 24 : step.delayUnit === 'hours' ? 60 : 1;
+  return step.delayValue * mult;
+}
+
+function formatProjectedDate(minutesFromNow: number): string {
+  const date = new Date(Date.now() + minutesFromNow * 60 * 1000);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 let tempIdCounter = 0;
 function tempId(): string {
   return `temp_${++tempIdCounter}_${Date.now()}`;
@@ -166,6 +177,16 @@ export function SequenceBuilder() {
 
   const blocks = useMemo(() => buildBlocks(steps), [steps]);
   const sendBlocks = blocks.filter((b) => b.sendStep);
+
+  const projectedMinutesByBlockKey = useMemo(() => {
+    const map = new Map<string, number>();
+    let running = 0;
+    for (const b of blocks) {
+      if (b.delayStep) running += delayMinutes(b.delayStep);
+      map.set(b.key, running);
+    }
+    return map;
+  }, [blocks]);
 
   const totalDurationMinutes = useMemo(() => {
     return blocks.reduce((sum, b) => {
@@ -626,6 +647,12 @@ export function SequenceBuilder() {
                             <option value="hours">hours</option>
                             <option value="days">days</option>
                           </select>
+                          <span
+                            className="ml-auto text-[11px] text-text-faint"
+                            title="Projected if a contact enrolls today — each contact's actual send date is based on their own enrollment date, not a shared sequence clock."
+                          >
+                            → sends {formatProjectedDate(projectedMinutesByBlockKey.get(block.key) ?? 0)}
+                          </span>
                         </div>
                       )}
                       <div className="flex items-center gap-2.5 p-3">

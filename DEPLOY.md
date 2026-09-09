@@ -102,7 +102,10 @@ REDIS_URL=<from step 1>
 JWT_SECRET=<openssl rand -hex 32>
 PORT=3000
 ADMIN_APP_URL=<the public URL of the web app, e.g. https://app.yourdomain.com>
+VITE_API_BASE_URL=<the public URL of this same API resource, e.g. https://api.yourdomain.com>
 ```
+
+`VITE_API_BASE_URL` here is **not** a build-time/frontend concern despite the name — `TrackingService.baseUrl` (invariant 15) reads it via `process.env` at runtime on the API itself, to build tracking-pixel/click/unsubscribe URLs. It's easy to set this only on the **web** resource (step 3 below) and skip it here since the name reads as frontend-only; if you do, `TrackingService` silently falls back to `http://localhost:$PORT` with a one-line `[TRACKING]` warning in the API logs — pixels/links get baked into real sent emails pointing at localhost, unreachable from any real mail client. Set the same value on both resources. Adding/changing it here only needs a restart, not a rebuild (runtime env, not baked into a bundle).
 
 If `DATABASE_URL` points at a Coolify-managed Postgres (self-signed/internal cert), use `sslmode=no-verify`, not `require` — newer `pg-connection-string` versions treat `require` as an alias for `verify-full` (full CA chain verification), which fails against a self-signed cert with `unable to verify the first certificate` / `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. `no-verify` still encrypts the connection, it just skips CA verification.
 
@@ -113,11 +116,7 @@ TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>
 GMAIL_DEFAULT_DAILY_LIMIT=300
 ```
 
-Add this only if you want Slack circuit-breaker/large-send notifications — there's currently no in-app UI for it (removed in GC-080), so it's `.env`-only:
-
-```
-SLACK_WEBHOOK_URL=
-```
+Slack circuit-breaker/large-send notifications are entirely optional and no longer need setting here at all (GC-148 re-added a **Settings > Integrations > Slack notifications** page) — leave `SLACK_WEBHOOK_URL` unset in Coolify and configure it from the running app after first deploy instead, same as R2/verification/etc.
 
 Everything else in `.env.example` (AWS SES, Cloudflare R2, Reoon/NeverBounce, Gmail OAuth client, OpenAI/DeepSeek) can be left unset here — configure those from the running app itself after first deploy (see the table below for exactly where each one lives). Deploy the resource.
 
@@ -212,7 +211,7 @@ Every variable is documented with inline comments in `.env.example`. The key thi
 | Area | Variables | Required for | Set via |
 |---|---|---|---|
 | Core | `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `PORT` | Everything | **env-only**, required |
-| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time) | **env-only**, required (build-time) |
+| Frontend | `VITE_API_BASE_URL` | Web app to reach the API (build-time), **and** the API itself to build tracking pixel/click/unsubscribe URLs (runtime, invariant 15) | **env-only**, required on both the web resource (build-time) and the API resource (runtime) — see the Coolify API step above |
 | Gmail token encryption | `TOKEN_ENCRYPTION_KEY`, `ADMIN_APP_URL`, `GMAIL_DEFAULT_DAILY_LIMIT` | Encrypting stored Gmail refresh tokens at rest; correct password-reset/OAuth-redirect links | **env-only** if using Gmail sending — not settable from the UI even though the OAuth client credentials below are |
 | AWS SES | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_CONFIGURATION_SET`, `SES_FROM_EMAIL` | Primary/bulk email sending | **Sender Accounts** page — add an SES account with its own credentials there; `.env` values are only used as a fallback default for accounts left blank |
 | SES bounce/complaint webhook | none (URL only, no env var) | Auto-suppressing hard bounces/complaints | **Settings > Integrations** shows the webhook URL to paste into an AWS SNS subscription — no field to save here, just a manual AWS-console wiring step. See [`docs/SES_SNS_SETUP.md`](docs/SES_SNS_SETUP.md). |
@@ -222,7 +221,7 @@ Every variable is documented with inline comments in `.env.example`. The key thi
 | Tracking | `TRACKING_SIGNING_SECRET` | Signing open/click/unsubscribe tokens | **Settings > Integrations** — DB, no env needed |
 | Tracking domain | `TRACKING_DOMAIN` | Open/click tracking host | **Settings > Integrations** only — DNS-verified, never settable via `.env` at all |
 | Webhooks | `OUTBOUND_WEBHOOK_HMAC_SECRET` | Outbound webhook signing | **env-only** — feature not implemented yet (GC-037/043), harmless to leave blank today |
-| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications | **env-only** — no Settings UI exists for this (removed in GC-080); set it in `.env`/Coolify or skip the feature |
+| Slack | `SLACK_WEBHOOK_URL` | Circuit-breaker / large-send notifications (optional) | **Settings > Integrations** — DB, no env needed (GC-148 re-added this after GC-080 removed it) |
 | AI-assisted copy | `LLM_PROVIDER`, `LLM_MODEL`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` | Template editor AI Assist | **Settings > Integrations** — DB, no env needed |
 
 Notes on the two DB-only rows:

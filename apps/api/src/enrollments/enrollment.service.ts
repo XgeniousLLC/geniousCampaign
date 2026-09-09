@@ -119,6 +119,20 @@ export class EnrollmentService {
     return enrollment;
   }
 
+  /** Read-only, any status — used by the public API to make its enroll
+   * endpoint idempotent against repeated calls for the same contact+sequence
+   * (e.g. a cart-abandon webhook retried by the sender). Deliberately
+   * doesn't touch enroll()'s own re-enrollment rules, which every other
+   * caller (admin UI, trigger auto-enroll) still relies on — a fresh row
+   * after stop/complete stays legal there (invariant 1, see the "allows
+   * re-enrolling after being stopped" spec case). */
+  async findMostRecentForContactInSequence(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+    return db.query.sequenceEnrollments.findFirst({
+      where: and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.contactId, contactId)),
+      orderBy: (e, { desc }) => desc(e.enrolledAt),
+    });
+  }
+
   async findActiveForContactInSequence(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
     const enrollment = await db.query.sequenceEnrollments.findFirst({
       where: and(
