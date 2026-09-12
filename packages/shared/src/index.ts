@@ -1,4 +1,5 @@
 export type ContactStatus = 'active' | 'unsubscribed' | 'bounced' | 'suppressed';
+export * from './roles';
 export * from './spintax';
 export * from './render-body';
 export * from './personalize';

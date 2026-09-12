@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Post, Query, UseGuards } from '@nestjs/c
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Public } from '../auth/public.decorator';
 import { DebugLogService } from './debug-log.service';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
 
@@ -12,6 +13,7 @@ export class DebugLogController {
   // Deliberately ungated — an error can happen on the login page itself,
   // before any token exists, and this only ever writes a log row (never
   // reads anything back to the caller).
+  @Public()
   @Post()
   async report(@Body() dto: CreateErrorLogDto) {
     await this.debugLog.record(dto);

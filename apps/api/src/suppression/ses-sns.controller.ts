@@ -10,6 +10,7 @@ import { WebhookDeliveriesService } from '../webhooks/webhook-deliveries.service
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Public } from '../auth/public.decorator';
 
 interface SesMailObject {
   messageId?: string;
@@ -109,6 +110,7 @@ export class SesSnsController {
 
   // Health check for SNS subscription verification — SNS performs an initial
   // GET to confirm the endpoint is reachable before sending notifications.
+  @Public()
   @Get()
   getHealthCheck() {
     return { status: 'ok' };
@@ -124,6 +126,7 @@ export class SesSnsController {
     return { url: `${req.protocol}://${req.get('host')}/webhooks/ses/sns` };
   }
 
+  @Public()
   @Post()
   async handle(@Req() req: RawBodyRequest<Request>) {
     const rawBody = req.rawBody ?? Buffer.alloc(0);

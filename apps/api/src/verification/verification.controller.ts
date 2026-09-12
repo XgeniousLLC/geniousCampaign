@@ -9,6 +9,7 @@ import { BulkVerifyDto } from './dto/bulk-verify.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { Public } from '../auth/public.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AuditLogService } from '../auth/audit-log.service';
 
@@ -22,6 +23,7 @@ export class VerificationController {
     @InjectQueue('bulk-verify') private readonly bulkVerifyQueue: Queue,
   ) {}
 
+  @Public()
   @Post('local-check')
   check(@Body() dto: CheckEmailDto) {
     return this.localVerify.check(dto.email);

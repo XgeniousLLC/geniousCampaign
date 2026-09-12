@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import type { Role } from '@genius-campaign/shared';
 import { UsersService } from './users.service';
 
 const REMEMBER_ME_EXPIRY = '14d' as const;
@@ -48,7 +49,7 @@ export class AuthService {
     return { success: true };
   }
 
-  private buildTokenResponse(user: { id: string; email: string; role: string; name?: string | null }, extendExpiry?: boolean) {
+  private buildTokenResponse(user: { id: string; email: string; role: Role; name?: string | null }, extendExpiry?: boolean) {
     const accessToken = this.jwtService.sign(
       { sub: user.id, email: user.email, role: user.role },
       extendExpiry ? { expiresIn: REMEMBER_ME_EXPIRY } : undefined,

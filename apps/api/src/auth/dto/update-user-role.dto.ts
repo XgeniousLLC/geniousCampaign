@@ -1,6 +1,7 @@
 import { IsIn } from 'class-validator';
+import { ROLES } from '@genius-campaign/shared';
 
-export const USER_ROLES = ['owner', 'editor', 'viewer'] as const;
+export const USER_ROLES = ROLES;
 
 export class UpdateUserRoleDto {
   @IsIn(USER_ROLES)

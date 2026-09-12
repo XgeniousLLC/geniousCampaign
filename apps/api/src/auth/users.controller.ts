@@ -40,6 +40,10 @@ export class UsersController {
     if (id === user.id) {
       throw new ForbiddenException('You cannot change your own role.');
     }
-    return this.usersService.updateRole(id, dto.role);
+    return this.drizzle.db.transaction(async (tx) => {
+      const updated = await this.usersService.updateRole(id, dto.role, tx);
+      await this.auditLog.record(user, 'user.role.update', 'user', id, { role: dto.role }, tx);
+      return updated;
+    });
   }
 }

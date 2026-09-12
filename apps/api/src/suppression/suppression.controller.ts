@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { SuppressionService } from './suppression.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { ManualSuppressDto } from './dto/manual-suppress.dto';
 
 @Controller('suppression-list')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SuppressionController {
   constructor(
     private readonly suppression: SuppressionService,
@@ -22,6 +24,7 @@ export class SuppressionController {
   // CLAUDE.md invariant 8) and mirrors the contact's own status field so
   // the contacts list filter/badge stay in sync.
   @Post('manual')
+  @Roles('owner', 'editor')
   async manualSuppress(@Body() dto: ManualSuppressDto) {
     const contact = await this.contactsService.findOne(dto.contactId);
     await this.suppression.suppress(contact.email, 'manual_unsubscribe', 'admin_ui');
@@ -33,6 +36,7 @@ export class SuppressionController {
   // rather than 'suppressed' — the status the contacts filter already
   // exposes but nothing previously set.
   @Post('unsubscribe')
+  @Roles('owner', 'editor')
   async manualUnsubscribe(@Body() dto: ManualSuppressDto) {
     const contact = await this.contactsService.findOne(dto.contactId);
     await this.suppression.suppress(contact.email, 'manual_unsubscribe', 'admin_ui');

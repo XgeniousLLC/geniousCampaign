@@ -1,11 +1,12 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { eq } from 'drizzle-orm';
+import { count, eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { users, type userRoleEnum } from '../db/schema';
+import { users } from '../db/schema';
 import type { DbOrTx } from '../db/types';
+import type { Role } from '@genius-campaign/shared';
 
-type UserRole = (typeof userRoleEnum.enumValues)[number];
+type UserRole = Role;
 
 @Injectable()
 export class UsersService {
@@ -79,9 +80,21 @@ export class UsersService {
     return user;
   }
 
-  async updateRole(id: string, role: UserRole) {
-    await this.findOne(id);
-    const [updated] = await this.drizzle.db
+  async updateRole(id: string, role: UserRole, db: DbOrTx = this.drizzle.db) {
+    const user = await db.query.users.findFirst({ where: eq(users.id, id) });
+    if (!user) throw new NotFoundException(`User ${id} not found`);
+
+    if (user.role === 'owner' && role !== 'owner') {
+      const [{ ownerCount }] = await db
+        .select({ ownerCount: count() })
+        .from(users)
+        .where(eq(users.role, 'owner'));
+      if (ownerCount <= 1) {
+        throw new ConflictException('Cannot demote the last owner — promote another owner first');
+      }
+    }
+
+    const [updated] = await db
       .update(users)
       .set({ role })
       .where(eq(users.id, id))

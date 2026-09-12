@@ -1,6 +1,7 @@
 import { pgTable, pgEnum, uuid, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { ROLES } from '@genius-campaign/shared';
 
-export const userRoleEnum = pgEnum('user_role', ['owner', 'editor', 'viewer']);
+export const userRoleEnum = pgEnum('user_role', ROLES);
 
 export const users = pgTable(
   'users',

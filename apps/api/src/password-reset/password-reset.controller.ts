@@ -1,10 +1,12 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { PasswordResetService } from './password-reset.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
 // Deliberately public — a user requesting/using a password reset has no
 // JWT yet by definition.
+@Public()
 @Controller('auth')
 export class PasswordResetController {
   constructor(private readonly passwordReset: PasswordResetService) {}

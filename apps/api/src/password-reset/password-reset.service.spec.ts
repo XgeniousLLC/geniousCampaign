@@ -43,7 +43,7 @@ describe('PasswordResetService (integration, real DB)', () => {
     usersService = moduleRef.get(UsersService);
     drizzle = moduleRef.get(DrizzleService);
 
-    const created = await usersService.register(userEmail, 'OriginalPassword123');
+    const created = await usersService.createByAdmin(userEmail, 'OriginalPassword123', 'viewer');
     userId = created.id;
   });
 
