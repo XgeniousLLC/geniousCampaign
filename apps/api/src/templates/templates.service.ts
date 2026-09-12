@@ -79,60 +79,81 @@ export class TemplatesService {
    * rate — computed here rather than stored, since they change as sends/opens
    * come in and would otherwise drift out of sync with the sends/email_events
    * tables. */
-  async findAll() {
-    const templateRows = await this.drizzle.db.query.templates.findMany({
-      orderBy: (t, { desc }) => desc(t.updatedAt),
-    });
+  async findAll(page = 1, limit = 20) {
+    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 20));
+    const offset = (safePage - 1) * safeLimit;
 
-    const useRows = await this.drizzle.db
-      .select({
-        templateId: sends.templateId,
-        uses: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(
-          Number,
-        ),
-      })
-      .from(sends)
-      .groupBy(sends.templateId);
+    const [templateRows, [{ count: total }]] = await Promise.all([
+      this.drizzle.db.query.templates.findMany({
+        orderBy: (t, { desc }) => desc(t.updatedAt),
+        limit: safeLimit,
+        offset,
+      }),
+      this.drizzle.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(templates),
+    ]);
+
+    if (templateRows.length === 0) {
+      return { data: [], total, page: safePage, limit: safeLimit };
+    }
+
+    const pageIds = templateRows.map((t) => t.id);
+
+    const [useRows, openRows, usedInRows] = await Promise.all([
+      this.drizzle.db
+        .select({
+          templateId: sends.templateId,
+          uses: sql<number>`count(*) filter (where ${sends.status} = 'sent')`.mapWith(
+            Number,
+          ),
+        })
+        .from(sends)
+        .where(inArray(sends.templateId, pageIds))
+        .groupBy(sends.templateId),
+      this.drizzle.db
+        .select({
+          templateId: sends.templateId,
+          opens: sql<number>`count(distinct ${emailEvents.sendId})`.mapWith(
+            Number,
+          ),
+        })
+        .from(emailEvents)
+        .innerJoin(sends, eq(emailEvents.sendId, sends.id))
+        .where(and(eq(emailEvents.type, 'open'), inArray(sends.templateId, pageIds)))
+        .groupBy(sends.templateId),
+      // Distinct sequences a template is wired into as a step — separate from
+      // "uses" (actual sent count) since a template can sit in a sequence step
+      // and never have fired a send yet. A step can link several templates
+      // (sequenceStepTemplates), so join through it to reach sequenceId.
+      this.drizzle.db
+        .select({
+          templateId: sequenceStepTemplates.templateId,
+          usedInCount:
+            sql<number>`count(distinct ${sequenceSteps.sequenceId})`.mapWith(
+              Number,
+            ),
+        })
+        .from(sequenceStepTemplates)
+        .innerJoin(
+          sequenceSteps,
+          eq(sequenceStepTemplates.sequenceStepId, sequenceSteps.id),
+        )
+        .where(inArray(sequenceStepTemplates.templateId, pageIds))
+        .groupBy(sequenceStepTemplates.templateId),
+    ]);
     const usesByTemplate = new Map(useRows.map((r) => [r.templateId, r.uses]));
 
-    const openRows = await this.drizzle.db
-      .select({
-        templateId: sends.templateId,
-        opens: sql<number>`count(distinct ${emailEvents.sendId})`.mapWith(
-          Number,
-        ),
-      })
-      .from(emailEvents)
-      .innerJoin(sends, eq(emailEvents.sendId, sends.id))
-      .where(eq(emailEvents.type, 'open'))
-      .groupBy(sends.templateId);
     const opensByTemplate = new Map(
       openRows.map((r) => [r.templateId, r.opens]),
     );
 
-    // Distinct sequences a template is wired into as a step — separate from
-    // "uses" (actual sent count) since a template can sit in a sequence step
-    // and never have fired a send yet. A step can link several templates
-    // (sequenceStepTemplates), so join through it to reach sequenceId.
-    const usedInRows = await this.drizzle.db
-      .select({
-        templateId: sequenceStepTemplates.templateId,
-        usedInCount:
-          sql<number>`count(distinct ${sequenceSteps.sequenceId})`.mapWith(
-            Number,
-          ),
-      })
-      .from(sequenceStepTemplates)
-      .innerJoin(
-        sequenceSteps,
-        eq(sequenceStepTemplates.sequenceStepId, sequenceSteps.id),
-      )
-      .groupBy(sequenceStepTemplates.templateId);
     const usedInByTemplate = new Map(
       usedInRows.map((r) => [r.templateId, r.usedInCount]),
     );
 
-    return templateRows.map((t) => {
+    const data = templateRows.map((t) => {
       const uses = usesByTemplate.get(t.id) ?? 0;
       const opens = opensByTemplate.get(t.id) ?? 0;
       return {
@@ -142,6 +163,8 @@ export class TemplatesService {
         usedInCount: usedInByTemplate.get(t.id) ?? 0,
       };
     });
+
+    return { data, total, page: safePage, limit: safeLimit };
   }
 
   async findOne(id: string, db: DbOrTx = this.drizzle.db) {

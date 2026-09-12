@@ -2,11 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { listTemplates, deleteTemplate, deleteTemplates, type Template } from '../lib/templatesApi';
 import { TableSkeleton } from '../components/skeletons';
+import { PaginationBar } from '../components/PaginationBar';
 import { CloseIcon } from '../components/icons';
 import { useAuthStore } from '../stores/useAuthStore';
 
+const PAGE_SIZE = 20;
+
 export function TemplatesList() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -15,10 +20,18 @@ export function TemplatesList() {
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   useEffect(() => {
-    listTemplates()
-      .then(setTemplates)
+    setLoading(true);
+    listTemplates(page, PAGE_SIZE)
+      .then((res) => {
+        setTemplates(res.data);
+        setTotal(res.total);
+        // If user deleted the last item on a page, step back.
+        if (res.data.length === 0 && res.total > 0 && page > 1) {
+          setPage((p) => Math.max(1, p - 1));
+        }
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [page]);
 
   async function handleDelete(e: React.MouseEvent, id: string, name: string) {
     e.stopPropagation();
@@ -27,6 +40,26 @@ export function TemplatesList() {
     try {
       await deleteTemplate(id);
       setTemplates((prev) => prev.filter((t) => t.id !== id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      // If this was the last item on the page, the effect will walk back a page
+      // on next fetch; otherwise keep showing current page. Trigger a refresh
+      // when the page becomes empty.
+      if (templates.length === 1 && page > 1) {
+        setPage((p) => p - 1);
+      } else if (templates.length === 1 && total <= 1) {
+        // Deleted the very last template — stay on page 1.
+      } else if (templates.length <= 1) {
+        // Refresh to fill gap from next page (simple re-fetch)
+        listTemplates(page, PAGE_SIZE).then((res) => {
+          setTemplates(res.data);
+          setTotal(res.total);
+        });
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Delete failed.');
     } finally {
@@ -35,10 +68,15 @@ export function TemplatesList() {
   }
 
   function handleSelectAll() {
-    if (selected.size === templates.length) {
-      setSelected(new Set());
+    const allOnPageSelected = templates.length > 0 && templates.every((t) => selected.has(t.id));
+    if (allOnPageSelected) {
+      const next = new Set(selected);
+      for (const t of templates) next.delete(t.id);
+      setSelected(next);
     } else {
-      setSelected(new Set(templates.map((t) => t.id)));
+      const next = new Set(selected);
+      for (const t of templates) next.add(t.id);
+      setSelected(next);
     }
   }
 
@@ -59,8 +97,17 @@ export function TemplatesList() {
     setBulkDeleting(true);
     try {
       await deleteTemplates(Array.from(selected));
-      setTemplates((prev) => prev.filter((t) => !selected.has(t.id)));
+      const deletedIds = new Set(selected);
+      setTemplates((prev) => prev.filter((t) => !deletedIds.has(t.id)));
+      setTotal((prev) => Math.max(0, prev - deletedIds.size));
       setSelected(new Set());
+      // Re-fetch to fill the page gap and keep pagination consistent.
+      const res = await listTemplates(page, PAGE_SIZE);
+      setTemplates(res.data);
+      setTotal(res.total);
+      if (res.data.length === 0 && res.total > 0 && page > 1) {
+        setPage((p) => Math.max(1, p - 1));
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Bulk delete failed.');
     } finally {
@@ -107,7 +154,7 @@ export function TemplatesList() {
 
       {loading ? (
         <TableSkeleton cols={6} />
-      ) : templates.length === 0 ? (
+      ) : total === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -138,7 +185,7 @@ export function TemplatesList() {
                   <th className="w-10 px-2 py-2">
                     <input
                       type="checkbox"
-                      checked={selected.size === templates.length && templates.length > 0}
+                      checked={templates.length > 0 && templates.every((t) => selected.has(t.id))}
                       onChange={handleSelectAll}
                       className="rounded border border-border-emphasis"
                     />
@@ -215,6 +262,7 @@ export function TemplatesList() {
               ))}
             </tbody>
           </table>
+          {total > 0 && <PaginationBar page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />}
         </div>
       )}
     </div>

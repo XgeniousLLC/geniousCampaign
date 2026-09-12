@@ -60,7 +60,8 @@ export function CampaignCompose() {
   } | null>(null);
 
   useEffect(() => {
-    listTemplates().then((t) => {
+    listTemplates(1, 200).then((res) => {
+      const t = res.data;
       setTemplates(t);
       if (!isEditing && t.length > 0) {
         setTemplateId(t[0].id);

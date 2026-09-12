@@ -147,7 +147,7 @@ export function SequenceBuilder() {
     const [seq, seqSteps, tpls, enr, allContacts, allSequences, senders, seqStats] = await Promise.all([
       getSequence(id),
       listSteps(id),
-      listTemplates(),
+      listTemplates(1, 200).then((r) => r.data),
       listEnrollmentsForSequence(id),
       listContacts(),
       listSequences(),

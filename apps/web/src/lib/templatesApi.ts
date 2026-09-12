@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost, type Page } from './api';
 
 export interface Template {
   id: string;
@@ -40,8 +40,8 @@ export interface SaveTemplateInput {
   bodyJson: Record<string, unknown>;
 }
 
-export function listTemplates() {
-  return apiGet<Template[]>('/templates');
+export function listTemplates(page = 1, limit = 20) {
+  return apiGet<Page<Template>>(`/templates?page=${page}&limit=${limit}`);
 }
 
 export function getTemplate(id: string) {
