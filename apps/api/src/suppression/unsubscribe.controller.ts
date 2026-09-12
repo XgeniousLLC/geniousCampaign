@@ -1,9 +1,11 @@
 import { Controller, Get, Param, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { Public } from '../auth/public.decorator';
 import { SuppressionService } from './suppression.service';
 import { SettingsService } from '../settings/settings.service';
 import { verifyUnsubscribeToken } from '../sending/unsubscribe-token.util';
 
+@Public()
 @Controller('unsubscribe')
 export class UnsubscribeController {
   constructor(

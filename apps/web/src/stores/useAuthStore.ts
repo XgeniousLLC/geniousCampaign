@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Role } from '@genius-campaign/shared';
 
-export type Role = 'owner' | 'editor' | 'viewer';
+export type { Role } from '@genius-campaign/shared';
 
 interface AuthUser {
   id: string;

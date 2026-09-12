@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   envDir: '../../',
+  server: {
+    port: parseInt(process.env.WEB_PORT || '4000', 10),
+    host: true,
+  },
   optimizeDeps: {
     include: ['@genius-campaign/shared'],
   },

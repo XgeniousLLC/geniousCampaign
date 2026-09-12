@@ -1,5 +1,6 @@
 import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { USER_ROLES } from './update-user-role.dto';
+import type { Role } from '@genius-campaign/shared';
 
 export class CreateUserDto {
   @IsOptional()
@@ -13,5 +14,5 @@ export class CreateUserDto {
   password!: string;
 
   @IsIn(USER_ROLES)
-  role!: (typeof USER_ROLES)[number];
+  role!: Role;
 }

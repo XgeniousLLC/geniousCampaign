@@ -36,7 +36,8 @@ describe('AuthService.login — remember me (integration, real DB)', () => {
     drizzle = moduleRef.get(DrizzleService);
 
     const usersService = moduleRef.get(UsersService);
-    const created = await usersService.register(email, password);
+    // Use createByAdmin so test works even when dev DB already has the seed owner
+    const created = await usersService.createByAdmin(email, password, 'viewer');
     userId = created.id;
   });
 

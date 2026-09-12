@@ -1,5 +1,8 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { RolesGuard } from '../../auth/roles.guard';
+import { Roles } from '../../auth/roles.decorator';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { writeFile } from 'node:fs/promises';
@@ -17,6 +20,7 @@ const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullNa
 const SINGLE_USE_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
 
 @Controller('contacts/import')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ContactImportController {
   constructor(
     @InjectQueue('contact-import') private readonly queue: Queue<ContactImportJobData>,
@@ -25,6 +29,7 @@ export class ContactImportController {
   ) {}
 
   @Post()
+  @Roles('owner', 'editor')
   @UseInterceptors(FileInterceptor('file'))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,

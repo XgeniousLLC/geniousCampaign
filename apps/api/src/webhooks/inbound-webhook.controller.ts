@@ -1,4 +1,5 @@
 import { Controller, Headers, Param, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -8,6 +9,7 @@ import { ContactsService } from '../contacts/contacts.service';
 import { verifyHmacSignature } from './hmac.util';
 import { mapPayloadToContact } from './map-payload.util';
 
+@Public()
 @Controller('webhooks/in')
 export class InboundWebhookController {
   constructor(

@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { eq } from 'drizzle-orm';
 import { ContactsService } from '../contacts/contacts.service';
 import { ListsService } from '../lists/lists.service';
@@ -28,6 +29,7 @@ import { contactTags, tags, contactLists, lists as listsTable, sequenceEnrollmen
 // Throttler guard runs first so it also caps floods of invalid keys, not
 // just valid ones (ApiKeyAuthGuard would otherwise 401 and short-circuit
 // before any rate limit ever applied).
+@Public()
 @Controller('api/v1')
 @UseGuards(PublicApiThrottlerGuard, ApiKeyAuthGuard)
 export class PublicApiController {

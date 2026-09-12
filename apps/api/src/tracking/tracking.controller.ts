@@ -2,11 +2,13 @@ import { Controller, Get, Header, Param, Res, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { TrackingService } from './tracking.service';
 import { DebugLogService } from '../debug-log/debug-log.service';
+import { Public } from '../auth/public.decorator';
 
 // A 1x1 transparent GIF, served for every open-pixel request regardless of
 // token validity (a broken pixel would look suspicious in mail clients).
 const TRANSPARENT_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7', 'base64');
 
+@Public()
 @Controller('t')
 export class TrackingController {
   private readonly logger = new Logger(TrackingController.name);
