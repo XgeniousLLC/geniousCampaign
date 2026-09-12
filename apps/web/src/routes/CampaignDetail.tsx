@@ -56,7 +56,7 @@ export function CampaignDetail() {
       getCampaign(id),
       getCampaignSends(id),
       listContacts(),
-      listTemplates(),
+      listTemplates(1, 200).then((r) => r.data),
       listLists(),
     ]);
     setCampaign(c);

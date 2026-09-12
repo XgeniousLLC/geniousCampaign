@@ -67,8 +67,11 @@ export class TemplatesController {
   }
 
   @Get()
-  findAll() {
-    return this.templatesService.findAll();
+  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.templatesService.findAll(
+      page ? parseInt(page, 10) : undefined,
+      limit ? parseInt(limit, 10) : undefined,
+    );
   }
 
   @Get(':id')
