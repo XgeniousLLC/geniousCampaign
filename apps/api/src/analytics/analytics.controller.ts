@@ -27,4 +27,14 @@ export class AnalyticsController {
   recentActivity(@Query('limit') limit?: string) {
     return this.analytics.getRecentActivity(limit ? Number(limit) : undefined);
   }
+
+  @Get('today')
+  todayStats() {
+    return this.analytics.getTodayStats();
+  }
+
+  @Get('summary')
+  dashboardSummary() {
+    return this.analytics.getDashboardSummary();
+  }
 }
