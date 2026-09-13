@@ -45,6 +45,26 @@ export interface PublicSummary {
   contactCount: number;
 }
 
+export interface TodayStats {
+  sentCount: number;
+  failedCount: number;
+  bouncedCount: number;
+  totalCount: number;
+  openCount: number;
+  clickCount: number;
+  openRatePct: number;
+  clickRatePct: number;
+  bounceRatePct: number;
+}
+
+export interface DashboardSummary {
+  contactCount: number;
+  activeSequenceCount: number;
+  campaignCount: number;
+  listCount: number;
+  activeEnrollmentCount: number;
+}
+
 /** Unauthenticated — safe to call before login (real aggregate counts only). */
 export function getPublicSummary() {
   return apiGet<PublicSummary>('/analytics/public/summary');
@@ -64,4 +84,12 @@ export function getRecentCampaigns(limit = 5) {
 
 export function getRecentActivity(limit = 10) {
   return apiGet<RecentActivityItem[]>(`/analytics/recent-activity?limit=${limit}`);
+}
+
+export function getTodayStats() {
+  return apiGet<TodayStats>('/analytics/today');
+}
+
+export function getDashboardSummary() {
+  return apiGet<DashboardSummary>('/analytics/summary');
 }
