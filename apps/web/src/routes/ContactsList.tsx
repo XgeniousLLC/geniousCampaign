@@ -804,7 +804,7 @@ export function ListDetail() {
   return <ContactsList listId={id} />;
 }
 
-function FormField({
+export function FormField({
   label,
   value,
   onChange,
