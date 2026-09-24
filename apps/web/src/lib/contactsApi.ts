@@ -116,7 +116,7 @@ export function avatarColor(id: string): string {
 
 export function updateContact(
   id: string,
-  input: Partial<Pick<Contact, 'firstName' | 'lastName' | 'status'>> & { customFields?: Record<string, unknown> },
+  input: Partial<Pick<Contact, 'email' | 'firstName' | 'lastName' | 'status'>> & { customFields?: Record<string, unknown> },
 ) {
   return apiPatch<Contact>(`/contacts/${id}`, input);
 }
