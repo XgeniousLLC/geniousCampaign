@@ -6,9 +6,10 @@ import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../../db/drizzle.service';
 import { ListsService } from '../../lists/lists.service';
 import { TagsService } from '../../tags/tags.service';
+import { CustomFieldsService } from '../../custom-fields/custom-fields.service';
 import { contacts } from '../../db/schema';
 
-export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore';
+export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore' | `custom:${string}`;
 export type ImportContactStatus = 'active' | 'unsubscribed' | 'bounced' | 'suppressed';
 
 export interface ContactImportJobData {
@@ -60,6 +61,7 @@ export class ContactImportProcessor extends WorkerHost {
     private readonly drizzle: DrizzleService,
     private readonly listsService: ListsService,
     private readonly tagsService: TagsService,
+    private readonly customFields: CustomFieldsService,
   ) {
     super();
   }
@@ -79,7 +81,21 @@ export class ContactImportProcessor extends WorkerHost {
     const firstNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'firstName');
     const lastNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'lastName');
     const fullNameColumn = Object.keys(columnMapping).find((key) => columnMapping[key] === 'fullName');
-    const customColumns = Object.keys(columnMapping).filter((key) => columnMapping[key] === 'custom');
+    // A column maps to custom in two ways: bare 'custom' (def key derived
+    // from the column header itself, auto-created like the public API's
+    // customFields path) or 'custom:<key>' (an explicit custom-field def
+    // picked in the import mapping UI). Either way the def is ensured up
+    // front so every value lands under a canonical def key, not a raw
+    // header string.
+    const customEntries = Object.entries(columnMapping).filter(
+      ([, target]) => target === 'custom' || target.startsWith('custom:'),
+    );
+    const customDestByColumn = new Map<string, string>();
+    for (const [col, target] of customEntries) {
+      const rawKey = target === 'custom' ? col : target.slice('custom:'.length);
+      const def = await this.customFields.getOrCreateByKey(rawKey);
+      customDestByColumn.set(col, def.key);
+    }
 
     // Fetched once outside the per-row loop — addContactSilent() would
     // otherwise re-look these up on every single row.
@@ -120,8 +136,8 @@ export class ContactImportProcessor extends WorkerHost {
         }
       }
       const customFields: Record<string, string> = {};
-      for (const col of customColumns) {
-        if (row[col]) customFields[col] = row[col];
+      for (const [col, destKey] of customDestByColumn) {
+        if (row[col]) customFields[destKey] = row[col];
       }
 
       try {
