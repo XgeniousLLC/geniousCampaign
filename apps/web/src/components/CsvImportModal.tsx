@@ -14,21 +14,29 @@ import {
   type Tag,
 } from '../lib/contactsApi';
 import { previewCsv, guessColumnTarget, type CsvPreview } from '../lib/csvPreview';
+import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi';
 import { CloseIcon } from './icons';
 
 type Step = 'pick' | 'map' | 'progress' | 'done';
 
-const TARGET_LABELS: Record<ColumnTarget, string> = {
+const FIXED_TARGET_LABELS: Record<string, string> = {
   email: 'Email',
   firstName: 'First name',
   lastName: 'Last name',
   fullName: 'Full name (split into first/last)',
-  custom: 'Custom field',
+  custom: 'Custom field (new from column name)',
   ignore: 'Ignore this column',
 };
 
-// custom/ignore may repeat across columns; every other target is 1:1.
-const SINGLE_USE_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
+// Fixed single-use targets, plus any 'custom:<defKey>' pick (one CSV column
+// per custom field — two columns writing to the same field would silently
+// overwrite each other). Bare 'custom' and 'ignore' may repeat.
+const SINGLE_USE_FIXED_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
+
+function isSingleUseTarget(target: string): boolean {
+  if ((SINGLE_USE_FIXED_TARGETS as string[]).includes(target)) return true;
+  return target.startsWith('custom:');
+}
 
 const STATUS_LABELS: Record<Contact['status'], string> = {
   active: 'Active',
@@ -48,6 +56,7 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
   const [mapping, setMapping] = useState<Record<string, ColumnTarget>>({});
   const [lists, setLists] = useState<List[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [fieldDefs, setFieldDefs] = useState<CustomFieldDef[]>([]);
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [newListName, setNewListName] = useState('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
@@ -62,6 +71,7 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
   useEffect(() => {
     listLists().then(setLists);
     listTags().then(setTags);
+    listCustomFieldDefs().then(setFieldDefs).catch(() => undefined);
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current);
     };
@@ -78,18 +88,18 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
     const p = await previewCsv(f);
     setPreview(p);
     const initialMapping: Record<string, ColumnTarget> = {};
-    const usedSingleUseTargets = new Set<ColumnTarget>();
+    const usedSingleUseTargets = new Set<string>();
     for (const h of p.headers) {
       const key = h.trim().toLowerCase();
       const guess = guessColumnTarget(h);
       // Only the first header matching a given single-use target (e.g. two
       // differently-worded "email" columns) gets auto-mapped to it — the
       // rest fall back to Ignore rather than silently colliding.
-      if (SINGLE_USE_TARGETS.includes(guess) && usedSingleUseTargets.has(guess)) {
+      if (isSingleUseTarget(guess) && usedSingleUseTargets.has(guess)) {
         initialMapping[key] = 'ignore';
       } else {
         initialMapping[key] = guess;
-        if (SINGLE_USE_TARGETS.includes(guess)) usedSingleUseTargets.add(guess);
+        if (isSingleUseTarget(guess)) usedSingleUseTargets.add(guess);
       }
     }
     setMapping(initialMapping);
@@ -234,13 +244,26 @@ export function CsvImportModal({ onClose, onImported }: { onClose: () => void; o
                                 onChange={(e) => setMapping((prev) => ({ ...prev, [key]: e.target.value as ColumnTarget }))}
                                 className="h-7 rounded border border-border-default bg-field px-1.5 text-[11px] text-text-primary"
                               >
-                                {(Object.keys(TARGET_LABELS) as ColumnTarget[]).map((t) => {
+                                {(
+                                  [
+                                    'email',
+                                    'firstName',
+                                    'lastName',
+                                    'fullName',
+                                    ...fieldDefs.map((d) => `custom:${d.key}`),
+                                    'custom',
+                                    'ignore',
+                                  ] as ColumnTarget[]
+                                ).map((t) => {
                                   const takenByOtherColumn =
-                                    SINGLE_USE_TARGETS.includes(t) &&
+                                    isSingleUseTarget(t) &&
                                     Object.entries(mapping).some(([otherKey, otherTarget]) => otherKey !== key && otherTarget === t);
+                                  const label = t.startsWith('custom:')
+                                    ? `Custom: ${fieldDefs.find((d) => `custom:${d.key}` === t)?.label ?? t.slice(7)}`
+                                    : (FIXED_TARGET_LABELS[t] ?? t);
                                   return (
                                     <option key={t} value={t} disabled={takenByOtherColumn}>
-                                      {TARGET_LABELS[t]}
+                                      {label}
                                       {takenByOtherColumn ? ' (already mapped)' : ''}
                                     </option>
                                   );

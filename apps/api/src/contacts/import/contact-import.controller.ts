@@ -14,10 +14,22 @@ import { TagsService } from '../../tags/tags.service';
 import { CONTACT_STATUSES } from '../dto/create-contact.dto';
 import type { ColumnTarget, ContactImportJobData, ImportContactStatus } from './contact-import.processor';
 
-const VALID_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName', 'custom', 'ignore'];
+const VALID_FIXED_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName', 'custom', 'ignore'];
 // custom/ignore may repeat across columns; every other target is 1:1 —
 // e.g. two columns both mapped to "email" is a user mistake, not a valid layout.
-const SINGLE_USE_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
+// An explicit custom-field pick ('custom:<defKey>') is also 1:1 per def key —
+// two columns writing to the same field would silently overwrite each other.
+const SINGLE_USE_FIXED_TARGETS: ColumnTarget[] = ['email', 'firstName', 'lastName', 'fullName'];
+
+function isValidTarget(target: string): target is ColumnTarget {
+  if ((VALID_FIXED_TARGETS as string[]).includes(target)) return true;
+  return target.startsWith('custom:') && target.slice('custom:'.length).trim().length > 0;
+}
+
+function isSingleUseTarget(target: string): boolean {
+  if ((SINGLE_USE_FIXED_TARGETS as string[]).includes(target)) return true;
+  return target.startsWith('custom:');
+}
 
 @Controller('contacts/import')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -51,14 +63,14 @@ export class ContactImportController {
       }
     }
     for (const [key, target] of Object.entries(columnMapping)) {
-      if (!VALID_TARGETS.includes(target)) {
+      if (!isValidTarget(target)) {
         throw new BadRequestException(`Invalid mapping target "${target}" for column "${key}"`);
       }
     }
     if (!Object.values(columnMapping).includes('email')) {
       throw new BadRequestException('columnMapping must map exactly one CSV column to "email"');
     }
-    for (const target of SINGLE_USE_TARGETS) {
+    for (const target of new Set(Object.values(columnMapping).filter(isSingleUseTarget))) {
       const columns = Object.entries(columnMapping).filter(([, t]) => t === target).map(([key]) => key);
       if (columns.length > 1) {
         throw new BadRequestException(`Multiple columns (${columns.join(', ')}) are mapped to "${target}" — each field can only be mapped once`);

@@ -32,7 +32,7 @@ export interface List {
   updatedAt: string;
 }
 
-export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore';
+export type ColumnTarget = 'email' | 'firstName' | 'lastName' | 'fullName' | 'custom' | 'ignore' | `custom:${string}`;
 
 export interface ImportProgress {
   percent: number;
