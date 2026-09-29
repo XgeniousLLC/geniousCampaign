@@ -16,13 +16,14 @@ import {
   type SequenceStep,
 } from '../lib/sequencesApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
-import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
+import { listContacts, listLists, listTags, listContactsForList, listContactsForTag, avatarColor, type Contact, type List, type Tag } from '../lib/contactsApi';
 import {
-  enrollContact,
+  enrollContactsBulk,
   listEnrollmentsForSequence,
   pauseEnrollment,
   resumeEnrollment,
   stopEnrollment,
+  type BulkEnrollResult,
   type Enrollment,
 } from '../lib/enrollmentsApi';
 import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi';
@@ -132,8 +133,16 @@ export function SequenceBuilder() {
   const [tab, setTab] = useState<Tab>('Steps');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [enrollPickerOpen, setEnrollPickerOpen] = useState(false);
-  const [enrollContactId, setEnrollContactId] = useState('');
+  const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+  const [enrollTab, setEnrollTab] = useState<'individual' | 'list' | 'tag'>('individual');
+  const [enrollSearch, setEnrollSearch] = useState('');
+  const [enrollSelectedIds, setEnrollSelectedIds] = useState<string[]>([]);
+  const [enrollLists, setEnrollLists] = useState<List[]>([]);
+  const [enrollTags, setEnrollTags] = useState<Tag[]>([]);
+  const [enrollListId, setEnrollListId] = useState('');
+  const [enrollTagId, setEnrollTagId] = useState('');
+  const [enrollPreview, setEnrollPreview] = useState<{ total: number; eligible: number } | null>(null);
+  const [enrollResult, setEnrollResult] = useState<BulkEnrollResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
   const [dirty, setDirty] = useState(false);
@@ -378,13 +387,43 @@ export function SequenceBuilder() {
 
   // --- Enrollment actions (unchanged, these are not step edits) ---
 
-  async function handleEnroll() {
-    if (!id || !enrollContactId) return;
+  const enrolledContactIds = useMemo(() => new Set(enrollments.filter((e) => e.status === 'active' || e.status === 'paused').map((e) => e.contactId)), [enrollments]);
+
+  function openEnrollModal() {
+    setEnrollModalOpen(true);
+    setEnrollResult(null);
+    if (enrollLists.length === 0) listLists().then(setEnrollLists).catch(() => undefined);
+    if (enrollTags.length === 0) listTags().then(setEnrollTags).catch(() => undefined);
+  }
+
+  // Member preview for the List/Tag tabs — total members vs. how many are
+  // actually eligible (already-enrolled contacts are skipped server-side).
+  useEffect(() => {
+    if (!enrollModalOpen) return;
+    if (enrollTab === 'list' && enrollListId) {
+      setEnrollPreview(null);
+      listContactsForList(enrollListId)
+        .then((rows) => setEnrollPreview({ total: rows.length, eligible: rows.filter((r) => !enrolledContactIds.has(r.contact.id)).length }))
+        .catch(() => setEnrollPreview(null));
+    } else if (enrollTab === 'tag' && enrollTagId) {
+      setEnrollPreview(null);
+      listContactsForTag(enrollTagId)
+        .then((rows) => setEnrollPreview({ total: rows.length, eligible: rows.filter((r) => !enrolledContactIds.has(r.contact.id)).length }))
+        .catch(() => setEnrollPreview(null));
+    } else {
+      setEnrollPreview(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollModalOpen, enrollTab, enrollListId, enrollTagId, enrollments]);
+
+  async function handleBulkEnroll(input: { contactIds?: string[]; listId?: string; tagId?: string }) {
+    if (!id) return;
     setBusy('enroll');
+    setEnrollResult(null);
     try {
-      await enrollContact(id, enrollContactId);
-      setEnrollContactId('');
-      setEnrollPickerOpen(false);
+      const result = await enrollContactsBulk(id, input);
+      setEnrollResult(result);
+      setEnrollSelectedIds([]);
       reload();
     } finally {
       setBusy(null);
@@ -426,10 +465,15 @@ export function SequenceBuilder() {
     }
   }
 
-  const enrolledContacts = enrollments
-    .filter((e) => e.status === 'active' || e.status === 'paused')
-    .map((e) => e.contactId);
-  const availableContacts = contacts.filter((c) => !enrolledContacts.includes(c.id));
+  const availableContacts = useMemo(() => contacts.filter((c) => !enrolledContactIds.has(c.id)), [contacts, enrolledContactIds]);
+
+  const enrollSearchResults = useMemo(() => {
+    const q = enrollSearch.trim().toLowerCase();
+    const filtered = q
+      ? availableContacts.filter((c) => `${c.firstName ?? ''} ${c.lastName ?? ''} ${c.email}`.toLowerCase().includes(q))
+      : availableContacts;
+    return filtered.slice(0, 200);
+  }, [availableContacts, enrollSearch]);
 
   if (!sequence) {
     return (
@@ -464,9 +508,193 @@ export function SequenceBuilder() {
           </div>
           <div className="h-40 rounded-md border border-border-default bg-panel" />
         </div>
-      </div>
-    );
-  }
+      {enrollModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6" onClick={() => setEnrollModalOpen(false)}>
+          <div
+            className="flex max-h-[85vh] w-[560px] max-w-full flex-col overflow-hidden rounded-xl border border-border-modal bg-panel2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border-default px-4 py-3">
+              <h3 className="text-sm font-semibold text-text-heading">Enroll contacts</h3>
+              <button onClick={() => setEnrollModalOpen(false)} className="text-text-muted hover:text-text-primary">
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="flex gap-5 border-b border-border-default px-4">
+              {(['individual', 'list', 'tag'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { setEnrollTab(t); setEnrollResult(null); }}
+                  className={`-mb-px border-b-2 pb-2.5 pt-3 text-sm font-medium capitalize ${
+                    enrollTab === t ? 'border-accent text-text-primary' : 'border-transparent text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {t === 'individual' ? 'Individual' : t}
+                </button>
+              ))}
+            </div>
+
+            <div className="min-h-[220px] flex-1 overflow-y-auto px-4 py-4">
+              {enrollTab === 'individual' && (
+                <div>
+                  <input
+                    value={enrollSearch}
+                    onChange={(e) => setEnrollSearch(e.target.value)}
+                    placeholder="Search by name or email…"
+                    className="mb-2 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary"
+                  />
+                  <div className="mb-2 flex items-center justify-between text-[11px] text-text-faint">
+                    <span>{availableContacts.length} available · {enrollSelectedIds.length} selected</span>
+                    <button
+                      onClick={() => setEnrollSelectedIds(enrollSearchResults.map((c) => c.id))}
+                      className="font-medium text-accent-light hover:underline"
+                    >
+                      Select visible
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto rounded-md border border-border-default">
+                    {enrollSearchResults.map((c) => (
+                      <label key={c.id} className="flex cursor-pointer items-center gap-2.5 border-t border-border-subtle px-3 py-2 first:border-t-0 hover:bg-raised">
+                        <input
+                          type="checkbox"
+                          checked={enrollSelectedIds.includes(c.id)}
+                          onChange={() => setEnrollSelectedIds((prev) => (prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id]))}
+                          className="accent-accent"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-medium text-text-secondary">{displayName(c)}</span>
+                          <span className="block truncate font-mono text-[11px] text-text-faint">{c.email}</span>
+                        </span>
+                      </label>
+                    ))}
+                    {enrollSearchResults.length === 0 && (
+                      <div className="px-3 py-6 text-center text-xs text-text-muted">
+                        {availableContacts.length === 0 ? 'Every contact is already enrolled.' : 'No contacts match this search.'}
+                      </div>
+                    )}
+                  </div>
+                  {availableContacts.length > enrollSearchResults.length && (
+                    <div className="mt-1 text-[11px] text-text-faint">Showing first {enrollSearchResults.length} — refine the search to narrow it down.</div>
+                  )}
+                </div>
+              )}
+
+              {enrollTab === 'list' && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-text-secondary">Enroll every member of a list</div>
+                  <select
+                    value={enrollListId}
+                    onChange={(e) => setEnrollListId(e.target.value)}
+                    className="h-8 w-full rounded-md border border-border-default bg-field px-2 text-xs text-text-primary"
+                  >
+                    <option value="">Select a list…</option>
+                    {enrollLists.map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                  {enrollListId && (
+                    <div className="mt-2 text-xs text-text-muted">
+                      {enrollPreview ? (
+                        <>{enrollPreview.total} members · <span className="font-mono text-text-primary">{enrollPreview.eligible}</span> eligible{enrollPreview.total - enrollPreview.eligible > 0 && ` (${enrollPreview.total - enrollPreview.eligible} already enrolled — skipped)`}</>
+                      ) : (
+                        'Loading members…'
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {enrollTab === 'tag' && (
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold text-text-secondary">Enroll every contact with a tag</div>
+                  <select
+                    value={enrollTagId}
+                    onChange={(e) => setEnrollTagId(e.target.value)}
+                    className="h-8 w-full rounded-md border border-border-default bg-field px-2 text-xs text-text-primary"
+                  >
+                    <option value="">Select a tag…</option>
+                    {enrollTags.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  {enrollTagId && (
+                    <div className="mt-2 text-xs text-text-muted">
+                      {enrollPreview ? (
+                        <>{enrollPreview.total} tagged · <span className="font-mono text-text-primary">{enrollPreview.eligible}</span> eligible{enrollPreview.total - enrollPreview.eligible > 0 && ` (${enrollPreview.total - enrollPreview.eligible} already enrolled — skipped)`}</>
+                      ) : (
+                        'Loading tagged contacts…'
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {enrollResult && (
+                <div className="mt-3 rounded-md border border-success/25 bg-success/10 px-3 py-2 text-xs text-text-secondary">
+                  <span className="font-semibold text-success">{enrollResult.enrolled} enrolled</span>
+                  {enrollResult.skipped > 0 && <span> · {enrollResult.skipped} already enrolled (skipped)</span>}
+                  {enrollResult.failed > 0 && <span className="text-danger"> · {enrollResult.failed} failed</span>}
+                  {enrollResult.errors.length > 0 && (
+                    <div className="mt-1.5 max-h-24 overflow-y-auto">
+                      {enrollResult.errors.map((e, i) => (
+                        <div key={i} className="font-mono text-[11px] text-danger">{e.contactId}: {e.reason}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border-default bg-surface px-4 py-3">
+              {enrollResult ? (
+                <button onClick={() => setEnrollModalOpen(false)} className="h-8 rounded-md bg-accent px-4 text-xs font-semibold text-white hover:bg-accent-hover">
+                  Done
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setEnrollModalOpen(false)}
+                    className="h-8 rounded-md border border-border-subtle px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+                  >
+                    Cancel
+                  </button>
+                  {enrollTab === 'individual' && (
+                    <button
+                      onClick={() => handleBulkEnroll({ contactIds: enrollSelectedIds })}
+                      disabled={enrollSelectedIds.length === 0 || busy === 'enroll'}
+                      className="h-8 rounded-md bg-accent px-4 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {busy === 'enroll' ? 'Enrolling…' : `Enroll ${enrollSelectedIds.length} contact${enrollSelectedIds.length === 1 ? '' : 's'}`}
+                    </button>
+                  )}
+                  {enrollTab === 'list' && (
+                    <button
+                      onClick={() => handleBulkEnroll({ listId: enrollListId })}
+                      disabled={!enrollListId || !enrollPreview || enrollPreview.eligible === 0 || busy === 'enroll'}
+                      className="h-8 rounded-md bg-accent px-4 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {busy === 'enroll' ? 'Enrolling…' : `Enroll ${enrollPreview?.eligible ?? 'list'}`}
+                    </button>
+                  )}
+                  {enrollTab === 'tag' && (
+                    <button
+                      onClick={() => handleBulkEnroll({ tagId: enrollTagId })}
+                      disabled={!enrollTagId || !enrollPreview || enrollPreview.eligible === 0 || busy === 'enroll'}
+                      className="h-8 rounded-md bg-accent px-4 text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                    >
+                      {busy === 'enroll' ? 'Enrolling…' : `Enroll ${enrollPreview?.eligible ?? 'tag'}`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
   return (
     <div>
@@ -515,40 +743,12 @@ export function SequenceBuilder() {
                 {saving ? 'Saving…' : 'Save changes'}
               </button>
             )}
-            <div className="relative">
-              <button
-                onClick={() => setEnrollPickerOpen((v) => !v)}
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
-              >
-                Enroll contacts
-              </button>
-              {enrollPickerOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setEnrollPickerOpen(false)} />
-                  <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-border-modal bg-panel2 p-3 shadow-lg">
-                    <select
-                      value={enrollContactId}
-                      onChange={(e) => setEnrollContactId(e.target.value)}
-                      className="mb-2 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary"
-                    >
-                      <option value="">Select a contact…</option>
-                      {availableContacts.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {displayName(c)} — {c.email}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={handleEnroll}
-                      disabled={!enrollContactId || busy === 'enroll'}
-                      className="h-8 w-full rounded-md bg-accent text-xs font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-                    >
-                      Enroll
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <button
+              onClick={openEnrollModal}
+              className="flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+            >
+              Enroll contacts
+            </button>
             <button
               onClick={handlePauseSequence}
               disabled={busy === 'pause-all' || activeEnrolledCount === 0}
