@@ -16,16 +16,7 @@ export class EnrollmentService {
   constructor(private readonly drizzle: DrizzleService) {}
 
   async enroll(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
-    const sequence = await db.query.sequences.findFirst({ where: eq(sequences.id, sequenceId) });
-    if (!sequence) {
-      throw new NotFoundException(`Sequence ${sequenceId} not found`);
-    }
-    if (!sequence.isActive) {
-      // Single choke point (this method) covers manual enroll, the public
-      // API, and trigger-driven auto-enroll (TriggerEvaluationService calls
-      // this same method) — an inactive sequence rejects all three alike.
-      throw new ConflictException(`Sequence ${sequenceId} is not active`);
-    }
+    await this.ensureSequenceEnrollable(sequenceId, db);
     const contact = await db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
@@ -78,6 +69,22 @@ export class EnrollmentService {
     }
 
     return created;
+  }
+
+  /** Fail-fast pre-check for bulk enroll (and enroll() itself): a missing
+   * or inactive sequence rejects the whole request before any per-contact
+   * work starts. enroll() still calls this per contact, so it stays the
+   * single choke point — an inactive sequence rejects manual, public-API,
+   * and trigger-driven enrolls alike. */
+  async ensureSequenceEnrollable(sequenceId: string, db: DbOrTx = this.drizzle.db) {
+    const sequence = await db.query.sequences.findFirst({ where: eq(sequences.id, sequenceId) });
+    if (!sequence) {
+      throw new NotFoundException(`Sequence ${sequenceId} not found`);
+    }
+    if (!sequence.isActive) {
+      throw new ConflictException(`Sequence ${sequenceId} is not active`);
+    }
+    return sequence;
   }
 
   async pause(enrollmentId: string, db: DbOrTx = this.drizzle.db) {

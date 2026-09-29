@@ -31,6 +31,20 @@ export function enrollContact(sequenceId: string, contactId: string) {
   return apiPost<Enrollment>(`/admin/sequences/${sequenceId}/enroll`, { contactId });
 }
 
+export interface BulkEnrollResult {
+  enrolled: number;
+  skipped: number;
+  failed: number;
+  errors: { contactId: string; reason: string }[];
+}
+
+export function enrollContactsBulk(
+  sequenceId: string,
+  input: { contactIds?: string[]; listId?: string; tagId?: string },
+) {
+  return apiPost<BulkEnrollResult>(`/admin/sequences/${sequenceId}/enroll-bulk`, input);
+}
+
 export function pauseEnrollment(sequenceId: string, contactId: string) {
   return apiPost<Enrollment>(`/admin/sequences/${sequenceId}/pause`, { contactId });
 }
