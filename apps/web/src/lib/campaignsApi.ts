@@ -99,6 +99,10 @@ export function cancelCampaignSchedule(id: string) {
   return apiPost<{ id: string; status: CampaignStatus }>(`/campaigns/${id}/cancel-schedule`, {});
 }
 
+export function recoverCampaign(id: string) {
+  return apiPost<{ id: string; resumed: boolean; reason?: string; requeued?: number }>(`/campaigns/${id}/recover`, {});
+}
+
 export function deleteCampaign(id: string) {
   return apiDelete<{ id: string }>(`/campaigns/${id}`);
 }

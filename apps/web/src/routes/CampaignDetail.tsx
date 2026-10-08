@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, deleteCampaign, runCampaignForReal, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
+import { getCampaign, getCampaignSends, sendCampaign, cancelCampaignSchedule, deleteCampaign, runCampaignForReal, recoverCampaign, type Campaign, type CampaignSend, type CampaignStatus } from '../lib/campaignsApi';
 import { listContacts, avatarColor, type Contact } from '../lib/contactsApi';
 import { listTemplates, type Template } from '../lib/templatesApi';
 import { listLists, type List } from '../lib/contactsApi';
@@ -132,6 +132,20 @@ export function CampaignDetail() {
     setActionError(null);
     try {
       await cancelCampaignSchedule(id);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleRecover() {
+    if (!id) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await recoverCampaign(id);
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -350,6 +364,22 @@ export function CampaignDetail() {
             className="h-8 rounded-md bg-accent px-3 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {actionBusy ? 'Sending…' : 'Send now'}
+          </button>
+        </div>
+      )}
+
+      {canWrite && campaign.status === 'sending' && (
+        <div className="mb-4 flex max-w-[820px] items-center gap-2.5 rounded-md border border-border-default bg-panel px-3.5 py-2.5">
+          <div className="flex-1 text-xs text-text-secondary">
+            Sending in the background — you can leave this page, it keeps going on its own. If progress stalls, resume picks up the remaining recipients without re-emailing anyone.
+          </div>
+          {actionError && <div className="text-[11px] text-danger">{actionError}</div>}
+          <button
+            onClick={handleRecover}
+            disabled={actionBusy}
+            className="h-8 rounded-md border border-border-subtle px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {actionBusy ? 'Resuming…' : 'Resume stuck send'}
           </button>
         </div>
       )}

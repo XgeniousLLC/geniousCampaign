@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
@@ -22,4 +22,26 @@ import { SendingModule } from '../sending/sending.module';
   providers: [CampaignsService, CampaignSendProcessor],
   exports: [CampaignsService],
 })
-export class CampaignsModule {}
+export class CampaignsModule implements OnModuleInit {
+  private readonly logger = new Logger(CampaignsModule.name);
+
+  constructor(private readonly campaigns: CampaignsService) {}
+
+  /** Self-healing boot: re-enqueue whatever a crash/restart left behind
+   * (campaigns wedged in 'sending', scheduled drafts whose delayed job is
+   * gone). Everything re-enqueued is idempotent, so this is safe on every
+   * boot — and it is what makes scheduled/automatic sends survive a
+   * deploy without anyone having the panel open. */
+  async onModuleInit() {
+    try {
+      const result = await this.campaigns.resumeStuckCampaigns();
+      if (result.resumed > 0) {
+        this.logger.log(`Resumed ${result.resumed} stuck campaign(s) on boot`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Campaign resume sweep failed on boot: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+}
