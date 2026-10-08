@@ -27,6 +27,14 @@ export class R2Service {
       region: 'auto',
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId, secretAccessKey },
+      // The SDK's flexible-checksum default injects x-amz-checksum-crc32 /
+      // x-amz-sdk-checksum-algorithm into the presigned URL, forcing the
+      // browser to send matching checksum headers on the PUT — an extra
+      // signed-header surface that fails browser uploads (CORS preflight +
+      // signature mismatch) for zero benefit on template images. Checksums
+      // are optional for PutObject, so only compute one when R2 requires it.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
     return { client, bucket, publicBaseUrl };
   }
