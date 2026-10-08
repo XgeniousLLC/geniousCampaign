@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch } from './api';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api';
 
 export interface SettingField {
   key: string;
