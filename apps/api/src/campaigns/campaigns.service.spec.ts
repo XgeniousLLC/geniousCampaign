@@ -1,10 +1,16 @@
-import { Test } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { BullModule } from '@nestjs/bullmq';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
+import type { Queue } from 'bullmq';
 import { CampaignsService } from './campaigns.service';
 import { ListsService } from '../lists/lists.service';
+import { SettingsService } from '../settings/settings.service';
+import { SuppressionService } from '../suppression/suppression.service';
+import { TrackingService } from '../tracking/tracking.service';
+import { SendDispatcherService } from '../sending/send-dispatcher.service';
+import { SenderAccountService } from '../sending/sender-account.service';
 import { DrizzleService } from '../db/drizzle.service';
 import {
   contacts,
@@ -17,12 +23,13 @@ import {
 describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confirmation', () => {
   let service: CampaignsService;
   let drizzle: DrizzleService;
+  let moduleRef: TestingModule;
   let templateId: string;
   let listId: string;
   let contactIds: string[] = [];
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
@@ -37,7 +44,18 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
         BullModule.registerQueue({ name: 'campaign-send' }),
         EventEmitterModule.forRoot(),
       ],
-      providers: [CampaignsService, ListsService, DrizzleService],
+      providers: [
+        CampaignsService,
+        ListsService,
+        DrizzleService,
+        // send()/remove() never touch the send path — stubs keep this spec
+        // light instead of pulling in the whole sending stack.
+        { provide: SettingsService, useValue: {} },
+        { provide: SuppressionService, useValue: {} },
+        { provide: TrackingService, useValue: {} },
+        { provide: SendDispatcherService, useValue: {} },
+        { provide: SenderAccountService, useValue: {} },
+      ],
     }).compile();
 
     // A tiny threshold (3) so 5 test contacts deterministically count as "large".
@@ -85,6 +103,8 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
   });
 
   afterAll(async () => {
+    const queue = moduleRef.get<Queue>(getQueueToken('campaign-send'));
+    await queue.drain();
     await drizzle.db
       .delete(campaigns)
       .where(eq(campaigns.templateId, templateId));
@@ -95,6 +115,7 @@ describe('CampaignsService.send (integration, real DB) — GC-053 pre-send confi
     await drizzle.db.delete(templates).where(eq(templates.id, templateId));
     for (const id of contactIds)
       await drizzle.db.delete(contacts).where(eq(contacts.id, id));
+    await moduleRef.close();
   });
 
   it('blocks a send above the threshold server-side without confirmed:true, and never enqueues a job', async () => {

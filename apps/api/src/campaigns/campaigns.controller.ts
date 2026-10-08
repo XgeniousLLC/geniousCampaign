@@ -87,4 +87,16 @@ export class CampaignsController {
     await this.auditLog.record(user, 'campaign.cancel_schedule', 'campaign', id, {});
     return result;
   }
+
+  /** Re-enqueues whatever a crashed/killed send left unfinished (idempotent
+   * — already-sent recipients are never re-emailed) or finalizes a
+   * 'sending' campaign whose recipients are all done. Manual trigger for
+   * the same sweep that runs on every boot. */
+  @Post(':id/recover')
+  @Roles('owner', 'editor')
+  async recover(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.campaigns.resumeCampaign(id);
+    await this.auditLog.record(user, 'campaign.recover', 'campaign', id, result);
+    return result;
+  }
 }
