@@ -1,5 +1,5 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { GetBucketCorsCommand, PutBucketCorsCommand, S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'node:crypto';
 import { SettingsService } from '../settings/settings.service';
@@ -59,5 +59,71 @@ export class R2Service {
     const uploadUrl = await getSignedUrl(config.client, command, { expiresIn: PRESIGN_EXPIRY_SECONDS });
 
     return { uploadUrl, publicUrl: `${config.publicBaseUrl}/${key}`, key };
+  }
+
+  /** Applies the bucket CORS rule the direct browser-to-R2 upload flow
+   * needs. Browser PUTs to the presigned S3 endpoint are cross-origin, so
+   * without this rule the preflight fails with "No
+   * Access-Control-Allow-Origin" and no image upload can ever succeed —
+   * no client-side change can work around a missing bucket-side rule. */
+  async configureCors(origins: string[]): Promise<{ origins: string[] }> {
+    const config = this.buildClient();
+    if (!config) {
+      throw new InternalServerErrorException(
+        'Cloudflare R2 is not configured — cannot configure bucket CORS. Set it up in Settings > Integrations, or CLOUDFLARE_R2_ACCOUNT_ID/ACCESS_KEY_ID/SECRET_ACCESS_KEY/BUCKET/PUBLIC_BASE_URL in .env.',
+      );
+    }
+
+    const normalized = [...new Set(origins.map((o) => o.trim()).filter(Boolean))].map((o) => {
+      let url: URL;
+      try {
+        url = new URL(o);
+      } catch {
+        throw new BadRequestException(`"${o}" is not a valid origin URL — expected e.g. https://campaign.xgenious.com.`);
+      }
+      // An Origin is scheme + host + port only; anything else is rejected
+      // rather than silently stored as a rule that could never match.
+      if (url.pathname !== '/' || url.search || url.hash) {
+        throw new BadRequestException(`"${o}" is not a bare origin — drop the path/query and retry.`);
+      }
+      if (url.protocol === 'https:') return url.origin;
+      if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) return url.origin;
+      throw new BadRequestException(`"${o}" must be https (http is only allowed for localhost dev origins).`);
+    });
+
+    if (normalized.length === 0) {
+      throw new BadRequestException('No origins to allow — pass at least one app URL.');
+    }
+
+    try {
+      await config.client.send(
+        new PutBucketCorsCommand({
+          Bucket: config.bucket,
+          CORSConfiguration: {
+            CORSRules: [
+              {
+                // The browser PUT sends Content-Type (+ Origin, auto-added);
+                // the preflight asks for exactly these.
+                AllowedOrigins: normalized,
+                AllowedMethods: ['GET', 'PUT', 'HEAD'],
+                AllowedHeaders: ['Content-Type', 'Origin'],
+                ExposeHeaders: ['ETag'],
+                MaxAgeSeconds: 3600,
+              },
+            ],
+          },
+        }),
+      );
+    } catch (err) {
+      if (err instanceof Error && (err.name === 'AccessDenied' || err.name === 'Forbidden')) {
+        throw new ForbiddenException(
+          'R2 refused the CORS update (AccessDenied) — the API token needs bucket-level permission, not just Object Read & Write. Create a token with broader R2 access in the Cloudflare dashboard, or run scripts/configure-r2-cors.mjs with such a token instead.',
+        );
+      }
+      throw err;
+    }
+
+    const current = await config.client.send(new GetBucketCorsCommand({ Bucket: config.bucket }));
+    return { origins: current.CORSRules?.[0]?.AllowedOrigins ?? normalized };
   }
 }
