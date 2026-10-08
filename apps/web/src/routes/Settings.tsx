@@ -8,6 +8,7 @@ import {
   updateIntegrationSettings,
   clearIntegrationSetting,
   clearVerificationCache,
+  applyR2Cors,
   type SettingCategory,
 } from '../lib/settingsApi';
 import { listApiKeys, createApiKey, rotateApiKey, revokeApiKey, type ApiKey, type CreatedApiKey } from '../lib/apiKeysApi';
@@ -608,6 +609,7 @@ function IntegrationsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [helpCategory, setHelpCategory] = useState<SettingCategory | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
+  const [applyingCors, setApplyingCors] = useState(false);
 
   function load() {
     getIntegrationSettings().then((allCats) => {
@@ -668,6 +670,19 @@ function IntegrationsPanel() {
       setError(err instanceof Error ? err.message : 'Failed to clear cache.');
     } finally {
       setClearingCache(false);
+    }
+  }
+
+  async function handleApplyR2Cors() {
+    setError(null);
+    setApplyingCors(true);
+    try {
+      const { origins } = await applyR2Cors();
+      setNotice(`Bucket CORS applied — this app (${origins.join(', ')}) can now upload images directly to R2.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply bucket CORS.');
+    } finally {
+      setApplyingCors(false);
     }
   }
 
@@ -819,6 +834,20 @@ function IntegrationsPanel() {
                     className="h-7 shrink-0 rounded-md border border-border-default bg-panel px-2.5 text-[11px] font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
                   >
                     {clearingCache ? 'Clearing…' : 'Clear cached results'}
+                  </button>
+                </div>
+              )}
+              {category.key === 'r2' && (
+                <div className="flex items-center justify-between border-t border-border-subtle pt-3">
+                  <div className="text-[11px] text-text-faint">
+                    Required once: allow this app to upload images directly to the bucket. Without it, image inserts fail with a CORS error.
+                  </div>
+                  <button
+                    onClick={handleApplyR2Cors}
+                    disabled={applyingCors}
+                    className="h-7 shrink-0 rounded-md border border-border-default bg-panel px-2.5 text-[11px] font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
+                  >
+                    {applyingCors ? 'Applying…' : 'Apply bucket CORS'}
                   </button>
                 </div>
               )}

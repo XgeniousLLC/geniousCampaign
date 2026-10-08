@@ -67,7 +67,7 @@ export const SETTING_CATEGORIES: SettingCategory[] = [
       'Go to R2 > "Manage API tokens" and create a token scoped to Object Read & Write for that bucket. This gives you the Access key ID and Secret access key (the secret is only shown once).',
       'Enable public access on the bucket, or attach a custom domain to it, to get a Public base URL — this is the URL prefix used to serve uploaded template images.',
       'Public base URL must be the bucket PUBLIC serving URL (the r2.dev subdomain shown in the bucket Settings, or your attached custom domain) — NOT https://<account-id>.r2.cloudflarestorage.com, which is the private S3 API endpoint and will produce broken image links.',
-      'REQUIRED for uploads to work: allow the app to upload directly to the bucket — run: node scripts/configure-r2-cors.mjs <your-app-URL> (e.g. https://campaign.xgenious.com) with the same R2 credentials exported in the environment. Without this, image inserts fail with a CORS "No Access-Control-Allow-Origin" error. Re-run it if the app URL ever changes.',
+      'REQUIRED for uploads to work (one click, below): press "Apply bucket CORS" to allow this app to upload images directly to the bucket — without it, image inserts fail with a CORS "No Access-Control-Allow-Origin" error. Press it again if the app URL ever changes. (Script alternative: scripts/configure-r2-cors.mjs.)',
     ],
   },
   {
