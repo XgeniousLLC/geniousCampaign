@@ -124,6 +124,6 @@ describe('R2Service', () => {
     const service = configuredService();
     mockSend().mockRejectedValueOnce(Object.assign(new Error('denied'), { name: 'AccessDenied' }));
 
-    await expect(service.configureCors(['https://app.example.com'])).rejects.toThrow(/needs bucket-level permission/);
+    await expect(service.configureCors(['https://app.example.com'])).rejects.toThrow(/Admin Read & Write/);
   });
 });
