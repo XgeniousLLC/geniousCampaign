@@ -52,7 +52,18 @@ export class R2Service {
       );
     }
 
-    const extension = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : '';
+    const rawExtension = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')).toLowerCase() : '';
+    // Extension is cosmetic (key is a UUID) — whitelist it so a mismatched
+    // name like "photo.exe" sent as image/jpeg can't persist a .exe key.
+    // Falls back to the extension matching the validated contentType.
+    const extensionByType: Record<string, string> = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+    };
+    const allowedExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+    const extension = allowedExtensions.has(rawExtension) ? rawExtension : (extensionByType[contentType] ?? '');
     const key = `template-images/${randomUUID()}${extension}`;
 
     const command = new PutObjectCommand({ Bucket: config.bucket, Key: key, ContentType: contentType });
@@ -117,7 +128,7 @@ export class R2Service {
     } catch (err) {
       if (err instanceof Error && (err.name === 'AccessDenied' || err.name === 'Forbidden')) {
         throw new ForbiddenException(
-          'R2 refused the CORS update (AccessDenied) — the API token needs bucket-level permission, not just Object Read & Write. Create a token with broader R2 access in the Cloudflare dashboard, or run scripts/configure-r2-cors.mjs with such a token instead.',
+          'R2 refused the CORS update (AccessDenied) — the API token is scoped to Object Read & Write, which can only read/write objects. PutBucketCors edits bucket configuration, so the token must be created with "Admin Read & Write" (not "Object Read & Write") in R2 > Manage API tokens, then saved in Settings > Integrations. Alternatively run scripts/configure-r2-cors.mjs with such an Admin token.',
         );
       }
       throw err;
