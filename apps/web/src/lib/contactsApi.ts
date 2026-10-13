@@ -77,6 +77,8 @@ export function listContactsPaged(params: {
   search?: string;
   status?: Contact['status'];
   listId?: string;
+  listIds?: string[];
+  tagIds?: string[];
   sortKey?: 'name' | 'status' | 'lastActivityAt';
   sortDir?: 'asc' | 'desc';
 }) {
@@ -86,9 +88,45 @@ export function listContactsPaged(params: {
   if (params.search) q.set('search', params.search);
   if (params.status) q.set('status', params.status);
   if (params.listId) q.set('listId', params.listId);
+  for (const id of params.listIds ?? []) q.append('listIds', id);
+  for (const id of params.tagIds ?? []) q.append('tagIds', id);
   if (params.sortKey) q.set('sortKey', params.sortKey);
   if (params.sortDir) q.set('sortDir', params.sortDir);
   return apiGet<ContactsPage>(`/contacts/paged?${q.toString()}`);
+}
+
+function downloadCsvBlob(blob: Blob, fallbackFilename: string, disposition: string | null) {
+  const fromHeader = disposition?.match(/filename="([^"]+)"/)?.[1];
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fromHeader ?? fallbackFilename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function slugFilename(name: string): string {
+  return `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'list'}.csv`;
+}
+
+export async function exportContactsCsv(params: {
+  search?: string;
+  status?: Contact['status'];
+  listIds?: string[];
+  tagIds?: string[];
+}) {
+  const q = new URLSearchParams();
+  if (params.search) q.set('search', params.search);
+  if (params.status) q.set('status', params.status);
+  for (const id of params.listIds ?? []) q.append('listIds', id);
+  for (const id of params.tagIds ?? []) q.append('tagIds', id);
+  const res = await fetch(`${API_BASE_URL}/contacts/export?${q.toString()}`, {
+    headers: { ...authHeadersForUpload() },
+  });
+  if (!res.ok) throw new Error(`Export failed: ${res.status} ${await res.text()}`);
+  downloadCsvBlob(await res.blob(), 'contacts.csv', res.headers.get('Content-Disposition'));
 }
 
 export function getContact(id: string) {
@@ -155,6 +193,14 @@ export function createList(input: { name: string }) {
 
 export function listContactsForList(listId: string) {
   return apiGet<{ contact: Contact; addedAt: string }[]>(`/lists/${listId}/contacts`);
+}
+
+export async function exportListCsv(listId: string, listName?: string) {
+  const res = await fetch(`${API_BASE_URL}/lists/${listId}/export`, {
+    headers: { ...authHeadersForUpload() },
+  });
+  if (!res.ok) throw new Error(`Export failed: ${res.status} ${await res.text()}`);
+  downloadCsvBlob(await res.blob(), slugFilename(listName ?? 'list'), res.headers.get('Content-Disposition'));
 }
 
 export function addContactTag(tagId: string, contactId: string) {
