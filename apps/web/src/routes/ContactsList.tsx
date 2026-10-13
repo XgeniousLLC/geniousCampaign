@@ -5,11 +5,15 @@ import {
   avatarColor,
   deleteContact,
   bulkDeleteContacts,
+  exportContactsCsv,
+  exportListCsv,
   getList,
   listContactsPaged,
   listLists,
+  listTags,
   type Contact,
   type List,
+  type Tag,
 } from '../lib/contactsApi';
 import { listSequences, type Sequence } from '../lib/sequencesApi';
 import { enrollContact } from '../lib/enrollmentsApi';
@@ -40,6 +44,87 @@ function initials(contact: Contact): string {
 
 function displayName(c: Contact): string {
   return c.firstName || c.lastName ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : c.email;
+}
+
+// Multi-select checkbox dropdown for the Lists/Tags filters — same
+// overlay pattern as the bulk-action pickers below (fixed click-catcher
+// + absolute panel), with a count badge and a Clear action.
+function FilterDropdown({
+  label,
+  items,
+  selectedIds,
+  onToggle,
+  onClear,
+}: {
+  label: string;
+  items: { id: string; name: string; color?: string }[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = selectedIds.length > 0;
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${
+          active
+            ? 'border-accent/30 bg-accent/10 text-accent-tint'
+            : 'border-border-strong bg-field text-text-quaternary hover:bg-raised'
+        }`}
+      >
+        {label}
+        {active && <span className="font-mono text-[11px] text-accent-light">{selectedIds.length}</span>}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-9 z-20 max-h-64 w-56 overflow-y-auto rounded-lg border border-border-modal bg-panel2 py-1 shadow-lg">
+            {items.length === 0 && <div className="px-3 py-2 text-xs text-text-faint">None yet.</div>}
+            {items.map((item) => {
+              const on = selectedIds.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onToggle(item.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-text-secondary hover:bg-raised hover:text-text-primary"
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                      on ? 'border-accent bg-accent text-white' : 'border-border-strong bg-field'
+                    }`}
+                  >
+                    {on && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    )}
+                  </span>
+                  {item.color && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />}
+                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                </button>
+              );
+            })}
+            {active && (
+              <button
+                onClick={() => {
+                  onClear();
+                  setOpen(false);
+                }}
+                className="block w-full border-t border-border-subtle px-3 py-2 text-left text-xs font-medium text-text-faint hover:text-text-primary"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ContactsSkeleton() {
@@ -94,11 +179,15 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   const [verifiedCount, setVerifiedCount] = useState(0);
   const [scopeList, setScopeList] = useState<List | null>(null);
   const [allLists, setAllLists] = useState<List[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [allSequences, setAllSequences] = useState<Sequence[]>([]);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<Contact['status'] | 'all'>('all');
+  const [filterListIds, setFilterListIds] = useState<string[]>([]);
+  const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -137,6 +226,8 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   // GC-118: filtering/sorting/paging all happen server-side now (was a
   // single fetch-everything call, 10s+ at 7k+ contacts) — this refetches
   // the current page whenever any of page/pageSize/filter/sort changes.
+  // The list/tag multi-filters only apply on the main Contacts page; the
+  // list detail view keeps its single-list scope via `listId`.
   function reload() {
     setLoading(true);
     listContactsPaged({
@@ -145,6 +236,8 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       search: debouncedSearch || undefined,
       status: statusFilter === 'all' ? undefined : statusFilter,
       listId,
+      listIds: !listId && filterListIds.length > 0 ? filterListIds : undefined,
+      tagIds: !listId && filterTagIds.length > 0 ? filterTagIds : undefined,
       sortKey: sortKey ?? undefined,
       sortDir,
     })
@@ -158,9 +251,10 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(reload, [page, pageSize, debouncedSearch, statusFilter, listId, sortKey, sortDir]);
+  useEffect(reload, [page, pageSize, debouncedSearch, statusFilter, listId, filterListIds, filterTagIds, sortKey, sortDir]);
   useEffect(() => {
     listLists().then(setAllLists);
+    listTags().then(setAllTags);
     listSequences().then(setAllSequences);
   }, []);
   useEffect(() => {
@@ -188,6 +282,17 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   function setStatusFilterAndResetPage(s: Contact['status'] | 'all') {
     setStatusFilter(s);
     setPage(1);
+  }
+
+  function toggleFilterId(setter: React.Dispatch<React.SetStateAction<string[]>>, id: string) {
+    setPage(1);
+    setter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function clearFilters() {
+    setPage(1);
+    setFilterListIds([]);
+    setFilterTagIds([]);
   }
 
   function setPageSizeAndResetPage(n: number) {
@@ -350,6 +455,31 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
     reload();
   }
 
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      if (listId) {
+        await exportListCsv(listId, scopeList?.name);
+        toast('List exported as CSV.', 'success');
+      } else {
+        // Exports the current filtered view (search/status/lists/tags),
+        // not just the visible page.
+        await exportContactsCsv({
+          search: debouncedSearch || undefined,
+          status: statusFilter === 'all' ? undefined : statusFilter,
+          listIds: filterListIds.length > 0 ? filterListIds : undefined,
+          tagIds: filterTagIds.length > 0 ? filterTagIds : undefined,
+        });
+        toast(`Exported ${total} contact(s) as CSV.`, 'success');
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Export failed.', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const VERIFY_TOAST: Record<Contact['verificationStatus'] & string, { text: string; tone: 'success' | 'error' | 'info' }> = {
     valid: { text: 'Verified — deliverable.', tone: 'success' },
     invalid: { text: 'Verified — not deliverable.', tone: 'error' },
@@ -369,6 +499,13 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
   }
 
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
+
+  // With an active filter the "no contacts yet" empty state would be
+  // wrong — the table's "No contacts match." row covers the zero-result
+  // case instead. (The list detail scope keeps the old behavior.)
+  const hasActiveFilter =
+    !listId &&
+    (!!debouncedSearch || statusFilter !== 'all' || filterListIds.length > 0 || filterTagIds.length > 0);
 
   return (
     <div>
@@ -394,6 +531,14 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={exporting || total === 0}
+            title={listId ? 'Export this list as CSV' : 'Export the current filtered view as CSV'}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
           <button
             onClick={() => setImportOpen(true)}
             className="flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
@@ -433,7 +578,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
 
       {loading ? (
         <ContactsSkeleton />
-      ) : counts.all === 0 ? (
+      ) : counts.all === 0 && !hasActiveFilter ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border-emphasis bg-panel px-5 py-16 text-center">
           <div className="mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-xl border border-border-strong bg-raised2">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -458,7 +603,7 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
         </div>
       ) : (
         <>
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -484,6 +629,35 @@ export function ContactsList({ listId }: { listId?: string } = {}) {
                 );
               })}
             </div>
+            {!listId && (
+              <div className="flex gap-1.5">
+                <FilterDropdown
+                  label="Lists"
+                  items={allLists}
+                  selectedIds={filterListIds}
+                  onToggle={(id) => toggleFilterId(setFilterListIds, id)}
+                  onClear={() => {
+                    setPage(1);
+                    setFilterListIds([]);
+                  }}
+                />
+                <FilterDropdown
+                  label="Tags"
+                  items={allTags}
+                  selectedIds={filterTagIds}
+                  onToggle={(id) => toggleFilterId(setFilterTagIds, id)}
+                  onClear={() => {
+                    setPage(1);
+                    setFilterTagIds([]);
+                  }}
+                />
+                {(filterListIds.length > 0 || filterTagIds.length > 0) && (
+                  <button onClick={clearFilters} className="h-8 px-1 text-xs font-medium text-text-faint hover:text-text-secondary">
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex-1" />
             {selected.size > 0 && (
               <div className="flex items-center gap-2">

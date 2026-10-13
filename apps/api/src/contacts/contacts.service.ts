@@ -1,10 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { eq, inArray, sql, and, or, ilike, asc, desc } from 'drizzle-orm';
+import { eq, exists, inArray, sql, and, or, ilike, asc, desc } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { contacts, contactTags, tags, contactLists, lists, verificationResults, sends, emailEvents } from '../db/schema';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { buildContactsCsv } from './csv-export.util';
 
 export interface ContactsPageQuery {
   page?: number;
@@ -12,6 +13,8 @@ export interface ContactsPageQuery {
   search?: string;
   status?: 'active' | 'unsubscribed' | 'bounced' | 'suppressed';
   listId?: string;
+  listIds?: string[];
+  tagIds?: string[];
   sortKey?: 'name' | 'status' | 'lastActivityAt';
   sortDir?: 'asc' | 'desc';
 }
@@ -50,6 +53,51 @@ export class ContactsService {
     return this.hydrate(all);
   }
 
+  /** Shared WHERE builder for the paged view and the CSV export — `scope`
+   * (list/tag membership) intentionally ignores search/status so the
+   * status-chip counts always show "how many of this scope", not "how many
+   * match the current text filter too". `listId` (single, from the list
+   * detail page) and `listIds` (multi, from the contacts page filter) merge
+   * into one membership check. */
+  private buildConditions(query: ContactsPageQuery) {
+    const listIds = [...new Set([...(query.listIds ?? []), ...(query.listId ? [query.listId] : [])])];
+    const tagIds = [...new Set(query.tagIds ?? [])];
+
+    const scopeConds = [
+      listIds.length > 0
+        ? exists(
+            this.drizzle.db
+              .select({ one: sql`1` })
+              .from(contactLists)
+              .where(and(eq(contactLists.contactId, contacts.id), inArray(contactLists.listId, listIds))),
+          )
+        : undefined,
+      tagIds.length > 0
+        ? exists(
+            this.drizzle.db
+              .select({ one: sql`1` })
+              .from(contactTags)
+              .where(and(eq(contactTags.contactId, contacts.id), inArray(contactTags.tagId, tagIds))),
+          )
+        : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+    const scope = scopeConds.length > 0 ? and(...scopeConds) : undefined;
+
+    const search = query.search?.trim();
+    const searchCond = search
+      ? or(
+          ilike(contacts.email, `%${search}%`),
+          ilike(contacts.firstName, `%${search}%`),
+          ilike(contacts.lastName, `%${search}%`),
+          sql`exists (select 1 from ${contactTags} inner join ${tags} on ${tags.id} = ${contactTags.tagId} where ${contactTags.contactId} = ${contacts.id} and ${tags.name} ilike ${`%${search}%`})`,
+        )
+      : undefined;
+
+    const statusCond = query.status ? eq(contacts.status, query.status) : undefined;
+    const conditions = [scope, searchCond, statusCond].filter((c): c is NonNullable<typeof c> => c !== undefined);
+    return { scope, where: conditions.length > 0 ? and(...conditions) : undefined };
+  }
+
   /** GC-118: the contacts admin page was fetching and joining every contact
    * on every load (`findAll()` above) — fine at dozens of rows, a 10s+ page
    * load at 7k+ (found live: seeded 10k contacts + 30k sends locally to
@@ -64,23 +112,7 @@ export class ContactsService {
     const limit = query.limit ?? 25;
     const offset = (page - 1) * limit;
 
-    const listScope = query.listId
-      ? sql`exists (select 1 from ${contactLists} where ${contactLists.contactId} = ${contacts.id} and ${contactLists.listId} = ${query.listId})`
-      : undefined;
-
-    const search = query.search?.trim();
-    const searchCond = search
-      ? or(
-          ilike(contacts.email, `%${search}%`),
-          ilike(contacts.firstName, `%${search}%`),
-          ilike(contacts.lastName, `%${search}%`),
-          sql`exists (select 1 from ${contactTags} inner join ${tags} on ${tags.id} = ${contactTags.tagId} where ${contactTags.contactId} = ${contacts.id} and ${tags.name} ilike ${`%${search}%`})`,
-        )
-      : undefined;
-
-    const statusCond = query.status ? eq(contacts.status, query.status) : undefined;
-    const conditions = [listScope, searchCond, statusCond].filter((c): c is NonNullable<typeof c> => c !== undefined);
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+    const { scope, where } = this.buildConditions(query);
 
     const nameExpr = sql`lower(coalesce(nullif(concat_ws(' ', ${contacts.firstName}, ${contacts.lastName}), ''), ${contacts.email}))`;
     const lastActivityExpr = sql`(select greatest(max(s.sent_at), max(ee.created_at)) from ${sends} s left join ${emailEvents} ee on ee.send_id = s.id where s.contact_id = ${contacts.id})`;
@@ -105,15 +137,12 @@ export class ContactsService {
     const [data, [{ count: total }], statusCountRows, [{ count: verifiedCount }]] = await Promise.all([
       this.drizzle.db.select().from(contacts).where(where).orderBy(orderBy).limit(limit).offset(offset),
       this.drizzle.db.select({ count: sql<number>`count(*)::int` }).from(contacts).where(where),
-      // Status-chip counts intentionally ignore search/status — only the
-      // listId scope — so they always show "how many of this scope", not
-      // "how many match the current text filter too".
-      this.drizzle.db.select({ status: contacts.status, count: sql<number>`count(*)::int` }).from(contacts).where(listScope).groupBy(contacts.status),
+      this.drizzle.db.select({ status: contacts.status, count: sql<number>`count(*)::int` }).from(contacts).where(scope).groupBy(contacts.status),
       this.drizzle.db
         .select({ count: sql<number>`count(*)::int` })
         .from(contacts)
         .innerJoin(verificationResults, and(eq(verificationResults.email, contacts.email), eq(verificationResults.status, 'valid')))
-        .where(listScope),
+        .where(scope),
     ]);
 
     const counts: Record<'all' | 'active' | 'unsubscribed' | 'bounced' | 'suppressed', number> = {
@@ -129,6 +158,32 @@ export class ContactsService {
     }
 
     return { data: await this.hydrate(data), total, page, limit, counts, verifiedCount };
+  }
+
+  /** Exports exactly what the contacts page is currently showing — same
+   * search/status/list/tag filters as `findAllPaged()`, but unpaginated.
+   * Adds a `lists` column on top of the per-list export's shape (a filtered
+   * view can span many lists) and dates rows by contact creation. */
+  async exportFilteredCsv(
+    query: Pick<ContactsPageQuery, 'search' | 'status' | 'listId' | 'listIds' | 'tagIds'>,
+  ): Promise<{ filename: string; csv: string }> {
+    const { where } = this.buildConditions(query);
+    const rows = await this.drizzle.db.select().from(contacts).where(where).orderBy(desc(contacts.createdAt));
+    const hydrated = await this.hydrate(rows);
+    const csv = buildContactsCsv(
+      hydrated.map((c) => ({
+        email: c.email,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        status: c.status,
+        customFields: (c.customFields ?? {}) as Record<string, unknown>,
+        tags: c.tags,
+        lists: c.lists,
+        dateValue: c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt),
+      })),
+      { includeListsColumn: true, dateHeader: 'created_at' },
+    );
+    return { filename: 'contacts.csv', csv };
   }
 
   /** Batches tags/lists/verification-status/last-activity for a given set

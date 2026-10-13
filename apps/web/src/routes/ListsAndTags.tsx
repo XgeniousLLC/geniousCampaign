@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   listLists,
   createList,
+  exportListCsv,
   listContactsForList,
   listTags,
   createTag,
@@ -46,6 +47,8 @@ export function ListsAndTags() {
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#818CF8');
   const [loading, setLoading] = useState(true);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function loadLists() {
@@ -78,6 +81,19 @@ export function ListsAndTags() {
     loadTags();
   }
 
+  async function handleExportList(l: List) {
+    if (exportingId) return;
+    setExportingId(l.id);
+    setExportError(null);
+    try {
+      await exportListCsv(l.id, l.name);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed.');
+    } finally {
+      setExportingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="mb-[18px]">
@@ -106,13 +122,19 @@ export function ListsAndTags() {
           {loading ? (
             <PanelListSkeleton rows={5} />
           ) : (
+          <>
+          {exportError && (
+            <div className="border-b border-danger/25 bg-danger/10 px-3.5 py-2 text-xs text-danger">
+              {exportError}
+            </div>
+          )}
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-text-meta">
                 <th className="px-3.5 py-2 font-medium">Name</th>
                 <th className="px-2.5 py-2 font-medium">Type</th>
                 <th className="px-2.5 py-2 text-right font-medium">Members</th>
-                <th className="w-9" />
+                <th className="w-24" />
               </tr>
             </thead>
             <tbody>
@@ -134,7 +156,17 @@ export function ListsAndTags() {
                   </td>
                   <td className="px-2.5 py-2.5 text-right font-mono text-text-tertiary">{l.memberCount}</td>
                   <td className="px-1.5 py-2.5 text-right">
-                    <CopyIdButton id={l.id} />
+                    <span className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => handleExportList(l)}
+                        disabled={exportingId === l.id || l.memberCount === 0}
+                        title={l.memberCount === 0 ? 'Nothing to export' : `Export "${l.name}" as CSV`}
+                        className="shrink-0 rounded p-1 text-xs font-medium text-text-faint hover:bg-raised2 hover:text-text-secondary disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {exportingId === l.id ? '…' : 'Export'}
+                      </button>
+                      <CopyIdButton id={l.id} />
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -147,6 +179,7 @@ export function ListsAndTags() {
               )}
             </tbody>
           </table>
+          </>
           )}
         </div>
 

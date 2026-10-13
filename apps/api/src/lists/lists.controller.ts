@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { ListsService } from './lists.service';
 import { CreateListDto } from './dto/create-list.dto';
 import { UpdateListDto } from './dto/update-list.dto';
@@ -61,6 +62,14 @@ export class ListsController {
   @Get(':id/contacts')
   listContacts(@Param('id') id: string) {
     return this.listsService.listContacts(id);
+  }
+
+  @Get(':id/export')
+  async exportCsv(@Param('id') id: string, @Res() res: Response) {
+    const { filename, csv } = await this.listsService.exportCsv(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   @Post(':id/contacts/:contactId')

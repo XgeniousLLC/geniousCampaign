@@ -1,11 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { lists, contactLists, contacts } from '../db/schema';
+import { lists, contactLists, contacts, contactTags, tags } from '../db/schema';
 import { CreateListDto } from './dto/create-list.dto';
 import { UpdateListDto } from './dto/update-list.dto';
+import { buildContactsCsv, slugify } from '../contacts/csv-export.util';
 
 @Injectable()
 export class ListsService {
@@ -101,5 +102,46 @@ export class ListsService {
       .from(contactLists)
       .innerJoin(contacts, eq(contactLists.contactId, contacts.id))
       .where(eq(contactLists.listId, listId));
+  }
+
+  /** Builds the list's full member content as CSV — the counterpart to the
+   * contacts CSV import. Base columns are stable (email, first_name,
+   * last_name, status, tags, added_at); every customFields key present on
+   * any member becomes an extra column (sorted) so no data is dropped and
+   * the file re-imports through the column-mapping step. */
+  async exportCsv(listId: string): Promise<{ filename: string; csv: string }> {
+    const list = await this.findOne(listId);
+    const rows = await this.listContacts(listId);
+
+    const ids = rows.map((r) => r.contact.id);
+    const tagsByContact = new Map<string, { name: string }[]>();
+    if (ids.length > 0) {
+      const tagRows = await this.drizzle.db
+        .select({ contactId: contactTags.contactId, name: tags.name })
+        .from(contactTags)
+        .innerJoin(tags, eq(contactTags.tagId, tags.id))
+        .where(inArray(contactTags.contactId, ids));
+      for (const row of tagRows) {
+        const names = tagsByContact.get(row.contactId) ?? [];
+        names.push({ name: row.name });
+        tagsByContact.set(row.contactId, names);
+      }
+    }
+
+    const csv = buildContactsCsv(
+      rows.map(({ contact, addedAt }) => ({
+        email: contact.email,
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        status: contact.status,
+        customFields: (contact.customFields ?? {}) as Record<string, unknown>,
+        tags: tagsByContact.get(contact.id) ?? [],
+        lists: [],
+        dateValue: addedAt instanceof Date ? addedAt.toISOString() : String(addedAt ?? ''),
+      })),
+      { includeListsColumn: false, dateHeader: 'added_at' },
+    );
+
+    return { filename: `${slugify(list.name)}.csv`, csv };
   }
 }
