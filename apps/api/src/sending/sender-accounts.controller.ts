@@ -15,6 +15,7 @@ import { IsEmail, IsString } from 'class-validator';
 import { SettingsService } from '../settings/settings.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { signUnsubscribeToken } from './unsubscribe-token.util';
+import { Public } from '../auth/public.decorator';
 
 export class SendTestEmailDto {
   @IsEmail()
@@ -106,6 +107,7 @@ export class SenderAccountsController {
   // Public — Google redirects the admin's browser here directly, with no
   // way to attach our JWT. CSRF protection is the signed `state` param
   // generated in connect() above, not JwtAuthGuard.
+  @Public()
   @Get('gmail/callback')
   async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     const adminAppUrl = this.config.get<string>('ADMIN_APP_URL') || 'http://localhost:5173';
