@@ -5,3 +5,4 @@ export * from './render-body';
 export * from './personalize';
 export * from './conditionals';
 export * from './template-resolution';
+export * from './subsequence-conditions';

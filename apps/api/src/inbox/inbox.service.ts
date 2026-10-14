@@ -8,6 +8,7 @@ import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
 import {
   contacts,
+  emailEvents,
   emailMessages,
   emailThreads,
   scheduledReplies,
@@ -19,6 +20,10 @@ import {
   subsequences,
 } from '../db/schema';
 import { decryptToken } from '../sending/token-encryption.util';
+import {
+  evaluateConditionTree,
+  type ConditionContext,
+} from '@genius-campaign/shared';
 import {
   classifyReply,
   replyRequestsUnsubscribe,
@@ -704,19 +709,10 @@ export class InboxService {
     const rules = await this.drizzle.db.query.subsequences.findMany({
       where: eq(subsequences.parentSequenceId, thread.sequenceId),
     });
+    if (rules.length === 0) return null;
+    const ctx = await this.buildSubsequenceContext(thread, event);
     for (const rule of rules) {
-      const match =
-        (rule.trigger === 'reply' && event.kind === 'reply') ||
-        (rule.trigger === 'ooo' && thread.status === 'out_of_office') ||
-        (rule.trigger === 'positive' &&
-          ['interested', 'meeting_booked'].includes(thread.status)) ||
-        (rule.trigger === 'open' && event.kind === 'open') ||
-        (rule.trigger === 'click' && event.kind === 'click') ||
-        (rule.trigger === 'custom_text' &&
-          event.bodyText
-            ?.toLowerCase()
-            .includes((rule.matchText ?? '').toLowerCase()));
-      if (!match) continue;
+      if (!evaluateConditionTree(rule.conditions, ctx)) continue;
       if (parentSettings?.triggerOnce) {
         // One subsequence per prospect per parent: skip if already routed.
         const prior = await this.drizzle.db.query.sequenceEnrollments.findFirst(
@@ -775,5 +771,59 @@ export class InboxService {
       };
     }
     return null;
+  }
+
+  /** Snapshot of everything a subsequence condition can test against. */
+  private async buildSubsequenceContext(
+    thread: typeof emailThreads.$inferSelect,
+    event: { kind: string; bodyText?: string },
+  ): Promise<ConditionContext> {
+    const rows = await this.drizzle.db
+      .select({ type: emailEvents.type, url: emailEvents.url })
+      .from(emailEvents)
+      .innerJoin(sends, eq(emailEvents.sendId, sends.id))
+      .where(eq(sends.providerThreadId, thread.providerThreadId));
+    let openCount = 0;
+    const clickedUrls: string[] = [];
+    for (const r of rows) {
+      if (r.type === 'open') openCount += 1;
+      else if (r.type === 'click') clickedUrls.push(r.url ?? '');
+    }
+
+    let replyText = event.bodyText ?? '';
+    if (!replyText) {
+      const last = await this.drizzle.db.query.emailMessages.findFirst({
+        where: and(
+          eq(emailMessages.threadId, thread.id),
+          eq(emailMessages.dir, 'in'),
+        ),
+        orderBy: (m, { desc }) => desc(m.sentAt),
+      });
+      replyText = last?.bodyText ?? '';
+    }
+
+    let lastStepNumber = 0;
+    if (thread.enrollmentId) {
+      const [sent] = await this.drizzle.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(sends)
+        .where(
+          and(
+            eq(sends.sequenceEnrollmentId, thread.enrollmentId),
+            eq(sends.status, 'sent'),
+          ),
+        );
+      lastStepNumber = sent?.count ?? 0;
+    }
+
+    return {
+      openCount,
+      clickCount: clickedUrls.length,
+      clickedUrls,
+      replied: event.kind === 'reply' || thread.lastInboundAt != null,
+      outcome: thread.status,
+      replyText,
+      lastStepNumber,
+    };
   }
 }

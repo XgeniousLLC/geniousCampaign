@@ -1,10 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { eq } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
+import type { ConditionTree } from '@genius-campaign/shared';
 import { DrizzleService } from '../db/drizzle.service';
 import {
   sequenceEnrollments,
   sequenceSettings,
+  sequences,
   subsequences,
   sends,
   emailThreads,
@@ -93,40 +96,136 @@ export class InboxEventsListener {
 export class SubsequenceService {
   constructor(private readonly drizzle: DrizzleService) {}
 
-  list(parentSequenceId: string) {
-    return this.drizzle.db.query.subsequences.findMany({
+  async list(parentSequenceId: string) {
+    const rules = await this.drizzle.db.query.subsequences.findMany({
       where: eq(subsequences.parentSequenceId, parentSequenceId),
     });
+    if (rules.length === 0) return [];
+    return Promise.all(
+      rules.map(async (rule) => {
+        const child = await this.drizzle.db.query.sequences.findFirst({
+          where: eq(sequences.id, rule.childSequenceId),
+        });
+        const settings = await this.drizzle.db.query.sequenceSettings.findFirst({
+          where: eq(sequenceSettings.sequenceId, rule.childSequenceId),
+        });
+        return {
+          ...rule,
+          childName: child?.name ?? 'Untitled sequence',
+          scheduleId: settings?.scheduleId ?? null,
+        };
+      }),
+    );
   }
 
+  /**
+   * Create a subsequence: auto-create its child sequence (which owns the steps
+   * and is edited with the normal sequence builder), seed the branch schedule,
+   * then insert the routing rule. Settings/senders are inherited live from the
+   * parent by the runner, so they are not copied here.
+   */
   async create(
     parentSequenceId: string,
     dto: {
       name: string;
-      trigger: 'reply' | 'positive' | 'open' | 'click' | 'ooo' | 'custom_text';
-      matchText?: string;
-      childSequenceId: string;
+      conditions: ConditionTree;
       delayMs?: string;
       stopParent?: boolean;
+      scheduleId?: string | null;
     },
   ) {
-    const [created] = await this.drizzle.db
-      .insert(subsequences)
-      .values({
-        parentSequenceId,
-        name: dto.name,
-        trigger: dto.trigger,
-        matchText: dto.matchText,
-        childSequenceId: dto.childSequenceId,
-        delayMs: dto.delayMs ?? '0',
-        stopParent: dto.stopParent ?? true,
-      })
-      .returning();
-    return created;
+    const parent = await this.drizzle.db.query.sequences.findFirst({
+      where: eq(sequences.id, parentSequenceId),
+    });
+    if (!parent) throw new BadRequestException('Parent sequence not found');
+    if (!dto.conditions || dto.conditions.children?.length === 0) {
+      throw new BadRequestException('Add at least one condition');
+    }
+
+    return this.drizzle.db.transaction(async (tx) => {
+      const [child] = await tx
+        .insert(sequences)
+        .values({
+          name: dto.name,
+          parentSequenceId,
+          senderAccountId: parent.senderAccountId,
+          fromName: parent.fromName,
+          replyTo: parent.replyTo,
+          webhookSecret: randomBytes(32).toString('hex'),
+        })
+        .returning();
+      await tx
+        .insert(sequenceSettings)
+        .values({ sequenceId: child.id, scheduleId: dto.scheduleId ?? null })
+        .onConflictDoNothing();
+      const [rule] = await tx
+        .insert(subsequences)
+        .values({
+          parentSequenceId,
+          name: dto.name,
+          conditions: dto.conditions,
+          childSequenceId: child.id,
+          delayMs: dto.delayMs ?? '0',
+          stopParent: dto.stopParent ?? true,
+        })
+        .returning();
+      return { ...rule, childName: child.name, scheduleId: dto.scheduleId ?? null };
+    });
+  }
+
+  async update(
+    id: string,
+    dto: {
+      name?: string;
+      conditions?: ConditionTree;
+      delayMs?: string;
+      stopParent?: boolean;
+      scheduleId?: string | null;
+    },
+  ) {
+    const rule = await this.drizzle.db.query.subsequences.findFirst({
+      where: eq(subsequences.id, id),
+    });
+    if (!rule) throw new NotFoundException('Subsequence not found');
+
+    return this.drizzle.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(subsequences)
+        .set({
+          name: dto.name ?? rule.name,
+          conditions: dto.conditions ?? rule.conditions,
+          delayMs: dto.delayMs ?? rule.delayMs,
+          stopParent: dto.stopParent ?? rule.stopParent,
+          updatedAt: new Date(),
+        })
+        .where(eq(subsequences.id, id))
+        .returning();
+      if (dto.name && dto.name !== rule.name) {
+        await tx
+          .update(sequences)
+          .set({ name: dto.name, updatedAt: new Date() })
+          .where(eq(sequences.id, rule.childSequenceId));
+      }
+      if (dto.scheduleId !== undefined) {
+        await tx
+          .update(sequenceSettings)
+          .set({ scheduleId: dto.scheduleId, updatedAt: new Date() })
+          .where(eq(sequenceSettings.sequenceId, rule.childSequenceId));
+      }
+      return updated;
+    });
   }
 
   async remove(id: string) {
-    await this.drizzle.db.delete(subsequences).where(eq(subsequences.id, id));
+    const rule = await this.drizzle.db.query.subsequences.findFirst({
+      where: eq(subsequences.id, id),
+    });
+    if (rule) {
+      // The child sequence owns the steps; deleting it cascades the rule.
+      await this.drizzle.db
+        .delete(sequences)
+        .where(eq(sequences.id, rule.childSequenceId));
+    }
     return { id };
   }
 }

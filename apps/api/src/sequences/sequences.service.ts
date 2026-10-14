@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
 import {
@@ -82,11 +82,53 @@ export class SequencesService {
     return rows.map((r) => r.senderAccountId);
   }
 
+  /**
+   * Effective settings/senders for a sequence. A subsequence child inherits
+   * these live from its root parent, so parent edits propagate to branches;
+   * the child's own settings row contributes only its sending schedule.
+   */
+  async resolveSequenceContext(
+    sequenceId: string,
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    const sequence = await db.query.sequences.findFirst({
+      where: eq(sequences.id, sequenceId),
+    });
+    const rootSequenceId = sequence?.parentSequenceId ?? sequenceId;
+    const rootSettings = await db.query.sequenceSettings.findFirst({
+      where: eq(sequenceSettings.sequenceId, rootSequenceId),
+    });
+    const childSettings =
+      sequence?.parentSequenceId != null
+        ? await db.query.sequenceSettings.findFirst({
+            where: eq(sequenceSettings.sequenceId, sequenceId),
+          })
+        : null;
+    const settings = rootSettings
+      ? {
+          ...rootSettings,
+          scheduleId: childSettings?.scheduleId ?? rootSettings.scheduleId,
+        }
+      : rootSettings;
+    const senderRows = await db.query.sequenceSenders.findMany({
+      where: eq(sequenceSenders.sequenceId, rootSequenceId),
+    });
+    return {
+      sequence,
+      rootSequenceId,
+      settings,
+      senderIds: senderRows.map((r) => r.senderAccountId),
+    };
+  }
+
   /** Sequences list screen (design: Steps/Enrolled/Open/Status columns)
    * needs real numbers, not placeholders — computed the same aggregation
    * style already used for templates/campaigns, not stored on the row. */
   async findAll() {
+    // Subsequence child sequences are managed from their parent's Subsequences
+    // tab — never listed as standalone sequences.
     const sequenceRows = await this.drizzle.db.query.sequences.findMany({
+      where: isNull(sequences.parentSequenceId),
       orderBy: (s, { desc }) => desc(s.createdAt),
     });
 

@@ -8,6 +8,7 @@ import {
   timestamp,
   index,
   unique,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { templates } from './templates';
 import { senderAccounts } from './sender-accounts';
@@ -43,6 +44,13 @@ export const sequences = pgTable('sequences', {
   fromName: text('from_name'),
   // GC-130 (revised) — reply-to override; nullable email
   replyTo: text('reply_to'),
+  // Set when this sequence is the child of a subsequence rule. Child
+  // sequences inherit settings/senders from the root parent and are hidden
+  // from the main sequences list.
+  parentSequenceId: uuid('parent_sequence_id').references(
+    (): AnyPgColumn => sequences.id,
+    { onDelete: 'cascade' },
+  ),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -238,7 +238,13 @@ function timeToMinutes(value: string) {
   return (h || 0) * 60 + (m || 0);
 }
 
-export function SequenceSettingsTab({ sequenceId }: { sequenceId: string }) {
+export function SequenceSettingsTab({
+  sequenceId,
+  sequenceName,
+}: {
+  sequenceId: string;
+  sequenceName?: string;
+}) {
   const [settings, setSettings] = useState<SequenceSettings | null>(null);
   const [schedules, setSchedules] = useState<SendingSchedule[]>([]);
   const [saving, setSaving] = useState(false);
@@ -282,18 +288,24 @@ export function SequenceSettingsTab({ sequenceId }: { sequenceId: string }) {
       return;
     }
     if (settings?.scheduleId && schedules.some((s) => s.id === settings.scheduleId)) return;
+    // Reuse a schedule already created for this sequence instead of piling up
+    // duplicate "Default schedule" rows on every off→on toggle.
+    const name = `${sequenceName?.trim() || 'Sequence'} — sending window`;
+    const existing = schedules.find((s) => s.name === name);
     setSaving(true);
     setError(null);
     try {
-      const created = await createSchedule({
-        name: 'Default schedule',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        days: DEFAULT_DAYS,
-        startMin: DEFAULT_START_MIN,
-        endMin: DEFAULT_END_MIN,
-      });
-      setSchedules((prev) => [...prev, created]);
-      const updated = await updateSequenceSettings(sequenceId, { scheduleId: created.id });
+      const sched =
+        existing ??
+        (await createSchedule({
+          name,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          days: DEFAULT_DAYS,
+          startMin: DEFAULT_START_MIN,
+          endMin: DEFAULT_END_MIN,
+        }));
+      if (!existing) setSchedules((prev) => [...prev, sched]);
+      const updated = await updateSequenceSettings(sequenceId, { scheduleId: sched.id });
       setSettings(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

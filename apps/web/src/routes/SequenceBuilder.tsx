@@ -28,7 +28,7 @@ import {
 } from '../lib/enrollmentsApi';
 import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi';
 import { SequenceSettingsTab } from '../components/SequenceSettingsTab';
-import { listSubsequences, createSubsequence, removeSubsequence, type Subsequence } from '../lib/sequencesApi';
+import { SubsequenceTab } from '../components/SubsequenceTab';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
 
@@ -190,6 +190,10 @@ export function SequenceBuilder() {
   }
 
   useEffect(() => {
+    // Reset to Steps when navigating to another sequence (e.g. "Build steps"
+    // on a subsequence) — React reuses this component across /:id changes, so
+    // the tab state would otherwise carry over from the previous sequence.
+    setTab('Steps');
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -737,11 +741,21 @@ export function SequenceBuilder() {
   );
 }
 
+  const visibleTabs: readonly Tab[] = sequence?.parentSequenceId
+    ? ['Steps', 'Enrolled contacts', 'Stats']
+    : TABS;
+
   return (
     <div>
       <Link to="/sequences" className="mb-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary">
         ← Sequences
       </Link>
+
+      {sequence?.parentSequenceId && (
+        <div className="mb-3 rounded-md border border-info/25 bg-info/10 px-3 py-2 text-[11.5px] text-text-tertiary">
+          This is a subsequence branch — its settings and sender accounts are inherited from the parent sequence.
+        </div>
+      )}
 
       <div className="mb-[18px] flex items-start justify-between gap-4">
         <div>
@@ -810,7 +824,7 @@ export function SequenceBuilder() {
       </div>
 
       <div className="mb-5 flex gap-5 border-b border-border-default">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -982,6 +996,15 @@ export function SequenceBuilder() {
           </div>
 
           <div>
+          {sequence?.parentSequenceId ? (
+            <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-label">Senders</div>
+              <p className="text-[11.5px] leading-relaxed text-text-faint">
+                Email accounts are inherited from the parent sequence — this branch sends from the
+                parent's selected sender accounts, so there's nothing to configure here.
+              </p>
+            </div>
+          ) : (
           <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">
@@ -1050,6 +1073,7 @@ export function SequenceBuilder() {
                 : 'No senders checked — Auto picks the best available account per send.'}
             </p>
           </div>
+          )}
 
           <div className="rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Summary</div>
@@ -1259,263 +1283,11 @@ export function SequenceBuilder() {
           )}
         </div>
       )}
-      {tab === 'Settings' && sequence && <SequenceSettingsTab sequenceId={sequence.id} />}
-      {tab === 'Subsequences' && sequence && <SubsequenceTab sequenceId={sequence.id} />}
-    </div>
-  );
-}
-
-const SUB_TRIGGERS: Array<{ value: Subsequence['trigger']; label: string }> = [
-  { value: 'reply', label: 'Any reply' },
-  { value: 'positive', label: 'Positive reply' },
-  { value: 'open', label: 'Email opened' },
-  { value: 'click', label: 'Link clicked' },
-  { value: 'ooo', label: 'Out of office' },
-  { value: 'custom_text', label: 'Custom text' },
-];
-
-const subFieldCls =
-  'h-8 w-full rounded-md border border-border-strong bg-field px-2.5 text-xs text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none disabled:opacity-60';
-
-function SubFieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">{children}</div>
-  );
-}
-
-function subDelayLabel(ms: number): string {
-  if (!ms || ms <= 0) return '';
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
-}
-
-function SubsequenceTab({ sequenceId }: { sequenceId: string }) {
-  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
-  const [subs, setSubs] = useState<Subsequence[]>([]);
-  const [allSeqs, setAllSeqs] = useState<Array<{ id: string; name: string }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    name: '',
-    trigger: 'reply' as Subsequence['trigger'],
-    matchText: '',
-    childSequenceId: '',
-    delayValue: 0,
-    delayUnit: 'hours' as 'minutes' | 'hours' | 'days',
-    stopParent: true,
-  });
-
-  useEffect(() => {
-    setLoading(true);
-    listSubsequences(sequenceId)
-      .then(setSubs)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-    listSequences()
-      .then((s) => setAllSeqs(s.filter((x) => x.id !== sequenceId).map((x) => ({ id: x.id, name: x.name }))))
-      .catch(() => undefined);
-  }, [sequenceId]);
-
-  const childName = (id: string) => allSeqs.find((x) => x.id === id)?.name ?? '—';
-  const triggerLabel = (t: Subsequence['trigger']) => SUB_TRIGGERS.find((x) => x.value === t)?.label ?? t;
-
-  async function addSub() {
-    if (!form.name.trim() || !form.childSequenceId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const perUnit =
-        form.delayUnit === 'days' ? 86_400_000 : form.delayUnit === 'hours' ? 3_600_000 : 60_000;
-      const created = await createSubsequence(sequenceId, {
-        name: form.name.trim(),
-        trigger: form.trigger,
-        matchText: form.trigger === 'custom_text' ? form.matchText.trim() || undefined : undefined,
-        childSequenceId: form.childSequenceId,
-        delayMs: String(Math.max(0, Math.round(form.delayValue)) * perUnit),
-        stopParent: form.stopParent,
-      });
-      setSubs((prev) => [...prev, created]);
-      setForm({ name: '', trigger: 'reply', matchText: '', childSequenceId: '', delayValue: 0, delayUnit: 'hours', stopParent: true });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeSub(id: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      await removeSubsequence(sequenceId, id);
-      setSubs((prev) => prev.filter((x) => x.id !== id));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const canSubmit = canWrite && !!form.name.trim() && !!form.childSequenceId && !busy;
-
-  return (
-    <div className="max-w-[820px] space-y-4 pb-6">
-      {error && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
+      {tab === 'Settings' && sequence && !sequence.parentSequenceId && (
+        <SequenceSettingsTab sequenceId={sequence.id} sequenceName={sequence.name} />
       )}
-
-      <section className="rounded-md border border-border-default bg-panel p-4">
-        <div className="mb-1 flex items-center justify-between gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-text-label">Subsequences</div>
-          <span className="rounded-full border border-border-subtle bg-surface px-2 py-0.5 font-mono text-[10.5px] text-text-muted">{subs.length}</span>
-        </div>
-        <p className="mb-3 text-xs leading-relaxed text-text-faint">
-          Route a prospect into a different sequence based on what they do — reply, open, click, go out-of-office, or match a custom phrase. Only one subsequence fires per prospect when trigger-once is enabled in Settings.
-        </p>
-
-        {loading ? (
-          <div className="animate-pulse py-4 text-xs text-text-muted">Loading subsequences…</div>
-        ) : subs.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border-emphasis bg-surface px-4 py-6 text-center">
-            <div className="text-[13px] font-medium text-text-secondary">No subsequences yet</div>
-            <div className="mt-0.5 text-xs text-text-faint">Add one below to branch prospects into another sequence.</div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {subs.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 rounded-md border border-border-subtle bg-surface px-3 py-2.5">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-[13px] font-medium text-text-secondary">{s.name}</span>
-                    <span className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-light">
-                      {triggerLabel(s.trigger)}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-text-faint">
-                    <span>→ {childName(s.childSequenceId)}</span>
-                    {s.matchText && <span>· contains “{s.matchText}”</span>}
-                    {Number(s.delayMs) > 0 && <span>· wait {subDelayLabel(Number(s.delayMs))}</span>}
-                    <span>· {s.stopParent ? 'stops parent sequence' : 'parent keeps running'}</span>
-                  </div>
-                </div>
-                {canWrite && (
-                  <button
-                    onClick={() => removeSub(s.id)}
-                    disabled={busy}
-                    className="shrink-0 rounded-md border border-border-strong px-2 py-1 text-[11px] font-medium text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {canWrite && (
-        <section className="rounded-md border border-border-default bg-panel p-4">
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Add a subsequence</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <SubFieldLabel>Name</SubFieldLabel>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Interested — send the deck"
-                className={subFieldCls}
-              />
-            </div>
-            <div>
-              <SubFieldLabel>Trigger</SubFieldLabel>
-              <select
-                value={form.trigger}
-                onChange={(e) => setForm({ ...form, trigger: e.target.value as Subsequence['trigger'] })}
-                className={subFieldCls}
-              >
-                {SUB_TRIGGERS.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <SubFieldLabel>Send into sequence</SubFieldLabel>
-              <select
-                value={form.childSequenceId}
-                onChange={(e) => setForm({ ...form, childSequenceId: e.target.value })}
-                className={subFieldCls}
-              >
-                <option value="">Select a sequence…</option>
-                {allSeqs.map((x) => (
-                  <option key={x.id} value={x.id}>{x.name}</option>
-                ))}
-              </select>
-            </div>
-            {form.trigger === 'custom_text' && (
-              <div className="col-span-2">
-                <SubFieldLabel>Match text</SubFieldLabel>
-                <input
-                  value={form.matchText}
-                  onChange={(e) => setForm({ ...form, matchText: e.target.value })}
-                  placeholder="e.g. pricing"
-                  className={subFieldCls}
-                />
-              </div>
-            )}
-            <div>
-              <SubFieldLabel>Wait before enrolling</SubFieldLabel>
-              <input
-                type="number"
-                min={0}
-                value={form.delayValue}
-                onChange={(e) => setForm({ ...form, delayValue: Number(e.target.value) })}
-                className={`${subFieldCls} font-mono`}
-              />
-            </div>
-            <div>
-              <SubFieldLabel>Unit</SubFieldLabel>
-              <select
-                value={form.delayUnit}
-                onChange={(e) => setForm({ ...form, delayUnit: e.target.value as 'minutes' | 'hours' | 'days' })}
-                className={subFieldCls}
-              >
-                <option value="minutes">minutes</option>
-                <option value="hours">hours</option>
-                <option value="days">days</option>
-              </select>
-            </div>
-          </div>
-
-          <label className="mt-3 flex cursor-pointer items-start gap-2.5">
-            <input
-              type="checkbox"
-              checked={form.stopParent}
-              onChange={(e) => setForm({ ...form, stopParent: e.target.checked })}
-              className="mt-0.5 accent-accent"
-            />
-            <span>
-              <span className="block text-xs font-medium text-text-secondary">Stop the parent sequence when this fires</span>
-              <span className="block text-[11px] text-text-faint">The prospect leaves the current sequence and only runs the subsequence.</span>
-            </span>
-          </label>
-
-          <div className="mt-3.5 flex items-center justify-end gap-3">
-            {!form.childSequenceId && allSeqs.length === 0 && (
-              <span className="text-[11px] text-text-faint">Create another sequence first to route into it.</span>
-            )}
-            <button
-              onClick={addSub}
-              disabled={!canSubmit}
-              className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? 'Adding…' : 'Add subsequence'}
-            </button>
-          </div>
-        </section>
+      {tab === 'Subsequences' && sequence && !sequence.parentSequenceId && (
+        <SubsequenceTab sequenceId={sequence.id} onViewSettings={() => setTab('Settings')} />
       )}
     </div>
   );

@@ -213,11 +213,13 @@ export class SequenceRunnerService {
     });
     if (!contact) return;
 
-    // Sender is set once per sequence, not per step (revised GC-130) — every
-    // send_email step in a sequence shares the same account/from name/reply-to.
-    const sequence = await this.drizzle.db.query.sequences.findFirst({
-      where: eq(sequences.id, enrollment.sequenceId),
-    });
+    // Sender + settings resolve from the ROOT parent for subsequence children
+    // (inherited live); a child's own settings contribute only its schedule.
+    const {
+      sequence,
+      rootSequenceId,
+      settings: seqSettings,
+    } = await this.effectiveContext(enrollment.sequenceId);
 
     // A step can link several templates (sequence_step_templates) — pick one
     // uniformly at random per send, true A/B, replacing the old
@@ -286,10 +288,8 @@ export class SequenceRunnerService {
     let resolvedBodyHtmlRaw = resolved.bodyHtml;
     let resolvedBodyText = resolved.bodyText;
 
-    // T09 — per-sequence safety/render toggles.
-    const seqSettings = await this.drizzle.db.query.sequenceSettings.findFirst({
-      where: eq(sequenceSettings.sequenceId, enrollment.sequenceId),
-    });
+    // T09 — per-sequence safety/render toggles (seqSettings already resolved
+    // above, inherited from the root parent for subsequence children).
     const trackOpen = seqSettings?.trackOpen !== false;
     const trackClick = seqSettings?.trackClick !== false;
     if (seqSettings?.stripStyling) {
@@ -408,7 +408,11 @@ export class SequenceRunnerService {
     // step sends every later step too (pinned on the enrollment row).
     let senderAccountId: string | undefined;
     try {
-      senderAccountId = await this.resolveSenderAccount(enrollment, sequence);
+      senderAccountId = await this.resolveSenderAccount(
+        enrollment,
+        sequence,
+        rootSequenceId,
+      );
     } catch (err) {
       await this.recordFailedSend(
         enrollment,
@@ -489,6 +493,7 @@ export class SequenceRunnerService {
   private async resolveSenderAccount(
     enrollment: typeof sequenceEnrollments.$inferSelect,
     sequence: typeof sequences.$inferSelect | undefined,
+    rootSequenceId: string,
   ): Promise<string | undefined> {
     if (enrollment.senderAccountId) {
       try {
@@ -500,8 +505,9 @@ export class SequenceRunnerService {
         // pinned account unusable — fall through and re-pin below
       }
     }
+    // Sender set is inherited from the root parent for subsequence children.
     const setRows = await this.drizzle.db.query.sequenceSenders.findMany({
-      where: eq(sequenceSenders.sequenceId, enrollment.sequenceId),
+      where: eq(sequenceSenders.sequenceId, rootSequenceId),
     });
     const picked =
       setRows.length > 0
@@ -597,14 +603,47 @@ export class SequenceRunnerService {
       .findIndex((s) => s.id === stepId);
   }
 
+  /**
+   * Effective sender + settings for a sequence. A subsequence child inherits
+   * them live from its root parent; the child's own settings row contributes
+   * only its sending schedule.
+   */
+  private async effectiveContext(sequenceId: string) {
+    const sequence = await this.drizzle.db.query.sequences.findFirst({
+      where: eq(sequences.id, sequenceId),
+    });
+    const rootSequenceId = sequence?.parentSequenceId ?? sequenceId;
+    const rootSequence =
+      rootSequenceId === sequenceId
+        ? sequence
+        : await this.drizzle.db.query.sequences.findFirst({
+            where: eq(sequences.id, rootSequenceId),
+          });
+    const rootSettings =
+      await this.drizzle.db.query.sequenceSettings.findFirst({
+        where: eq(sequenceSettings.sequenceId, rootSequenceId),
+      });
+    const ownSettings =
+      rootSequenceId === sequenceId
+        ? rootSettings
+        : await this.drizzle.db.query.sequenceSettings.findFirst({
+            where: eq(sequenceSettings.sequenceId, sequenceId),
+          });
+    const settings = rootSettings
+      ? {
+          ...rootSettings,
+          scheduleId: ownSettings?.scheduleId ?? rootSettings.scheduleId,
+        }
+      : rootSettings;
+    return { sequence: rootSequence, rootSequenceId, settings };
+  }
+
   /** T07 — true when now falls inside the sequence's sending schedule. */
   private async withinSchedule(
     sequenceId: string,
     now: Date,
   ): Promise<boolean> {
-    const st = await this.drizzle.db.query.sequenceSettings.findFirst({
-      where: eq(sequenceSettings.sequenceId, sequenceId),
-    });
+    const { settings: st } = await this.effectiveContext(sequenceId);
     if (!st?.scheduleId) return true;
     const sched = await this.drizzle.db.query.sendingSchedules.findFirst({
       where: eq(sendingSchedules.id, st.scheduleId),

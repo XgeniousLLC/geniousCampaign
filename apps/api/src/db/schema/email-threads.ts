@@ -7,7 +7,9 @@ import {
   timestamp,
   index,
   unique,
+  jsonb,
 } from 'drizzle-orm/pg-core';
+import type { ConditionTree } from '@genius-campaign/shared';
 import { sequences } from './sequences';
 import { sequenceEnrollments } from './enrollments';
 import { contacts } from './contacts';
@@ -98,13 +100,11 @@ export const scheduledReplies = pgTable(
   (t) => [index('scheduled_replies_thread_idx').on(t.threadId)],
 );
 
-export const subsequenceTriggerEnum = pgEnum('subsequence_trigger', [  'reply',
-  'positive',
-  'open',
-  'click',
-  'ooo',
-  'custom_text',
-]);
+export const EMPTY_CONDITION_TREE: ConditionTree = {
+  kind: 'group',
+  combinator: 'and',
+  children: [],
+};
 
 export const subsequences = pgTable(
   'subsequences',
@@ -114,8 +114,11 @@ export const subsequences = pgTable(
       .notNull()
       .references(() => sequences.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    trigger: subsequenceTriggerEnum('trigger').notNull().default('reply'),
-    matchText: text('match_text'),
+    // AND/OR condition tree that must match before the prospect is routed.
+    conditions: jsonb('conditions')
+      .$type<ConditionTree>()
+      .notNull()
+      .default(EMPTY_CONDITION_TREE),
     childSequenceId: uuid('child_sequence_id')
       .notNull()
       .references(() => sequences.id, { onDelete: 'cascade' }),
@@ -126,10 +129,9 @@ export const subsequences = pgTable(
   },
   (t) => [
     index('subsequences_parent_idx').on(t.parentSequenceId),
-    unique('subsequences_parent_child_trigger_unique').on(
+    unique('subsequences_parent_child_unique').on(
       t.parentSequenceId,
       t.childSequenceId,
-      t.trigger,
     ),
   ],
 );
