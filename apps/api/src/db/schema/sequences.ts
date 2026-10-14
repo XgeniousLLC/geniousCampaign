@@ -60,6 +60,9 @@ export const sequenceSteps = pgTable('sequence_steps', {
   type: sequenceStepTypeEnum('type').notNull(),
   delayValue: integer('delay_value'),
   delayUnit: delayUnitEnum('delay_unit'),
+  // Send this send_email step as a reply in the enrollment's existing thread
+  // instead of starting a fresh email.
+  threadedReply: boolean('threaded_reply').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -91,6 +94,29 @@ export const sequenceStepTemplates = pgTable(
     unique('sequence_step_templates_step_template_unique').on(
       table.sequenceStepId,
       table.templateId,
+    ),
+  ],
+);
+
+// Multi-sender set per sequence: step 1 rotates across these accounts and the
+// winner sticks to the enrollment (sequence_enrollments.sender_account_id).
+// Empty set = legacy single sender (sequences.sender_account_id) / global
+// auto-pick. Replacing the set never re-pins running enrollments.
+export const sequenceSenders = pgTable(
+  'sequence_senders',
+  {
+    sequenceId: uuid('sequence_id')
+      .notNull()
+      .references(() => sequences.id, { onDelete: 'cascade' }),
+    senderAccountId: uuid('sender_account_id')
+      .notNull()
+      .references(() => senderAccounts.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    index('sequence_senders_sequence_idx').on(table.sequenceId),
+    unique('sequence_senders_sequence_account_unique').on(
+      table.sequenceId,
+      table.senderAccountId,
     ),
   ],
 );

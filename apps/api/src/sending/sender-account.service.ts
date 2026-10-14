@@ -1,6 +1,11 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
 import { senderAccounts } from '../db/schema';
@@ -46,7 +51,9 @@ export class SenderAccountService {
   }
 
   async findOne(id: string) {
-    const account = await this.drizzle.db.query.senderAccounts.findFirst({ where: eq(senderAccounts.id, id) });
+    const account = await this.drizzle.db.query.senderAccounts.findFirst({
+      where: eq(senderAccounts.id, id),
+    });
     if (!account) {
       throw new NotFoundException(`Sender account ${id} not found`);
     }
@@ -70,7 +77,12 @@ export class SenderAccountService {
         sentTodayDate: today(),
         awsRegion: dto.awsRegion,
         awsAccessKeyId: dto.awsAccessKeyId,
-        awsSecretAccessKeyEncrypted: dto.awsSecretAccessKey ? encryptToken(dto.awsSecretAccessKey, appEncryptionSecret(this.config)) : undefined,
+        awsSecretAccessKeyEncrypted: dto.awsSecretAccessKey
+          ? encryptToken(
+              dto.awsSecretAccessKey,
+              appEncryptionSecret(this.config),
+            )
+          : undefined,
         sesConfigurationSet: dto.sesConfigurationSet,
       })
       .returning();
@@ -83,12 +95,27 @@ export class SenderAccountService {
       .update(senderAccounts)
       .set({
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        ...(dto.displayName !== undefined ? { displayName: dto.displayName } : {}),
-        ...(dto.dailySendLimit !== undefined ? { dailySendLimit: dto.dailySendLimit } : {}),
+        ...(dto.displayName !== undefined
+          ? { displayName: dto.displayName }
+          : {}),
+        ...(dto.dailySendLimit !== undefined
+          ? { dailySendLimit: dto.dailySendLimit }
+          : {}),
         ...(dto.awsRegion !== undefined ? { awsRegion: dto.awsRegion } : {}),
-        ...(dto.awsAccessKeyId !== undefined ? { awsAccessKeyId: dto.awsAccessKeyId } : {}),
-        ...(dto.awsSecretAccessKey ? { awsSecretAccessKeyEncrypted: encryptToken(dto.awsSecretAccessKey, appEncryptionSecret(this.config)) } : {}),
-        ...(dto.sesConfigurationSet !== undefined ? { sesConfigurationSet: dto.sesConfigurationSet } : {}),
+        ...(dto.awsAccessKeyId !== undefined
+          ? { awsAccessKeyId: dto.awsAccessKeyId }
+          : {}),
+        ...(dto.awsSecretAccessKey
+          ? {
+              awsSecretAccessKeyEncrypted: encryptToken(
+                dto.awsSecretAccessKey,
+                appEncryptionSecret(this.config),
+              ),
+            }
+          : {}),
+        ...(dto.sesConfigurationSet !== undefined
+          ? { sesConfigurationSet: dto.sesConfigurationSet }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(senderAccounts.id, id))
@@ -98,7 +125,9 @@ export class SenderAccountService {
 
   async remove(id: string) {
     await this.findOne(id);
-    await this.drizzle.db.delete(senderAccounts).where(eq(senderAccounts.id, id));
+    await this.drizzle.db
+      .delete(senderAccounts)
+      .where(eq(senderAccounts.id, id));
     return { id };
   }
 
@@ -112,7 +141,8 @@ export class SenderAccountService {
     });
     if (existing) return existing;
 
-    const fromEmail = this.settings.get('SES_FROM_EMAIL') || 'noreply@example.com';
+    const fromEmail =
+      this.settings.get('SES_FROM_EMAIL') || 'noreply@example.com';
     const [created] = await this.drizzle.db
       .insert(senderAccounts)
       .values({
@@ -146,7 +176,9 @@ export class SenderAccountService {
    * isActive/remaining quota — a picked-but-exhausted/inactive account hard
    * fails the send with a clear error rather than silently falling back to
    * auto-pick, per Sharifur's call on the ticket's flagged decision. */
-  async pickAccountForSend(overrideAccountId?: string): Promise<typeof senderAccounts.$inferSelect> {
+  async pickAccountForSend(
+    overrideAccountId?: string,
+  ): Promise<typeof senderAccounts.$inferSelect> {
     await this.ensureSesAccount();
 
     if (overrideAccountId) {
@@ -169,7 +201,9 @@ export class SenderAccountService {
     const candidates = await this.drizzle.db.query.senderAccounts.findMany({
       where: eq(senderAccounts.isActive, true),
     });
-    const fresh = await Promise.all(candidates.map((c) => this.resetIfNewDay(c)));
+    const fresh = await Promise.all(
+      candidates.map((c) => this.resetIfNewDay(c)),
+    );
 
     const withHeadroom = fresh
       .map((a) => ({ account: a, headroom: a.dailySendLimit - a.sentToday }))
@@ -177,7 +211,36 @@ export class SenderAccountService {
       .sort((a, b) => b.headroom - a.headroom);
 
     if (withHeadroom.length === 0) {
-      throw new InternalServerErrorException('Every sender account has exhausted its daily send limit — cannot send.');
+      throw new InternalServerErrorException(
+        'Every sender account has exhausted its daily send limit — cannot send.',
+      );
+    }
+    return withHeadroom[0].account;
+  }
+
+  /**
+   * Same headroom rotation as pickAccountForSend(), scoped to an explicit
+   * account set (a sequence's multi-sender list). Throws when none of the
+   * set is usable — the caller (sequence runner) then records a failed send
+   * instead of silently mailing from outside the set.
+   */
+  async pickAccountFromSet(
+    ids: string[],
+  ): Promise<typeof senderAccounts.$inferSelect> {
+    await this.ensureSesAccount();
+    const rows = await this.drizzle.db.query.senderAccounts.findMany({
+      where: inArray(senderAccounts.id, ids),
+    });
+    const fresh = await Promise.all(rows.map((c) => this.resetIfNewDay(c)));
+    const withHeadroom = fresh
+      .filter((a) => a.isActive)
+      .map((a) => ({ account: a, headroom: a.dailySendLimit - a.sentToday }))
+      .filter((a) => a.headroom > 0)
+      .sort((a, b) => b.headroom - a.headroom);
+    if (withHeadroom.length === 0) {
+      throw new BadRequestException(
+        'None of this sequence\u2019s sender accounts can send right now (inactive or daily limit exhausted).',
+      );
     }
     return withHeadroom[0].account;
   }
@@ -185,20 +248,37 @@ export class SenderAccountService {
   async recordSend(accountId: string) {
     await this.drizzle.db
       .update(senderAccounts)
-      .set({ sentToday: sql`${senderAccounts.sentToday} + 1`, updatedAt: new Date() })
+      .set({
+        sentToday: sql`${senderAccounts.sentToday} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(senderAccounts.id, accountId));
   }
 
-  async upsertGmailAccount(email: string, displayName: string | undefined, encryptedRefreshToken: string) {
+  async upsertGmailAccount(
+    email: string,
+    displayName: string | undefined,
+    encryptedRefreshToken: string,
+  ) {
     const existing = await this.drizzle.db.query.senderAccounts.findFirst({
-      where: and(eq(senderAccounts.provider, 'gmail'), eq(senderAccounts.email, email)),
+      where: and(
+        eq(senderAccounts.provider, 'gmail'),
+        eq(senderAccounts.email, email),
+      ),
     });
-    const gmailDailyLimit = Number(this.config.get<string>('GMAIL_DEFAULT_DAILY_LIMIT') ?? 300);
+    const gmailDailyLimit = Number(
+      this.config.get<string>('GMAIL_DEFAULT_DAILY_LIMIT') ?? 300,
+    );
 
     if (existing) {
       const [updated] = await this.drizzle.db
         .update(senderAccounts)
-        .set({ gmailRefreshTokenEncrypted: encryptedRefreshToken, displayName, isActive: true, updatedAt: new Date() })
+        .set({
+          gmailRefreshTokenEncrypted: encryptedRefreshToken,
+          displayName,
+          isActive: true,
+          updatedAt: new Date(),
+        })
         .where(eq(senderAccounts.id, existing.id))
         .returning();
       return updated;

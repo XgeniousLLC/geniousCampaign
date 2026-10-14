@@ -27,10 +27,12 @@ import {
   type Enrollment,
 } from '../lib/enrollmentsApi';
 import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi';
+import { SequenceSettingsTab } from '../components/SequenceSettingsTab';
+import { listSubsequences, createSubsequence, removeSubsequence, type Subsequence } from '../lib/sequencesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
 
-const TABS = ['Steps', 'Enrolled contacts', 'Stats'] as const;
+const TABS = ['Steps', 'Enrolled contacts', 'Stats', 'Settings', 'Subsequences'] as const;
 type Tab = (typeof TABS)[number];
 
 const ENROLLMENT_STATUS_STYLES: Record<Enrollment['status'], string> = {
@@ -126,7 +128,7 @@ export function SequenceBuilder() {
   const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
-  const [senderAccountId, setSenderAccountId] = useState('');
+  const [senderAccountIds, setSenderAccountIds] = useState<string[]>([]);
   const [fromName, setFromName] = useState('');
   const [replyTo, setReplyTo] = useState('');
   const [savingSender, setSavingSender] = useState(false);
@@ -134,6 +136,8 @@ export function SequenceBuilder() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+  const [enrolledFilter, setEnrolledFilter] = useState('');
+  const [enrolledStatus, setEnrolledStatus] = useState<'all' | Enrollment['status']>('all');
   const [enrollTab, setEnrollTab] = useState<'individual' | 'list' | 'tag'>('individual');
   const [enrollSearch, setEnrollSearch] = useState('');
   const [enrollSelectedIds, setEnrollSelectedIds] = useState<string[]>([]);
@@ -165,7 +169,13 @@ export function SequenceBuilder() {
     ]);
     setSequence(seq);
     setName(seq.name);
-    setSenderAccountId(seq.senderAccountId ?? '');
+    setSenderAccountIds(
+      seq.senderAccountIds && seq.senderAccountIds.length > 0
+        ? seq.senderAccountIds
+        : seq.senderAccountId
+          ? [seq.senderAccountId]
+          : [],
+    );
     setFromName(seq.fromName ?? '');
     setReplyTo(seq.replyTo ?? '');
     setSteps(seqSteps);
@@ -207,6 +217,20 @@ export function SequenceBuilder() {
 
   const activeEnrolledCount = enrollments.filter((e) => e.status === 'active' || e.status === 'paused').length;
 
+  const visibleEnrollments = useMemo(() => {
+    const needle = enrolledFilter.trim().toLowerCase();
+    return enrollments.filter((e) => {
+      if (enrolledStatus !== 'all' && e.status !== enrolledStatus) return false;
+      if (!needle) return true;
+      const c = contacts.find((x) => x.id === e.contactId);
+      if (!c) return e.contactId.toLowerCase().includes(needle);
+      return (
+        c.email.toLowerCase().includes(needle) ||
+        displayName(c).toLowerCase().includes(needle)
+      );
+    });
+  }, [enrollments, contacts, enrolledFilter, enrolledStatus]);
+
   async function saveName() {
     if (!id || !sequence || name === sequence.name) return;
     setSavingName(true);
@@ -215,13 +239,17 @@ export function SequenceBuilder() {
     reload();
   }
 
-  // --- Sequence-level sender (global — applies to every send_email step) ---
+  // --- Sequence-level senders (multi — step 1 rotates, winner sticks) ---
 
-  async function handleSenderAccountChange(value: string) {
+  async function handleSenderToggle(accountId: string) {
     if (!id) return;
-    setSenderAccountId(value);
+    const next = senderAccountIds.includes(accountId)
+      ? senderAccountIds.filter((x) => x !== accountId)
+      : [...senderAccountIds, accountId];
+    setSenderAccountIds(next);
     setSavingSender(true);
-    await updateSequence(id, { senderAccountId: value || null });
+    // A non-empty set takes over from the legacy single sender.
+    await updateSequence(id, next.length > 0 ? { senderAccountIds: next, senderAccountId: null } : { senderAccountIds: [] });
     setSavingSender(false);
     reload();
   }
@@ -253,6 +281,7 @@ export function SequenceBuilder() {
       templateIds: [],
       delayValue: null,
       delayUnit: null,
+      threadedReply: false,
     };
     setSteps((prev) => [...prev, newSendStep]);
     setDirty(true);
@@ -307,6 +336,7 @@ export function SequenceBuilder() {
         templateIds: [],
         delayValue,
         delayUnit,
+        threadedReply: false,
       };
       setSteps((prev) => {
         const idx = prev.findIndex((s) => s.id === block.sendStep!.id);
@@ -315,6 +345,14 @@ export function SequenceBuilder() {
         return next;
       });
     }
+    setDirty(true);
+  }
+
+  function handleThreadedReplyChange(block: Block, threadedReply: boolean) {
+    if (!block.sendStep) return;
+    setSteps((prev) =>
+      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, threadedReply } : s)),
+    );
     setDirty(true);
   }
 
@@ -346,6 +384,7 @@ export function SequenceBuilder() {
             templateIds: step.templateIds,
             delayValue: step.delayValue ?? undefined,
             delayUnit: step.delayUnit ?? undefined,
+            threadedReply: step.threadedReply,
           });
           idMap.set(step.id, created.id);
           orderedRealIds.push(created.id);
@@ -359,6 +398,7 @@ export function SequenceBuilder() {
             !sameTemplateIds ||
             orig.delayValue !== step.delayValue ||
             orig.delayUnit !== step.delayUnit ||
+            orig.threadedReply !== step.threadedReply ||
             orig.type !== step.type;
           if (changed) {
             await updateStep(id, step.id, {
@@ -366,6 +406,7 @@ export function SequenceBuilder() {
               templateIds: step.templateIds,
               delayValue: step.delayValue ?? undefined,
               delayUnit: step.delayUnit ?? undefined,
+              threadedReply: step.threadedReply,
             });
           }
           idMap.set(step.id, step.id);
@@ -903,6 +944,18 @@ export function SequenceBuilder() {
                           )}
                         </div>
                       )}
+                      {block.index > 1 && (
+                        <label className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-3 py-2 pl-[50px] text-[11.5px] text-text-tertiary">
+                          <input
+                            type="checkbox"
+                            checked={block.sendStep!.threadedReply}
+                            onChange={(e) => handleThreadedReplyChange(block, e.target.checked)}
+                            disabled={!canWrite}
+                            className="accent-accent"
+                          />
+                          Send as a threaded reply to the previous email
+                        </label>
+                      )}
                     </div>
                   )}
                 </div>
@@ -931,22 +984,38 @@ export function SequenceBuilder() {
           <div>
           <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">Sender</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">
+                Senders{senderAccountIds.length > 0 ? ` (${senderAccountIds.length})` : ''}
+              </span>
               {savingSender && <span className="text-[10.5px] text-text-faint">Saving…</span>}
             </div>
-            <select
-              value={senderAccountId}
-              onChange={(e) => handleSenderAccountChange(e.target.value)}
-              disabled={!canWrite}
-              className="mb-2.5 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
-            >
-              <option value="">Auto (best available)</option>
-              {senderAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
-                </option>
-              ))}
-            </select>
+            <div className="mb-2.5 max-h-44 space-y-1 overflow-y-auto">
+              {senderAccounts.length === 0 && (
+                <p className="text-[11px] text-text-muted">No sender accounts yet — Auto will use the global pool.</p>
+              )}
+              {senderAccounts.map((acc) => {
+                const checked = senderAccountIds.includes(acc.id);
+                return (
+                  <label
+                    key={acc.id}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs ${
+                      checked ? 'border-accent bg-accent/10 text-text-primary' : 'border-border-strong text-text-secondary hover:bg-raised'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleSenderToggle(acc.id)}
+                      disabled={!canWrite}
+                      className="accent-accent"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
             <div className="mb-2">
               <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
                 From name
@@ -975,7 +1044,11 @@ export function SequenceBuilder() {
                 className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
               />
             </div>
-            <p className="mt-2.5 text-[10.5px] text-text-meta">Applies to every "Send email" step in this sequence.</p>
+            <p className="mt-2.5 text-[10.5px] text-text-meta">
+              {senderAccountIds.length > 0
+                ? 'Step 1 rotates across checked accounts; the winner sends every later step for that contact.'
+                : 'No senders checked — Auto picks the best available account per send.'}
+            </p>
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-4">
@@ -1001,6 +1074,30 @@ export function SequenceBuilder() {
 
       {tab === 'Enrolled contacts' && (
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border-default p-2.5">
+            <input
+              value={enrolledFilter}
+              onChange={(e) => setEnrolledFilter(e.target.value)}
+              placeholder="Search name or email…"
+              className="h-8 min-w-0 flex-1 rounded-md border border-border-strong bg-field px-2.5 text-xs text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none"
+            />
+            <select
+              value={enrolledStatus}
+              onChange={(e) => setEnrolledStatus(e.target.value as typeof enrolledStatus)}
+              className="h-8 rounded-md border border-border-strong bg-field px-2 text-xs text-text-secondary focus:border-accent focus:outline-none"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="stopped">Stopped</option>
+              <option value="completed">Completed</option>
+            </select>
+            {(enrolledFilter || enrolledStatus !== 'all') && (
+              <span className="text-[11px] text-text-faint">
+                {visibleEnrollments.length} of {enrollments.length}
+              </span>
+            )}
+          </div>
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border-default bg-surface text-[11px] uppercase tracking-wide text-text-meta">
@@ -1014,7 +1111,7 @@ export function SequenceBuilder() {
               </tr>
             </thead>
             <tbody>
-              {enrollments.map((e) => {
+              {visibleEnrollments.map((e) => {
                 const c = contacts.find((x) => x.id === e.contactId);
                 return (
                   <tr key={e.id} className="border-t border-border-subtle hover:bg-raised">
@@ -1067,10 +1164,10 @@ export function SequenceBuilder() {
                   </tr>
                 );
               })}
-              {enrollments.length === 0 && (
+              {visibleEnrollments.length === 0 && (
                 <tr>
                   <td colSpan={canWrite ? 7 : 6} className="px-3.5 py-8 text-center text-text-muted">
-                    No contacts enrolled yet.
+                    {enrollments.length === 0 ? 'No contacts enrolled yet.' : 'No contacts match the current search or filter.'}
                   </td>
                 </tr>
               )}
@@ -1114,8 +1211,16 @@ export function SequenceBuilder() {
               </div>
 
               <div className="rounded-md border border-border-default bg-panel p-4">
-                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Contacts per step</div>
-                {stats.stepBreakdown.length === 0 ? (
+                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Revenue pipeline</div>
+                <div className="grid grid-cols-3 gap-3.5">
+                  <RatioStat label="Deal value" value={`$${stats.pipeline?.dealValue ?? 0}`} />
+                  <RatioStat label="Positive threads" value={stats.pipeline?.positiveThreads ?? 0} />
+                  <RatioStat label="Pipeline" value={`$${stats.pipeline?.total ?? 0}`} />
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border-default bg-panel p-4">
+                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Contacts per step</div>                {stats.stepBreakdown.length === 0 ? (
                   <p className="text-xs text-text-muted">This sequence has no send steps yet.</p>
                 ) : (
                   <div className="flex flex-col gap-3">
@@ -1153,6 +1258,264 @@ export function SequenceBuilder() {
             </div>
           )}
         </div>
+      )}
+      {tab === 'Settings' && sequence && <SequenceSettingsTab sequenceId={sequence.id} />}
+      {tab === 'Subsequences' && sequence && <SubsequenceTab sequenceId={sequence.id} />}
+    </div>
+  );
+}
+
+const SUB_TRIGGERS: Array<{ value: Subsequence['trigger']; label: string }> = [
+  { value: 'reply', label: 'Any reply' },
+  { value: 'positive', label: 'Positive reply' },
+  { value: 'open', label: 'Email opened' },
+  { value: 'click', label: 'Link clicked' },
+  { value: 'ooo', label: 'Out of office' },
+  { value: 'custom_text', label: 'Custom text' },
+];
+
+const subFieldCls =
+  'h-8 w-full rounded-md border border-border-strong bg-field px-2.5 text-xs text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none disabled:opacity-60';
+
+function SubFieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-text-label">{children}</div>
+  );
+}
+
+function subDelayLabel(ms: number): string {
+  if (!ms || ms <= 0) return '';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+}
+
+function SubsequenceTab({ sequenceId }: { sequenceId: string }) {
+  const canWrite = useAuthStore((s) => s.user?.role !== 'viewer');
+  const [subs, setSubs] = useState<Subsequence[]>([]);
+  const [allSeqs, setAllSeqs] = useState<Array<{ id: string; name: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    name: '',
+    trigger: 'reply' as Subsequence['trigger'],
+    matchText: '',
+    childSequenceId: '',
+    delayValue: 0,
+    delayUnit: 'hours' as 'minutes' | 'hours' | 'days',
+    stopParent: true,
+  });
+
+  useEffect(() => {
+    setLoading(true);
+    listSubsequences(sequenceId)
+      .then(setSubs)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+    listSequences()
+      .then((s) => setAllSeqs(s.filter((x) => x.id !== sequenceId).map((x) => ({ id: x.id, name: x.name }))))
+      .catch(() => undefined);
+  }, [sequenceId]);
+
+  const childName = (id: string) => allSeqs.find((x) => x.id === id)?.name ?? '—';
+  const triggerLabel = (t: Subsequence['trigger']) => SUB_TRIGGERS.find((x) => x.value === t)?.label ?? t;
+
+  async function addSub() {
+    if (!form.name.trim() || !form.childSequenceId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const perUnit =
+        form.delayUnit === 'days' ? 86_400_000 : form.delayUnit === 'hours' ? 3_600_000 : 60_000;
+      const created = await createSubsequence(sequenceId, {
+        name: form.name.trim(),
+        trigger: form.trigger,
+        matchText: form.trigger === 'custom_text' ? form.matchText.trim() || undefined : undefined,
+        childSequenceId: form.childSequenceId,
+        delayMs: String(Math.max(0, Math.round(form.delayValue)) * perUnit),
+        stopParent: form.stopParent,
+      });
+      setSubs((prev) => [...prev, created]);
+      setForm({ name: '', trigger: 'reply', matchText: '', childSequenceId: '', delayValue: 0, delayUnit: 'hours', stopParent: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSub(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await removeSubsequence(sequenceId, id);
+      setSubs((prev) => prev.filter((x) => x.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canSubmit = canWrite && !!form.name.trim() && !!form.childSequenceId && !busy;
+
+  return (
+    <div className="max-w-[820px] space-y-4 pb-6">
+      {error && (
+        <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
+      )}
+
+      <section className="rounded-md border border-border-default bg-panel p-4">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-text-label">Subsequences</div>
+          <span className="rounded-full border border-border-subtle bg-surface px-2 py-0.5 font-mono text-[10.5px] text-text-muted">{subs.length}</span>
+        </div>
+        <p className="mb-3 text-xs leading-relaxed text-text-faint">
+          Route a prospect into a different sequence based on what they do — reply, open, click, go out-of-office, or match a custom phrase. Only one subsequence fires per prospect when trigger-once is enabled in Settings.
+        </p>
+
+        {loading ? (
+          <div className="animate-pulse py-4 text-xs text-text-muted">Loading subsequences…</div>
+        ) : subs.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border-emphasis bg-surface px-4 py-6 text-center">
+            <div className="text-[13px] font-medium text-text-secondary">No subsequences yet</div>
+            <div className="mt-0.5 text-xs text-text-faint">Add one below to branch prospects into another sequence.</div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {subs.map((s) => (
+              <div key={s.id} className="flex items-start gap-3 rounded-md border border-border-subtle bg-surface px-3 py-2.5">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-[13px] font-medium text-text-secondary">{s.name}</span>
+                    <span className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-light">
+                      {triggerLabel(s.trigger)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-text-faint">
+                    <span>→ {childName(s.childSequenceId)}</span>
+                    {s.matchText && <span>· contains “{s.matchText}”</span>}
+                    {Number(s.delayMs) > 0 && <span>· wait {subDelayLabel(Number(s.delayMs))}</span>}
+                    <span>· {s.stopParent ? 'stops parent sequence' : 'parent keeps running'}</span>
+                  </div>
+                </div>
+                {canWrite && (
+                  <button
+                    onClick={() => removeSub(s.id)}
+                    disabled={busy}
+                    className="shrink-0 rounded-md border border-border-strong px-2 py-1 text-[11px] font-medium text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-40"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {canWrite && (
+        <section className="rounded-md border border-border-default bg-panel p-4">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Add a subsequence</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <SubFieldLabel>Name</SubFieldLabel>
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Interested — send the deck"
+                className={subFieldCls}
+              />
+            </div>
+            <div>
+              <SubFieldLabel>Trigger</SubFieldLabel>
+              <select
+                value={form.trigger}
+                onChange={(e) => setForm({ ...form, trigger: e.target.value as Subsequence['trigger'] })}
+                className={subFieldCls}
+              >
+                {SUB_TRIGGERS.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <SubFieldLabel>Send into sequence</SubFieldLabel>
+              <select
+                value={form.childSequenceId}
+                onChange={(e) => setForm({ ...form, childSequenceId: e.target.value })}
+                className={subFieldCls}
+              >
+                <option value="">Select a sequence…</option>
+                {allSeqs.map((x) => (
+                  <option key={x.id} value={x.id}>{x.name}</option>
+                ))}
+              </select>
+            </div>
+            {form.trigger === 'custom_text' && (
+              <div className="col-span-2">
+                <SubFieldLabel>Match text</SubFieldLabel>
+                <input
+                  value={form.matchText}
+                  onChange={(e) => setForm({ ...form, matchText: e.target.value })}
+                  placeholder="e.g. pricing"
+                  className={subFieldCls}
+                />
+              </div>
+            )}
+            <div>
+              <SubFieldLabel>Wait before enrolling</SubFieldLabel>
+              <input
+                type="number"
+                min={0}
+                value={form.delayValue}
+                onChange={(e) => setForm({ ...form, delayValue: Number(e.target.value) })}
+                className={`${subFieldCls} font-mono`}
+              />
+            </div>
+            <div>
+              <SubFieldLabel>Unit</SubFieldLabel>
+              <select
+                value={form.delayUnit}
+                onChange={(e) => setForm({ ...form, delayUnit: e.target.value as 'minutes' | 'hours' | 'days' })}
+                className={subFieldCls}
+              >
+                <option value="minutes">minutes</option>
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+            </div>
+          </div>
+
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={form.stopParent}
+              onChange={(e) => setForm({ ...form, stopParent: e.target.checked })}
+              className="mt-0.5 accent-accent"
+            />
+            <span>
+              <span className="block text-xs font-medium text-text-secondary">Stop the parent sequence when this fires</span>
+              <span className="block text-[11px] text-text-faint">The prospect leaves the current sequence and only runs the subsequence.</span>
+            </span>
+          </label>
+
+          <div className="mt-3.5 flex items-center justify-end gap-3">
+            {!form.childSequenceId && allSeqs.length === 0 && (
+              <span className="text-[11px] text-text-faint">Create another sequence first to route into it.</span>
+            )}
+            <button
+              onClick={addSub}
+              disabled={!canSubmit}
+              className="h-8 rounded-md bg-accent px-3.5 text-xs font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busy ? 'Adding…' : 'Add subsequence'}
+            </button>
+          </div>
+        </section>
       )}
     </div>
   );

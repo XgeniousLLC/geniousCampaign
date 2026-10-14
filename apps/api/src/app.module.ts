@@ -35,6 +35,7 @@ import { DebugLogModule } from './debug-log/debug-log.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
+import { InboxModule } from './inbox/inbox.module';
 
 @Module({
   imports: [
@@ -92,6 +93,7 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
     ApiKeysModule,
     PublicApiModule,
     CustomFieldsModule,
+    InboxModule,
   ],
   controllers: [AppController],
 })

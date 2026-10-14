@@ -8,5 +8,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule],
   controllers: [AiAssistController],
   providers: [AiAssistService, AiUsageService],
+  exports: [AiAssistService],
 })
 export class AiAssistModule {}

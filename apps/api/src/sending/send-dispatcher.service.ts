@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { SenderAccountService } from './sender-account.service';
 import { SesSenderProvider } from './ses-sender.provider';
 import { GmailSenderProvider } from './gmail-sender.provider';
 import { CircuitBreakerService } from '../circuit-breaker/circuit-breaker.service';
-import type { SendEmailParams, SendEmailResult } from './email-sender-provider.interface';
+import type {
+  SendEmailParams,
+  SendEmailResult,
+} from './email-sender-provider.interface';
 
 /**
  * The single sending entry point (CLAUDE.md invariant 7) — every caller
@@ -37,13 +40,36 @@ export class SendDispatcherService {
     await this.breaker.assertNotTripped();
 
     const { senderAccountId: overrideAccountId, fromName, ...rest } = params;
-    const account = await this.senderAccounts.pickAccountForSend(overrideAccountId);
-    const provider = account.provider === 'gmail' ? this.gmailSender : this.sesSender;
+    // Header-injection guard: raw MIME (Gmail) interpolates these straight
+    // into headers — a CR/LF here would let a caller smuggle extra headers.
+    for (const field of [
+      rest.to,
+      rest.cc,
+      rest.bcc,
+      rest.subject,
+      fromName,
+    ] as Array<string | undefined>) {
+      if (field && /[\r\n]/.test(field)) {
+        throw new BadRequestException(
+          'Email header fields must not contain line breaks',
+        );
+      }
+    }
+    const account =
+      await this.senderAccounts.pickAccountForSend(overrideAccountId);
+    const provider =
+      account.provider === 'gmail' ? this.gmailSender : this.sesSender;
 
     const displayName = fromName || account.displayName;
-    const from = displayName ? `"${displayName.replace(/"/g, "'")}" <${account.email}>` : account.email;
+    const from = displayName
+      ? `"${displayName.replace(/"/g, "'")}" <${account.email}>`
+      : account.email;
 
-    const result = await provider.send({ ...rest, from, senderAccountId: account.id });
+    const result = await provider.send({
+      ...rest,
+      from,
+      senderAccountId: account.id,
+    });
     await this.senderAccounts.recordSend(account.id);
     return result;
   }

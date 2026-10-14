@@ -5,8 +5,12 @@ import { AiUsageService } from './ai-usage.service';
 import type { LlmProvider } from './llm-provider.interface';
 import type { GenerateCopyDto } from './dto/generate-copy.dto';
 
-const QUICK_ACTION_INSTRUCTIONS: Record<NonNullable<GenerateCopyDto['quickAction']>, string> = {
-  shorter: 'Make the following copy noticeably shorter while keeping the core message.',
+const QUICK_ACTION_INSTRUCTIONS: Record<
+  NonNullable<GenerateCopyDto['quickAction']>,
+  string
+> = {
+  shorter:
+    'Make the following copy noticeably shorter while keeping the core message.',
   casual: 'Rewrite the following copy in a more casual, conversational tone.',
   stat: 'Rewrite the following copy to include a plausible, relevant statistic that strengthens the pitch.',
 };
@@ -24,7 +28,7 @@ const PRESERVE_STRUCTURE_INSTRUCTION =
 // helps avoid the identical-text-to-thousands-of-inboxes pattern spam
 // filters key on, same reasoning as this app's own spintax feature.
 const SPINTAX_INSTRUCTION =
-  'Vary the wording in 2-4 natural spots (a greeting, a transition phrase, the sign-off) using spintax syntax: write alternatives directly in the text as {option A|option B|option C}. This is intentional — each real send resolves one variant at random, so the text isn\'t identical across every recipient, which helps engagement and avoids spam-filter pattern detection. Keep it natural: most of the copy should stay plain prose, spintax only where more than one phrasing genuinely reads fine.';
+  "Vary the wording in 2-4 natural spots (a greeting, a transition phrase, the sign-off) using spintax syntax: write alternatives directly in the text as {option A|option B|option C}. This is intentional — each real send resolves one variant at random, so the text isn't identical across every recipient, which helps engagement and avoids spam-filter pattern detection. Keep it natural: most of the copy should stay plain prose, spintax only where more than one phrasing genuinely reads fine.";
 
 // Default model per provider when LLM_MODEL isn't set — kept in sync with
 // the option lists Settings > Integrations offers for each provider
@@ -43,13 +47,24 @@ export class AiAssistService {
     private readonly aiUsage: AiUsageService,
   ) {}
 
-  private getProvider(): { provider: LlmProvider; providerName: string; model: string } {
-    const providerName = (this.settings.get('LLM_PROVIDER') || 'openai').toLowerCase();
+  private getProvider(): {
+    provider: LlmProvider;
+    providerName: string;
+    model: string;
+  } {
+    const providerName = (
+      this.settings.get('LLM_PROVIDER') || 'openai'
+    ).toLowerCase();
 
     if (providerName === 'deepseek') {
       const model = this.settings.get('LLM_MODEL') || DEFAULT_MODELS.deepseek;
       return {
-        provider: new OpenAiCompatibleProvider('DeepSeek', 'https://api.deepseek.com', model, this.settings.get('DEEPSEEK_API_KEY')),
+        provider: new OpenAiCompatibleProvider(
+          'DeepSeek',
+          'https://api.deepseek.com',
+          model,
+          this.settings.get('DEEPSEEK_API_KEY'),
+        ),
         providerName: 'deepseek',
         model,
       };
@@ -57,17 +72,40 @@ export class AiAssistService {
     if (providerName === 'openai') {
       const model = this.settings.get('LLM_MODEL') || DEFAULT_MODELS.openai;
       return {
-        provider: new OpenAiCompatibleProvider('OpenAI', 'https://api.openai.com/v1', model, this.settings.get('OPENAI_API_KEY')),
+        provider: new OpenAiCompatibleProvider(
+          'OpenAI',
+          'https://api.openai.com/v1',
+          model,
+          this.settings.get('OPENAI_API_KEY'),
+        ),
         providerName: 'openai',
         model,
       };
     }
-    throw new InternalServerErrorException(`Unknown LLM_PROVIDER "${providerName}" — expected "openai" or "deepseek".`);
+    throw new InternalServerErrorException(
+      `Unknown LLM_PROVIDER "${providerName}" — expected "openai" or "deepseek".`,
+    );
   }
 
   /** Sharifur's multi-provider decision: LLM_PROVIDER selects which real
    * provider is used, never hardcoded to one, never a stubbed response
    * when the selected provider's key is missing. */
+  /** Raw prompt passthrough (no copy/spintax instructions) — for internal
+   * callers like the inbox reply classifier that need a strict output shape. */
+  async generateRaw(prompt: string): Promise<string> {
+    const { provider, providerName, model } = this.getProvider();
+    const result = await provider.generate(prompt);
+    if (result.usage) {
+      void this.aiUsage.record(
+        providerName,
+        model,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+      );
+    }
+    return result.text;
+  }
+
   async generateCopy(dto: GenerateCopyDto): Promise<string> {
     const { provider, providerName, model } = this.getProvider();
 
@@ -88,7 +126,12 @@ export class AiAssistService {
     if (result.usage) {
       // Fire-and-forget — a usage-tracking failure must never fail the
       // actual copy generation the user is waiting on.
-      void this.aiUsage.record(providerName, model, result.usage.promptTokens, result.usage.completionTokens);
+      void this.aiUsage.record(
+        providerName,
+        model,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+      );
     }
     return result.text;
   }

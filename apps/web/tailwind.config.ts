@@ -1,5 +1,13 @@
 import type { Config } from 'tailwindcss';
 
+// All app colors resolve through CSS variables (defined in src/index.css for
+// `:root` = dark and `:root[data-theme="light"]` = light), so every
+// `bg-panel` / `text-text-muted` / `border-border-default` utility below
+// adapts to the active theme with zero per-component branching. Only
+// intentional one-off colors (modal scrims, email-client previews, button
+// text) stay hardcoded at their call sites.
+const v = (name: string) => `rgb(var(--gc-${name}) / <alpha-value>)`;
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
@@ -12,53 +20,53 @@ export default {
         base: ['13px', '1.5'], // this app's base is 13px, not Tailwind's default 16px
       },
       colors: {
-        // Backgrounds, darkest to lightest
-        base: '#0B0C0F', // app background
-        sidebar: '#0D0E12', // sidebar background
-        surface: '#0E1013', // modal footers, secondary panels
-        panel: '#111318', // cards / panels
-        panel2: '#121419', // modals, notification dropdown
-        field: '#131519', // input/search field background
-        raised: '#15171C', // hover rows, textarea bg
-        raised2: '#16181E', // hover state, divider-adjacent bg
+        // Backgrounds, darkest to lightest (dark) / lightest structure (light)
+        base: v('base'), // app background
+        sidebar: v('sidebar'), // sidebar background
+        surface: v('surface'), // modal footers, secondary panels
+        panel: v('panel'), // cards / panels
+        panel2: v('panel2'), // modals, notification dropdown
+        field: v('field'), // input/search field background
+        raised: v('raised'), // hover rows, textarea bg
+        raised2: v('raised2'), // hover state, divider-adjacent bg
 
         // Borders
-        'border-subtle': '#1A1D23',
-        'border-default': '#1E2128',
-        'border-strong': '#23262E',
-        'border-emphasis': '#262A33',
-        'border-modal': '#2C303A',
+        'border-subtle': v('border-subtle'),
+        'border-default': v('border-default'),
+        'border-strong': v('border-strong'),
+        'border-emphasis': v('border-emphasis'),
+        'border-modal': v('border-modal'),
 
         // Text, brightest to most muted
-        'text-heading': '#F1F2F5',
-        'text-primary': '#E7E9EE',
-        'text-secondary': '#D8DBE1',
-        'text-tertiary': '#C3C8D1',
-        'text-quaternary': '#9AA1AD',
-        'text-muted': '#7B8290',
-        'text-faint': '#6B7280',
-        'text-meta': '#5B6270',
-        'text-label': '#4C525E', // uppercase section labels in sidebar
+        'text-heading': v('text-heading'),
+        'text-primary': v('text-primary'),
+        'text-secondary': v('text-secondary'),
+        'text-tertiary': v('text-tertiary'),
+        'text-quaternary': v('text-quaternary'),
+        'text-muted': v('text-muted'),
+        'text-faint': v('text-faint'),
+        'text-meta': v('text-meta'),
+        'text-label': v('text-label'), // uppercase section labels in sidebar
 
         // Accent (indigo) — primary actions, links, active nav state
-        accent: '#6366F1',
-        'accent-hover': '#5457EC',
-        'accent-gradient-end': '#4F46E5',
-        'accent-light': '#818CF8', // links, icons on dark bg
-        'accent-lighter': '#A5B4FC', // link hover
-        'accent-tint': '#C7CBFF', // lightest accent, rare use
+        accent: v('accent'),
+        'accent-hover': v('accent-hover'),
+        'accent-gradient-end': v('accent-gradient-end'),
+        'accent-light': v('accent-light'), // links, icons (theme-adjusted)
+        'accent-lighter': v('accent-lighter'), // link hover (theme-adjusted)
+        'accent-tint': v('accent-tint'), // lightest accent, rare use
 
-        // Status colors
-        success: '#34D399',
-        warning: '#FBBF24',
-        danger: '#F87171',
-        info: '#60A5FA',
-        'info-alt': '#3B82F6', // used in avatar gradients
+        // Status colors (theme-adjusted for contrast on each background)
+        success: v('success'),
+        warning: v('warning'),
+        danger: v('danger'),
+        info: v('info'),
+        'info-alt': v('info-alt'), // used in avatar gradients
 
         // Brand icons (not general UI colors — only for provider icons/badges)
-        'brand-google': '#EA4335',
-        'brand-aws': '#FF9900',
-        'brand-ai': '#A855F7', // AI Assist feature accent (paired with accent in a gradient)
+        'brand-google': v('brand-google'),
+        'brand-aws': v('brand-aws'),
+        'brand-ai': v('brand-ai'), // AI Assist feature accent (paired with accent in a gradient)
       },
       borderRadius: {
         sm: '4px',

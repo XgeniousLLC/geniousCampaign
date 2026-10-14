@@ -14,6 +14,8 @@ export interface Sequence {
   // GC-130 (revised) — global sender for every send_email step in this
   // sequence; null = auto-pick. Not configurable per step.
   senderAccountId?: string | null;
+  // Multi-sender set — step 1 rotates across these, winner sticks per contact.
+  senderAccountIds?: string[];
   fromName?: string | null;
   replyTo?: string | null;
   createdAt: string;
@@ -35,6 +37,8 @@ export interface SequenceStep {
   templateIds: string[];
   delayValue: number | null;
   delayUnit: DelayUnit | null;
+  // Send this step as a reply in the enrollment's existing thread.
+  threadedReply: boolean;
 }
 
 export function listSequences() {
@@ -49,6 +53,7 @@ export function createSequence(input: {
   name: string;
   description?: string;
   senderAccountId?: string;
+  senderAccountIds?: string[];
   fromName?: string;
   replyTo?: string;
 }) {
@@ -62,6 +67,7 @@ export function updateSequence(
     description: string;
     isActive: boolean;
     senderAccountId: string | null;
+    senderAccountIds: string[];
     fromName: string | null;
     replyTo: string | null;
   }>,
@@ -80,6 +86,7 @@ export function addStep(
     templateIds?: string[];
     delayValue?: number;
     delayUnit?: DelayUnit;
+    threadedReply?: boolean;
   },
 ) {
   return apiPost<SequenceStep>(`/sequences/${sequenceId}/steps`, input);
@@ -93,6 +100,7 @@ export function updateStep(
     templateIds: string[];
     delayValue: number;
     delayUnit: DelayUnit;
+    threadedReply: boolean;
   }>,
 ) {
   return apiPatch<SequenceStep>(`/sequences/${sequenceId}/steps/${stepId}`, input);
@@ -119,8 +127,88 @@ export interface SequenceStats {
     failed: number;
   };
   engagement: { opens: number; clicks: number; openRate: number; clickRate: number };
+  pipeline?: { dealValue: number; positiveThreads: number; total: number };
 }
 
 export function getSequenceStats(sequenceId: string) {
   return apiGet<SequenceStats>(`/sequences/${sequenceId}/stats`);
+}
+
+export interface SequenceSettings {
+  sequenceId: string;
+  stopOnReply: boolean;
+  trackOpen: boolean;
+  trackClick: boolean;
+  stripStyling: boolean;
+  textOnlyMode: 'off' | 'first_only' | 'all';
+  triggerOnce: boolean;
+  priority: 'followups' | 'new' | 'balanced' | 'aggressive';
+  dailyCap: number | null;
+  enrollPerDay: number | null;
+  scheduleId: string | null;
+  dealValue: number;
+  verifyBeforeSend: boolean;
+  cc: string | null;
+  bcc: string | null;
+  unsubFooter: boolean;
+  unsubFormat: 'text' | 'link';
+  unsubMessage: string | null;
+  unsubHeader: boolean;
+  unsubOnReply: boolean;
+  unsubKeywords: string;
+}
+
+export function getSequenceSettings(id: string) {
+  return apiGet<SequenceSettings>(`/sequences/${id}/settings`);
+}
+
+export function updateSequenceSettings(id: string, input: Partial<SequenceSettings>) {
+  return apiPatch<SequenceSettings>(`/sequences/${id}/settings`, input);
+}
+
+export interface SendingSchedule {
+  id: string;
+  name: string;
+  timezone: string;
+  days: boolean[];
+  startMin: number;
+  endMin: number;
+}
+
+export function listSchedules() {
+  return apiGet<SendingSchedule[]>('/sequences/schedules/all');
+}
+
+export function createSchedule(input: { name: string; timezone?: string; days?: boolean[]; startMin?: number; endMin?: number }) {
+  return apiPost<SendingSchedule>('/sequences/schedules/all', input);
+}
+
+export function updateSchedule(
+  id: string,
+  input: Partial<{ name: string; timezone: string; days: boolean[]; startMin: number; endMin: number }>,
+) {
+  return apiPatch<SendingSchedule>(`/sequences/schedules/${id}`, input);
+}
+
+export interface Subsequence {
+  id: string;
+  parentSequenceId: string;
+  name: string;
+  trigger: 'reply' | 'positive' | 'open' | 'click' | 'ooo' | 'custom_text';
+  matchText: string | null;
+  childSequenceId: string;
+  delayMs: string;
+  stopParent: boolean;
+}
+
+export function listSubsequences(sequenceId: string) {
+  return apiGet<Subsequence[]>(`/sequences/${sequenceId}/subsequences`);
+}
+
+export function createSubsequence(sequenceId: string, input: { name: string; trigger: Subsequence['trigger']; matchText?: string; childSequenceId: string; delayMs?: string; stopParent?: boolean }) {
+  return apiPost<Subsequence>(`/sequences/${sequenceId}/subsequences`, input);
+}
+
+export function removeSubsequence(sequenceId: string, subId: string) {
+  return apiDelete<{ id: string }>(`/sequences/${sequenceId}/subsequences/${subId}`);
 }

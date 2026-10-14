@@ -78,7 +78,7 @@ export class SequenceWebhookController {
 
   private async runAction(sequenceId: string, contactId: string, action: Action) {
     if (action === 'enroll') {
-      return this.enrollments.enroll(sequenceId, contactId);
+      return this.enrollments.enroll(sequenceId, contactId, this.drizzle.db, { via: 'auto' });
     }
     const enrollment = await this.enrollments.findActiveForContactInSequence(sequenceId, contactId);
     if (action === 'pause') return this.enrollments.pause(enrollment.id);

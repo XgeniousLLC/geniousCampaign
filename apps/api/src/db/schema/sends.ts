@@ -128,6 +128,13 @@ export const sends = pgTable(
     ),
     provider: sendProviderEnum('provider').notNull().default('ses'),
     providerMessageId: text('provider_message_id'),
+    providerThreadId: text('provider_thread_id'),
+    // Send log: which account actually sent this email.
+    senderAccountId: uuid('sender_account_id').references(() => senderAccounts.id, {
+      onDelete: 'set null',
+    }),
+    cc: text('cc'),
+    bcc: text('bcc'),
     resolvedSubject: text('resolved_subject').notNull(),
     resolvedPreviewText: text('resolved_preview_text'),
     resolvedBodyHtml: text('resolved_body_html').notNull(),

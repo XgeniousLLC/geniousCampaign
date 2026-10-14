@@ -1,8 +1,19 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
-import { sequenceEnrollments, sequenceSteps, sequences, contacts, sends } from '../db/schema';
+import {
+  sequenceEnrollments,
+  sequenceSteps,
+  sequences,
+  contacts,
+  sends,
+  sequenceSettings,
+} from '../db/schema';
 import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.util';
 
 /**
@@ -15,9 +26,16 @@ import { resolveFirstExecutableStep } from '../sequence-runner/step-resolution.u
 export class EnrollmentService {
   constructor(private readonly drizzle: DrizzleService) {}
 
-  async enroll(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+  async enroll(
+    sequenceId: string,
+    contactId: string,
+    db: DbOrTx = this.drizzle.db,
+    opts: { via?: 'manual' | 'auto' } = {},
+  ) {
     await this.ensureSequenceEnrollable(sequenceId, db);
-    const contact = await db.query.contacts.findFirst({ where: eq(contacts.id, contactId) });
+    const contact = await db.query.contacts.findFirst({
+      where: eq(contacts.id, contactId),
+    });
     if (!contact) {
       throw new NotFoundException(`Contact ${contactId} not found`);
     }
@@ -33,6 +51,60 @@ export class EnrollmentService {
       throw new ConflictException(
         `Contact ${contactId} already has an ${existingActive.status} enrollment in sequence ${sequenceId}`,
       );
+    }
+
+    // T07 — caps + trigger-once from sequence_settings. Trigger-once
+    // blocks automatic re-entry (triggers/subsequences/webhooks) only —
+    // a manual admin re-enroll after stop/complete stays legal per
+    // invariant 1 (see "allows re-enrolling after being stopped" spec).
+    const st = await db.query.sequenceSettings.findFirst({
+      where: eq(sequenceSettings.sequenceId, sequenceId),
+    });
+    if (st?.triggerOnce !== false && opts.via === 'auto') {
+      const prior = await db.query.sequenceEnrollments.findFirst({
+        where: and(
+          eq(sequenceEnrollments.sequenceId, sequenceId),
+          eq(sequenceEnrollments.contactId, contactId),
+          inArray(sequenceEnrollments.status, ['stopped', 'completed']),
+        ),
+      });
+      if (prior) {
+        throw new ConflictException(
+          `Contact already went through sequence ${sequenceId} (trigger-once)`,
+        );
+      }
+    }
+    if (st?.enrollPerDay) {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)`.mapWith(Number) })
+        .from(sequenceEnrollments)
+        .where(
+          and(
+            eq(sequenceEnrollments.sequenceId, sequenceId),
+            gte(sequenceEnrollments.enrolledAt, sql`date_trunc('day', now())`),
+          ),
+        );
+      if ((row?.count ?? 0) >= st.enrollPerDay) {
+        throw new ConflictException(
+          `Daily enrollment cap reached (${st.enrollPerDay}/day)`,
+        );
+      }
+    }
+    if (st?.dailyCap) {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)`.mapWith(Number) })
+        .from(sequenceEnrollments)
+        .where(
+          and(
+            eq(sequenceEnrollments.sequenceId, sequenceId),
+            eq(sequenceEnrollments.status, 'active'),
+          ),
+        );
+      if ((row?.count ?? 0) >= st.dailyCap) {
+        throw new ConflictException(
+          `Active enrollment cap reached (${st.dailyCap})`,
+        );
+      }
     }
 
     // Per invariant 1: a contact enrolled long after a sequence "started"
@@ -76,8 +148,13 @@ export class EnrollmentService {
    * work starts. enroll() still calls this per contact, so it stays the
    * single choke point — an inactive sequence rejects manual, public-API,
    * and trigger-driven enrolls alike. */
-  async ensureSequenceEnrollable(sequenceId: string, db: DbOrTx = this.drizzle.db) {
-    const sequence = await db.query.sequences.findFirst({ where: eq(sequences.id, sequenceId) });
+  async ensureSequenceEnrollable(
+    sequenceId: string,
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    const sequence = await db.query.sequences.findFirst({
+      where: eq(sequences.id, sequenceId),
+    });
     if (!sequence) {
       throw new NotFoundException(`Sequence ${sequenceId} not found`);
     }
@@ -90,7 +167,9 @@ export class EnrollmentService {
   async pause(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
     const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status !== 'active') {
-      throw new ConflictException(`Enrollment ${enrollmentId} is ${enrollment.status}, not active — cannot pause`);
+      throw new ConflictException(
+        `Enrollment ${enrollmentId} is ${enrollment.status}, not active — cannot pause`,
+      );
     }
     return this.setStatus(enrollmentId, 'paused', db);
   }
@@ -98,7 +177,9 @@ export class EnrollmentService {
   async resume(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
     const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status !== 'paused') {
-      throw new ConflictException(`Enrollment ${enrollmentId} is ${enrollment.status}, not paused — cannot resume`);
+      throw new ConflictException(
+        `Enrollment ${enrollmentId} is ${enrollment.status}, not paused — cannot resume`,
+      );
     }
     return this.setStatus(enrollmentId, 'active', db);
   }
@@ -106,11 +187,18 @@ export class EnrollmentService {
   async stop(enrollmentId: string, db: DbOrTx = this.drizzle.db) {
     const enrollment = await this.findOne(enrollmentId, db);
     if (enrollment.status === 'stopped' || enrollment.status === 'completed') {
-      throw new ConflictException(`Enrollment ${enrollmentId} is already ${enrollment.status}`);
+      throw new ConflictException(
+        `Enrollment ${enrollmentId} is already ${enrollment.status}`,
+      );
     }
     const [updated] = await db
       .update(sequenceEnrollments)
-      .set({ status: 'stopped', currentStepId: null, nextRunAt: null, updatedAt: new Date() })
+      .set({
+        status: 'stopped',
+        currentStepId: null,
+        nextRunAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(sequenceEnrollments.id, enrollmentId))
       .returning();
     return updated;
@@ -133,14 +221,25 @@ export class EnrollmentService {
    * caller (admin UI, trigger auto-enroll) still relies on — a fresh row
    * after stop/complete stays legal there (invariant 1, see the "allows
    * re-enrolling after being stopped" spec case). */
-  async findMostRecentForContactInSequence(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+  async findMostRecentForContactInSequence(
+    sequenceId: string,
+    contactId: string,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     return db.query.sequenceEnrollments.findFirst({
-      where: and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.contactId, contactId)),
+      where: and(
+        eq(sequenceEnrollments.sequenceId, sequenceId),
+        eq(sequenceEnrollments.contactId, contactId),
+      ),
       orderBy: (e, { desc }) => desc(e.enrolledAt),
     });
   }
 
-  async findActiveForContactInSequence(sequenceId: string, contactId: string, db: DbOrTx = this.drizzle.db) {
+  async findActiveForContactInSequence(
+    sequenceId: string,
+    contactId: string,
+    db: DbOrTx = this.drizzle.db,
+  ) {
     const enrollment = await db.query.sequenceEnrollments.findFirst({
       where: and(
         eq(sequenceEnrollments.sequenceId, sequenceId),
@@ -149,7 +248,9 @@ export class EnrollmentService {
       ),
     });
     if (!enrollment) {
-      throw new NotFoundException(`No active/paused enrollment for contact ${contactId} in sequence ${sequenceId}`);
+      throw new NotFoundException(
+        `No active/paused enrollment for contact ${contactId} in sequence ${sequenceId}`,
+      );
     }
     return enrollment;
   }
@@ -161,7 +262,10 @@ export class EnrollmentService {
    * to a single-sequence stop, just applied per enrollment. */
   async stopAllForContact(contactId: string, db: DbOrTx = this.drizzle.db) {
     const active = await db.query.sequenceEnrollments.findMany({
-      where: and(eq(sequenceEnrollments.contactId, contactId), inArray(sequenceEnrollments.status, ['active', 'paused'])),
+      where: and(
+        eq(sequenceEnrollments.contactId, contactId),
+        inArray(sequenceEnrollments.status, ['active', 'paused']),
+      ),
     });
     const stopped: (typeof sequenceEnrollments.$inferSelect)[] = [];
     for (const enrollment of active) {
@@ -171,18 +275,20 @@ export class EnrollmentService {
   }
 
   async listForContact(contactId: string) {
-    const enrollments = await this.drizzle.db.query.sequenceEnrollments.findMany({
-      where: eq(sequenceEnrollments.contactId, contactId),
-      orderBy: (e, { desc }) => desc(e.enrolledAt),
-    });
+    const enrollments =
+      await this.drizzle.db.query.sequenceEnrollments.findMany({
+        where: eq(sequenceEnrollments.contactId, contactId),
+        orderBy: (e, { desc }) => desc(e.enrolledAt),
+      });
     return this.attachHistory(enrollments);
   }
 
   async listForSequence(sequenceId: string) {
-    const enrollments = await this.drizzle.db.query.sequenceEnrollments.findMany({
-      where: eq(sequenceEnrollments.sequenceId, sequenceId),
-      orderBy: (e, { desc }) => desc(e.enrolledAt),
-    });
+    const enrollments =
+      await this.drizzle.db.query.sequenceEnrollments.findMany({
+        where: eq(sequenceEnrollments.sequenceId, sequenceId),
+        orderBy: (e, { desc }) => desc(e.enrolledAt),
+      });
     return this.attachHistory(enrollments);
   }
 
@@ -191,7 +297,9 @@ export class EnrollmentService {
    * SequenceBuilder.tsx's buildBlocks) plus the last step actually executed
    * and when, derived from `sends` (the enrollment row itself only tracks
    * what's next per invariant 3 — it never stored what already ran). */
-  private async attachHistory(enrollments: (typeof sequenceEnrollments.$inferSelect)[]) {
+  private async attachHistory(
+    enrollments: (typeof sequenceEnrollments.$inferSelect)[],
+  ) {
     if (enrollments.length === 0) return [];
     const enrollmentIds = enrollments.map((e) => e.id);
     const sequenceIds = [...new Set(enrollments.map((e) => e.sequenceId))];
@@ -218,7 +326,10 @@ export class EnrollmentService {
     // enrollment is its most recent send.
     const lastSendByEnrollment = new Map<string, (typeof lastSends)[number]>();
     for (const send of lastSends) {
-      if (send.sequenceEnrollmentId && !lastSendByEnrollment.has(send.sequenceEnrollmentId)) {
+      if (
+        send.sequenceEnrollmentId &&
+        !lastSendByEnrollment.has(send.sequenceEnrollmentId)
+      ) {
         lastSendByEnrollment.set(send.sequenceEnrollmentId, send);
       }
     }
@@ -238,14 +349,24 @@ export class EnrollmentService {
       const lastSend = lastSendByEnrollment.get(e.id);
       return {
         ...e,
-        currentStepNumber: e.currentStepId ? stepNumberByStepId.get(e.currentStepId) ?? null : null,
-        lastStepNumber: lastSend?.sequenceStepId ? stepNumberByStepId.get(lastSend.sequenceStepId) ?? null : null,
-        lastExecutedAt: lastSend ? lastSend.sentAt ?? lastSend.createdAt : null,
+        currentStepNumber: e.currentStepId
+          ? (stepNumberByStepId.get(e.currentStepId) ?? null)
+          : null,
+        lastStepNumber: lastSend?.sequenceStepId
+          ? (stepNumberByStepId.get(lastSend.sequenceStepId) ?? null)
+          : null,
+        lastExecutedAt: lastSend
+          ? (lastSend.sentAt ?? lastSend.createdAt)
+          : null,
       };
     });
   }
 
-  private async setStatus(id: string, status: 'active' | 'paused', db: DbOrTx = this.drizzle.db) {
+  private async setStatus(
+    id: string,
+    status: 'active' | 'paused',
+    db: DbOrTx = this.drizzle.db,
+  ) {
     const [updated] = await db
       .update(sequenceEnrollments)
       .set({ status, updatedAt: new Date() })

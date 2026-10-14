@@ -11,7 +11,11 @@ import {
   sequences,
   sequenceSteps,
   sequenceStepTemplates,
+  sequenceSenders,
   sequenceEnrollments,
+  sequenceSettings,
+  sendingSchedules,
+  emailThreads,
   sends,
   emailEvents,
 } from '../db/schema';
@@ -26,18 +30,56 @@ export class SequencesService {
   constructor(private readonly drizzle: DrizzleService) {}
 
   async create(dto: CreateSequenceDto, db: DbOrTx = this.drizzle.db) {
+    const { senderAccountIds, ...row } = dto;
     const [created] = await db
       .insert(sequences)
       .values({
-        name: dto.name,
-        description: dto.description,
-        senderAccountId: dto.senderAccountId,
-        fromName: dto.fromName,
-        replyTo: dto.replyTo,
+        name: row.name,
+        description: row.description,
+        senderAccountId: row.senderAccountId,
+        fromName: row.fromName,
+        replyTo: row.replyTo,
         webhookSecret: randomBytes(32).toString('hex'),
       })
       .returning();
-    return created;
+    // T01 — every sequence gets a default settings row (1-1).
+    await db
+      .insert(sequenceSettings)
+      .values({ sequenceId: created.id })
+      .onConflictDoNothing();
+    await this.syncSenders(created.id, senderAccountIds, db);
+    return { ...created, senderAccountIds: senderAccountIds ?? [] };
+  }
+
+  /** Replace the multi-sender set. Undefined = leave untouched; [] = clear
+   * back to legacy single/auto. Never re-pins running enrollments. */
+  async syncSenders(
+    sequenceId: string,
+    senderAccountIds: string[] | undefined,
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    if (senderAccountIds === undefined) return;
+    await db
+      .delete(sequenceSenders)
+      .where(eq(sequenceSenders.sequenceId, sequenceId));
+    const unique = [...new Set(senderAccountIds)];
+    if (unique.length > 0) {
+      await db
+        .insert(sequenceSenders)
+        .values(
+          unique.map((senderAccountId) => ({ sequenceId, senderAccountId })),
+        );
+    }
+  }
+
+  async listSenderIds(
+    sequenceId: string,
+    db: DbOrTx = this.drizzle.db,
+  ): Promise<string[]> {
+    const rows = await db.query.sequenceSenders.findMany({
+      where: eq(sequenceSenders.sequenceId, sequenceId),
+    });
+    return rows.map((r) => r.senderAccountId);
   }
 
   /** Sequences list screen (design: Steps/Enrolled/Open/Status columns)
@@ -111,7 +153,7 @@ export class SequencesService {
     if (!sequence) {
       throw new NotFoundException(`Sequence ${id} not found`);
     }
-    return sequence;
+    return { ...sequence, senderAccountIds: await this.listSenderIds(id, db) };
   }
 
   async update(
@@ -120,12 +162,17 @@ export class SequencesService {
     db: DbOrTx = this.drizzle.db,
   ) {
     await this.findOne(id, db);
+    const { senderAccountIds, ...row } = dto;
     const [updated] = await db
       .update(sequences)
-      .set({ ...dto, updatedAt: new Date() })
+      .set({ ...row, updatedAt: new Date() })
       .where(eq(sequences.id, id))
       .returning();
-    return updated;
+    await this.syncSenders(id, senderAccountIds, db);
+    return {
+      ...updated,
+      senderAccountIds: senderAccountIds ?? (await this.listSenderIds(id, db)),
+    };
   }
 
   async remove(id: string, db: DbOrTx = this.drizzle.db) {
@@ -195,19 +242,18 @@ export class SequencesService {
         type: dto.type,
         delayValue: dto.delayValue,
         delayUnit: dto.delayUnit,
+        threadedReply: dto.threadedReply ?? false,
       })
       .returning();
 
     const templateIds = dto.templateIds ?? [];
     if (templateIds.length > 0) {
-      await db
-        .insert(sequenceStepTemplates)
-        .values(
-          templateIds.map((templateId) => ({
-            sequenceStepId: created.id,
-            templateId,
-          })),
-        );
+      await db.insert(sequenceStepTemplates).values(
+        templateIds.map((templateId) => ({
+          sequenceStepId: created.id,
+          templateId,
+        })),
+      );
     }
     return { ...created, templateIds };
   }
@@ -240,14 +286,12 @@ export class SequencesService {
         .delete(sequenceStepTemplates)
         .where(eq(sequenceStepTemplates.sequenceStepId, stepId));
       if (templateIds.length > 0) {
-        await db
-          .insert(sequenceStepTemplates)
-          .values(
-            templateIds.map((templateId) => ({
-              sequenceStepId: stepId,
-              templateId,
-            })),
-          );
+        await db.insert(sequenceStepTemplates).values(
+          templateIds.map((templateId) => ({
+            sequenceStepId: stepId,
+            templateId,
+          })),
+        );
       }
     }
 
@@ -416,6 +460,22 @@ export class SequencesService {
     const opens = eventRow?.opens ?? 0;
     const clicks = eventRow?.clicks ?? 0;
 
+    // T09 — revenue pipeline = dealValue × interested/positive threads.
+    const settings = await db.query.sequenceSettings.findFirst({
+      where: eq(sequenceSettings.sequenceId, sequenceId),
+    });
+    const dealValue = settings?.dealValue ?? 0;
+    const positiveThreads = await db
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
+      .from(emailThreads)
+      .where(
+        and(
+          eq(emailThreads.sequenceId, sequenceId),
+          inArray(emailThreads.status, ['interested', 'meeting_booked']),
+        ),
+      );
+    const positiveCount = positiveThreads[0]?.count ?? 0;
+
     return {
       enrolled: {
         active: enrolledByStatus.active ?? 0,
@@ -423,7 +483,7 @@ export class SequencesService {
         stopped: enrolledByStatus.stopped ?? 0,
         completed: enrolledByStatus.completed ?? 0,
         total: Object.values(enrolledByStatus).reduce(
-          (a: number, b) => a + (b as number),
+          (a: number, b) => a + b,
           0,
         ),
       },
@@ -443,6 +503,122 @@ export class SequencesService {
         openRate: totalSent > 0 ? opens / totalSent : 0,
         clickRate: totalSent > 0 ? clicks / totalSent : 0,
       },
+      pipeline: {
+        dealValue,
+        positiveThreads: positiveCount,
+        total: dealValue * positiveCount,
+      },
     };
+  }
+
+  // ── T01: sequence settings + schedules ──────────────────────────
+  async getSettings(sequenceId: string, db: DbOrTx = this.drizzle.db) {
+    await this.findOne(sequenceId, db);
+    let row = await db.query.sequenceSettings.findFirst({
+      where: eq(sequenceSettings.sequenceId, sequenceId),
+    });
+    if (!row) {
+      const [created] = await db
+        .insert(sequenceSettings)
+        .values({ sequenceId })
+        .returning();
+      row = created;
+    }
+    return row;
+  }
+
+  async updateSettings(
+    sequenceId: string,
+    dto: Record<string, unknown> & { cc?: string; bcc?: string },
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    await this.findOne(sequenceId, db);
+    if (dto.cc) this.assertEmailList(String(dto.cc));
+    if (dto.bcc) this.assertEmailList(String(dto.bcc));
+    const [updated] = await db
+      .insert(sequenceSettings)
+      .values({ sequenceId, ...(dto as object) })
+      .onConflictDoUpdate({
+        target: sequenceSettings.sequenceId,
+        set: { ...(dto as object), updatedAt: new Date() },
+      })
+      .returning();
+    return updated;
+  }
+
+  private assertEmailList(raw: string) {
+    if (!raw.trim()) return;
+    const emails = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (emails.length > 5)
+      throw new BadRequestException('Cc/Bcc supports max 5 addresses');
+    for (const e of emails) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        throw new BadRequestException(`Invalid email: ${e}`);
+    }
+  }
+
+  async listSchedules(db: DbOrTx = this.drizzle.db) {
+    return db.query.sendingSchedules.findMany();
+  }
+
+  async createSchedule(
+    dto: {
+      name: string;
+      timezone?: string;
+      days?: boolean[];
+      startMin?: number;
+      endMin?: number;
+    },
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    if (
+      dto.startMin !== undefined &&
+      dto.endMin !== undefined &&
+      dto.startMin >= dto.endMin
+    ) {
+      throw new BadRequestException('startMin must be < endMin');
+    }
+    const [created] = await db
+      .insert(sendingSchedules)
+      .values({
+        name: dto.name,
+        timezone: dto.timezone ?? 'UTC',
+        days: dto.days ?? [true, true, true, true, true, false, false],
+        startMin: dto.startMin ?? 540,
+        endMin: dto.endMin ?? 1020,
+      })
+      .returning();
+    return created;
+  }
+
+  async updateSchedule(
+    id: string,
+    dto: {
+      name?: string;
+      timezone?: string;
+      days?: boolean[];
+      startMin?: number;
+      endMin?: number;
+    },
+    db: DbOrTx = this.drizzle.db,
+  ) {
+    const existing = await db.query.sendingSchedules.findFirst({
+      where: eq(sendingSchedules.id, id),
+    });
+    if (!existing) throw new NotFoundException('Sending schedule not found');
+    const startMin = dto.startMin ?? existing.startMin;
+    const endMin = dto.endMin ?? existing.endMin;
+    if (startMin >= endMin) {
+      throw new BadRequestException('startMin must be < endMin');
+    }
+    const [updated] = await db
+      .update(sendingSchedules)
+      .set({ ...(dto as object), updatedAt: new Date() })
+      .where(eq(sendingSchedules.id, id))
+      .returning();
+    return updated;
   }
 }
