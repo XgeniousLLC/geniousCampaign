@@ -4,11 +4,90 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme palettes — space-separated RGB triplets consumed by
+   tailwind.config.ts via `rgb(var(--gc-*) / <alpha-value>)`, so opacity
+   modifiers (bg-accent/10, border-success/25) keep working in both themes. */
+:root {
+  color-scheme: dark;
+  --gc-base: 11 12 15;
+  --gc-sidebar: 13 14 18;
+  --gc-surface: 14 16 19;
+  --gc-panel: 17 19 24;
+  --gc-panel2: 18 20 25;
+  --gc-field: 19 21 25;
+  --gc-raised: 21 23 28;
+  --gc-raised2: 22 24 30;
+  --gc-border-subtle: 26 29 35;
+  --gc-border-default: 30 33 40;
+  --gc-border-strong: 35 38 46;
+  --gc-border-emphasis: 38 42 51;
+  --gc-border-modal: 44 48 58;
+  --gc-text-heading: 241 242 245;
+  --gc-text-primary: 231 233 238;
+  --gc-text-secondary: 216 219 225;
+  --gc-text-tertiary: 195 200 209;
+  --gc-text-quaternary: 154 161 173;
+  --gc-text-muted: 123 130 144;
+  --gc-text-faint: 107 114 128;
+  --gc-text-meta: 91 98 112;
+  --gc-text-label: 76 82 94;
+  --gc-accent: 99 102 241;
+  --gc-accent-hover: 84 87 236;
+  --gc-accent-gradient-end: 79 70 229;
+  --gc-accent-light: 129 140 248;
+  --gc-accent-lighter: 165 180 252;
+  --gc-accent-tint: 199 203 255;
+  --gc-success: 52 211 153;
+  --gc-warning: 251 191 36;
+  --gc-danger: 248 113 113;
+  --gc-info: 96 165 250;
+  --gc-info-alt: 59 130 246;
+  --gc-brand-google: 234 67 53;
+  --gc-brand-aws: 255 153 0;
+  --gc-brand-ai: 168 85 247;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --gc-base: 244 245 247;
+  --gc-sidebar: 255 255 255;
+  --gc-surface: 236 238 241;
+  --gc-panel: 255 255 255;
+  --gc-panel2: 255 255 255;
+  --gc-field: 255 255 255;
+  --gc-raised: 236 238 241;
+  --gc-raised2: 227 230 235;
+  --gc-border-subtle: 232 235 239;
+  --gc-border-default: 223 227 233;
+  --gc-border-strong: 211 216 224;
+  --gc-border-emphasis: 196 202 212;
+  --gc-border-modal: 183 190 201;
+  --gc-text-heading: 19 22 27;
+  --gc-text-primary: 31 35 43;
+  --gc-text-secondary: 51 58 70;
+  --gc-text-tertiary: 75 84 99;
+  --gc-text-quaternary: 95 104 120;
+  --gc-text-muted: 118 127 143;
+  --gc-text-faint: 139 147 163;
+  --gc-text-meta: 162 169 182;
+  --gc-text-label: 176 182 193;
+  --gc-accent: 79 70 229;
+  --gc-accent-hover: 67 56 202;
+  --gc-accent-gradient-end: 79 70 229;
+  --gc-accent-light: 79 70 229;
+  --gc-accent-lighter: 67 56 202;
+  --gc-accent-tint: 49 46 129;
+  --gc-success: 4 120 87;
+  --gc-warning: 180 83 9;
+  --gc-danger: 220 38 38;
+  --gc-info: 37 99 235;
+  --gc-info-alt: 29 78 216;
+  --gc-brand-google: 234 67 53;
+  --gc-brand-aws: 255 153 0;
+  --gc-brand-ai: 147 51 234;
+}
+
 body {
   @apply bg-base text-text-primary font-sans text-base;
   margin: 0;
-  /* App is dark-themed only — without this, native form controls (the
-     datetime-local calendar/clock picker icon, scrollbars, etc.) render in
-     light-mode colors and are nearly invisible against dark input fields. */
-  color-scheme: dark;
 }

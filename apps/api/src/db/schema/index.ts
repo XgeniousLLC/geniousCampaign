@@ -20,3 +20,5 @@ export * from './error-logs';
 export * from './ai-usage';
 export * from './api-keys';
 export * from './custom-field-defs';
+export * from './sequence-settings';
+export * from './email-threads';

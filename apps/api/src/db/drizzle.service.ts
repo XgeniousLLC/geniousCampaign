@@ -17,4 +17,23 @@ export class DrizzleService implements OnModuleDestroy {
   async onModuleDestroy() {
     await this.pool.end();
   }
+
+  /**
+   * Runs `fn` while holding a Postgres advisory lock on a dedicated
+   * connection — used to serialize startup migrations so two boots (watch
+   * restarts, multiple replicas) can't run them concurrently and collide on
+   * CREATE TABLE / CREATE TYPE.
+   */
+  async withAdvisoryLock<T>(key: number, fn: () => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('select pg_advisory_lock($1)', [key]);
+      return await fn();
+    } finally {
+      await client
+        .query('select pg_advisory_unlock($1)', [key])
+        .catch(() => undefined);
+      client.release();
+    }
+  }
 }

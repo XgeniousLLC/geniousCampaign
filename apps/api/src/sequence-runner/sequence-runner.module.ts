@@ -10,7 +10,12 @@ import { TrackingModule } from '../tracking/tracking.module';
 const TICK_INTERVAL_MS = 10_000;
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'sequence-runner' }), SendingModule, SuppressionModule, TrackingModule],
+  imports: [
+    BullModule.registerQueue({ name: 'sequence-runner' }),
+    SendingModule,
+    SuppressionModule,
+    TrackingModule,
+  ],
   providers: [SequenceRunnerService, SequenceRunnerProcessor],
   exports: [SequenceRunnerService],
 })

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."suppression_reason" ADD VALUE 'not_interested' BEFORE 'repeated_soft_bounce';

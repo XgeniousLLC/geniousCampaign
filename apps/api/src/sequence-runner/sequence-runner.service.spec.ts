@@ -18,9 +18,11 @@ import { SettingsService } from '../settings/settings.service';
 import {
   contacts,
   sequences,
+  sequenceSenders,
   sequenceSteps,
   sequenceStepTemplates,
   sequenceEnrollments,
+  senderAccounts,
   sends,
   templates,
 } from '../db/schema';
@@ -200,5 +202,82 @@ describe('SequenceRunnerService (integration, real DB)', () => {
     expect(final.currentStepId).toBeNull();
 
     await drizzle.db.delete(sequences).where(eq(sequences.id, fullSequenceId));
+  });
+
+  it('pins the first-step sender account for all later steps (sticky multi-sender)', async () => {
+    const [sequence] = await drizzle.db
+      .insert(sequences)
+      .values({ name: 'Sticky sender sequence', webhookSecret: 'test-secret' })
+      .returning();
+    const stickyId = sequence.id;
+    const accounts = await drizzle.db
+      .insert(senderAccounts)
+      .values([
+        {
+          provider: 'ses',
+          email: `sticky-a-${Date.now()}@example.com`,
+          displayName: 'Sticky A',
+          dailySendLimit: 1000,
+          sentToday: 0,
+          sentTodayDate: '2099-01-01',
+          isActive: true,
+        },
+        {
+          provider: 'ses',
+          email: `sticky-b-${Date.now()}@example.com`,
+          displayName: 'Sticky B',
+          dailySendLimit: 1000,
+          sentToday: 0,
+          sentTodayDate: '2099-01-01',
+          isActive: true,
+        },
+      ])
+      .returning();
+    await drizzle.db
+      .insert(sequenceSenders)
+      .values(
+        accounts.map((a) => ({ sequenceId: stickyId, senderAccountId: a.id })),
+      );
+    const insertedSteps = await drizzle.db
+      .insert(sequenceSteps)
+      .values([
+        { sequenceId: stickyId, order: 0, type: 'send_email' },
+        { sequenceId: stickyId, order: 1, type: 'send_email' },
+        { sequenceId: stickyId, order: 2, type: 'exit' },
+      ])
+      .returning();
+    for (const stepId of insertedSteps
+      .filter((x: { type: string }) => x.type === 'send_email')
+      .map((x: { id: string }) => x.id)) {
+      await drizzle.db
+        .insert(sequenceStepTemplates)
+        .values({ sequenceStepId: stepId, templateId });
+    }
+
+    const enrollment = await enrollmentService.enroll(stickyId, contactId);
+
+    // Tick 1 executes step 1 (send fails without real creds — pinning happens
+    // at execution, before the attempt, so the log still records the account).
+    await runner.tick();
+    // Tick 2 executes step 2 immediately (no wait between the two sends).
+    await runner.tick();
+
+    const rows = await drizzle.db
+      .select()
+      .from(sends)
+      .where(eq(sends.sequenceEnrollmentId, enrollment.id));
+    expect(rows.length).toBe(2);
+    expect(rows[0].senderAccountId).not.toBeNull();
+    expect(rows[1].senderAccountId).toBe(rows[0].senderAccountId);
+
+    const pinned = await enrollmentService.findOne(enrollment.id);
+    expect(pinned.senderAccountId).toBe(rows[0].senderAccountId);
+
+    await drizzle.db.delete(sequences).where(eq(sequences.id, stickyId));
+    for (const a of accounts) {
+      await drizzle.db
+        .delete(senderAccounts)
+        .where(eq(senderAccounts.id, a.id));
+    }
   });
 });

@@ -3,7 +3,14 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { contacts, contactTags, tags, triggers, sequenceEnrollments, triggerEvaluations } from '../db/schema';
+import {
+  contacts,
+  contactTags,
+  tags,
+  triggers,
+  sequenceEnrollments,
+  triggerEvaluations,
+} from '../db/schema';
 import { EnrollmentService } from '../enrollments/enrollment.service';
 import { evaluateCondition, type ConditionNode } from './condition-evaluator';
 import { buildContactContext } from './contact-context.util';
@@ -19,7 +26,9 @@ export class ScheduleTriggerProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ triggerId: string }>): Promise<{ matched: number; enrolled: number }> {
+  async process(
+    job: Job<{ triggerId: string }>,
+  ): Promise<{ matched: number; enrolled: number }> {
     const trigger = await this.drizzle.db.query.triggers.findFirst({
       where: eq(triggers.id, job.data.triggerId),
     });
@@ -61,29 +70,52 @@ export class ScheduleTriggerProcessor extends WorkerHost {
     let enrolled = 0;
     for (const contact of allContacts) {
       if (handledContactIds.has(contact.id)) continue;
-      const context = buildContactContext(contact, tagsByContact.get(contact.id) ?? []);
-      if (!evaluateCondition(trigger.conditions as ConditionNode, context)) continue;
+      const context = buildContactContext(
+        contact,
+        tagsByContact.get(contact.id) ?? [],
+      );
+      if (!evaluateCondition(trigger.conditions as ConditionNode, context))
+        continue;
       matched++;
       try {
-        await this.enrollments.enroll(trigger.sequenceId, contact.id);
+        await this.enrollments.enroll(
+          trigger.sequenceId,
+          contact.id,
+          this.drizzle.db,
+          { via: 'auto' },
+        );
         enrolled++;
-        await this.drizzle.db.insert(triggerEvaluations).values({ triggerId: trigger.id, contactId: contact.id, eventType: 'schedule', enrolled: true });
+        await this.drizzle.db.insert(triggerEvaluations).values({
+          triggerId: trigger.id,
+          contactId: contact.id,
+          eventType: 'schedule',
+          enrolled: true,
+        });
       } catch (err) {
-        const alreadyEnrolled = err instanceof Error && err.message.includes('already has an');
+        const alreadyEnrolled =
+          err instanceof Error && err.message.includes('already has an');
         if (!alreadyEnrolled) {
-          this.logger.error(`Schedule trigger "${trigger.name}" failed to enroll ${contact.id}: ${err instanceof Error ? err.message : err}`);
+          this.logger.error(
+            `Schedule trigger "${trigger.name}" failed to enroll ${contact.id}: ${err instanceof Error ? err.message : err}`,
+          );
         }
         await this.drizzle.db.insert(triggerEvaluations).values({
           triggerId: trigger.id,
           contactId: contact.id,
           eventType: 'schedule',
           enrolled: false,
-          error: alreadyEnrolled ? undefined : err instanceof Error ? err.message : String(err),
+          error: alreadyEnrolled
+            ? undefined
+            : err instanceof Error
+              ? err.message
+              : String(err),
         });
       }
     }
 
-    this.logger.log(`Schedule trigger "${trigger.name}" fired: ${matched} matched, ${enrolled} newly enrolled`);
+    this.logger.log(
+      `Schedule trigger "${trigger.name}" fired: ${matched} matched, ${enrolled} newly enrolled`,
+    );
     return { matched, enrolled };
   }
 }

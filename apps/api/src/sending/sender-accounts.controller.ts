@@ -11,14 +11,24 @@ import { GmailOAuthService } from './gmail-oauth.service';
 import { SendDispatcherService } from './send-dispatcher.service';
 import { CreateSesAccountDto } from './dto/create-ses-account.dto';
 import { UpdateSenderAccountDto } from './dto/update-sender-account.dto';
-import { IsEmail, IsString } from 'class-validator';
+import { IsEmail, IsOptional, IsString } from 'class-validator';
 import { SettingsService } from '../settings/settings.service';
 import { TrackingService } from '../tracking/tracking.service';
 import { signUnsubscribeToken } from './unsubscribe-token.util';
+import { Public } from '../auth/public.decorator';
 
 export class SendTestEmailDto {
   @IsEmail()
   to!: string;
+}
+
+/** Optional per-mailbox Google OAuth app. Blank = use the shared Settings app
+ * (the mailbox keeps inheriting it); set = this mailbox authenticates with its
+ * own client id/secret, stored on the account after the callback. */
+export class GmailConnectDto {
+  @IsOptional() @IsString() clientId?: string;
+  @IsOptional() @IsString() clientSecret?: string;
+  @IsOptional() @IsString() redirectUri?: string;
 }
 
 @Controller('sender-accounts')
@@ -96,16 +106,17 @@ export class SenderAccountsController {
     }
   }
 
-  @Get('gmail/connect')
+  @Post('gmail/connect')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'editor')
-  connect() {
-    return { authUrl: this.gmailOAuth.getConnectUrl() };
+  async connect(@Body() dto: GmailConnectDto) {
+    return { authUrl: await this.gmailOAuth.getConnectUrl(dto) };
   }
 
   // Public — Google redirects the admin's browser here directly, with no
   // way to attach our JWT. CSRF protection is the signed `state` param
   // generated in connect() above, not JwtAuthGuard.
+  @Public()
   @Get('gmail/callback')
   async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     const adminAppUrl = this.config.get<string>('ADMIN_APP_URL') || 'http://localhost:5173';

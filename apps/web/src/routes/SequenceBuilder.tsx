@@ -27,10 +27,12 @@ import {
   type Enrollment,
 } from '../lib/enrollmentsApi';
 import { listSenderAccounts, type SenderAccount } from '../lib/senderAccountsApi';
+import { SequenceSettingsTab } from '../components/SequenceSettingsTab';
+import { SubsequenceTab } from '../components/SubsequenceTab';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ChevronUpIcon, ChevronDownIcon, CloseIcon, ContactsEnterIcon } from '../components/icons';
 
-const TABS = ['Steps', 'Enrolled contacts', 'Stats'] as const;
+const TABS = ['Steps', 'Enrolled contacts', 'Stats', 'Settings', 'Subsequences'] as const;
 type Tab = (typeof TABS)[number];
 
 const ENROLLMENT_STATUS_STYLES: Record<Enrollment['status'], string> = {
@@ -126,7 +128,7 @@ export function SequenceBuilder() {
   const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
-  const [senderAccountId, setSenderAccountId] = useState('');
+  const [senderAccountIds, setSenderAccountIds] = useState<string[]>([]);
   const [fromName, setFromName] = useState('');
   const [replyTo, setReplyTo] = useState('');
   const [savingSender, setSavingSender] = useState(false);
@@ -134,6 +136,8 @@ export function SequenceBuilder() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [enrollModalOpen, setEnrollModalOpen] = useState(false);
+  const [enrolledFilter, setEnrolledFilter] = useState('');
+  const [enrolledStatus, setEnrolledStatus] = useState<'all' | Enrollment['status']>('all');
   const [enrollTab, setEnrollTab] = useState<'individual' | 'list' | 'tag'>('individual');
   const [enrollSearch, setEnrollSearch] = useState('');
   const [enrollSelectedIds, setEnrollSelectedIds] = useState<string[]>([]);
@@ -165,7 +169,13 @@ export function SequenceBuilder() {
     ]);
     setSequence(seq);
     setName(seq.name);
-    setSenderAccountId(seq.senderAccountId ?? '');
+    setSenderAccountIds(
+      seq.senderAccountIds && seq.senderAccountIds.length > 0
+        ? seq.senderAccountIds
+        : seq.senderAccountId
+          ? [seq.senderAccountId]
+          : [],
+    );
     setFromName(seq.fromName ?? '');
     setReplyTo(seq.replyTo ?? '');
     setSteps(seqSteps);
@@ -180,6 +190,10 @@ export function SequenceBuilder() {
   }
 
   useEffect(() => {
+    // Reset to Steps when navigating to another sequence (e.g. "Build steps"
+    // on a subsequence) — React reuses this component across /:id changes, so
+    // the tab state would otherwise carry over from the previous sequence.
+    setTab('Steps');
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -207,6 +221,20 @@ export function SequenceBuilder() {
 
   const activeEnrolledCount = enrollments.filter((e) => e.status === 'active' || e.status === 'paused').length;
 
+  const visibleEnrollments = useMemo(() => {
+    const needle = enrolledFilter.trim().toLowerCase();
+    return enrollments.filter((e) => {
+      if (enrolledStatus !== 'all' && e.status !== enrolledStatus) return false;
+      if (!needle) return true;
+      const c = contacts.find((x) => x.id === e.contactId);
+      if (!c) return e.contactId.toLowerCase().includes(needle);
+      return (
+        c.email.toLowerCase().includes(needle) ||
+        displayName(c).toLowerCase().includes(needle)
+      );
+    });
+  }, [enrollments, contacts, enrolledFilter, enrolledStatus]);
+
   async function saveName() {
     if (!id || !sequence || name === sequence.name) return;
     setSavingName(true);
@@ -215,13 +243,17 @@ export function SequenceBuilder() {
     reload();
   }
 
-  // --- Sequence-level sender (global — applies to every send_email step) ---
+  // --- Sequence-level senders (multi — step 1 rotates, winner sticks) ---
 
-  async function handleSenderAccountChange(value: string) {
+  async function handleSenderToggle(accountId: string) {
     if (!id) return;
-    setSenderAccountId(value);
+    const next = senderAccountIds.includes(accountId)
+      ? senderAccountIds.filter((x) => x !== accountId)
+      : [...senderAccountIds, accountId];
+    setSenderAccountIds(next);
     setSavingSender(true);
-    await updateSequence(id, { senderAccountId: value || null });
+    // A non-empty set takes over from the legacy single sender.
+    await updateSequence(id, next.length > 0 ? { senderAccountIds: next, senderAccountId: null } : { senderAccountIds: [] });
     setSavingSender(false);
     reload();
   }
@@ -253,6 +285,7 @@ export function SequenceBuilder() {
       templateIds: [],
       delayValue: null,
       delayUnit: null,
+      threadedReply: false,
     };
     setSteps((prev) => [...prev, newSendStep]);
     setDirty(true);
@@ -307,6 +340,7 @@ export function SequenceBuilder() {
         templateIds: [],
         delayValue,
         delayUnit,
+        threadedReply: false,
       };
       setSteps((prev) => {
         const idx = prev.findIndex((s) => s.id === block.sendStep!.id);
@@ -315,6 +349,14 @@ export function SequenceBuilder() {
         return next;
       });
     }
+    setDirty(true);
+  }
+
+  function handleThreadedReplyChange(block: Block, threadedReply: boolean) {
+    if (!block.sendStep) return;
+    setSteps((prev) =>
+      prev.map((s) => (s.id === block.sendStep!.id ? { ...s, threadedReply } : s)),
+    );
     setDirty(true);
   }
 
@@ -346,6 +388,7 @@ export function SequenceBuilder() {
             templateIds: step.templateIds,
             delayValue: step.delayValue ?? undefined,
             delayUnit: step.delayUnit ?? undefined,
+            threadedReply: step.threadedReply,
           });
           idMap.set(step.id, created.id);
           orderedRealIds.push(created.id);
@@ -359,6 +402,7 @@ export function SequenceBuilder() {
             !sameTemplateIds ||
             orig.delayValue !== step.delayValue ||
             orig.delayUnit !== step.delayUnit ||
+            orig.threadedReply !== step.threadedReply ||
             orig.type !== step.type;
           if (changed) {
             await updateStep(id, step.id, {
@@ -366,6 +410,7 @@ export function SequenceBuilder() {
               templateIds: step.templateIds,
               delayValue: step.delayValue ?? undefined,
               delayUnit: step.delayUnit ?? undefined,
+              threadedReply: step.threadedReply,
             });
           }
           idMap.set(step.id, step.id);
@@ -696,11 +741,21 @@ export function SequenceBuilder() {
   );
 }
 
+  const visibleTabs: readonly Tab[] = sequence?.parentSequenceId
+    ? ['Steps', 'Enrolled contacts', 'Stats']
+    : TABS;
+
   return (
     <div>
       <Link to="/sequences" className="mb-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary">
         ← Sequences
       </Link>
+
+      {sequence?.parentSequenceId && (
+        <div className="mb-3 rounded-md border border-info/25 bg-info/10 px-3 py-2 text-[11.5px] text-text-tertiary">
+          This is a subsequence branch — its settings and sender accounts are inherited from the parent sequence.
+        </div>
+      )}
 
       <div className="mb-[18px] flex items-start justify-between gap-4">
         <div>
@@ -769,7 +824,7 @@ export function SequenceBuilder() {
       </div>
 
       <div className="mb-5 flex gap-5 border-b border-border-default">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -903,6 +958,18 @@ export function SequenceBuilder() {
                           )}
                         </div>
                       )}
+                      {block.index > 1 && (
+                        <label className="flex cursor-pointer items-center gap-2 border-t border-border-subtle px-3 py-2 pl-[50px] text-[11.5px] text-text-tertiary">
+                          <input
+                            type="checkbox"
+                            checked={block.sendStep!.threadedReply}
+                            onChange={(e) => handleThreadedReplyChange(block, e.target.checked)}
+                            disabled={!canWrite}
+                            className="accent-accent"
+                          />
+                          Send as a threaded reply to the previous email
+                        </label>
+                      )}
                     </div>
                   )}
                 </div>
@@ -929,24 +996,49 @@ export function SequenceBuilder() {
           </div>
 
           <div>
+          {sequence?.parentSequenceId ? (
+            <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-label">Senders</div>
+              <p className="text-[11.5px] leading-relaxed text-text-faint">
+                Email accounts are inherited from the parent sequence — this branch sends from the
+                parent's selected sender accounts, so there's nothing to configure here.
+              </p>
+            </div>
+          ) : (
           <div className="mb-4 rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">Sender</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-text-label">
+                Senders{senderAccountIds.length > 0 ? ` (${senderAccountIds.length})` : ''}
+              </span>
               {savingSender && <span className="text-[10.5px] text-text-faint">Saving…</span>}
             </div>
-            <select
-              value={senderAccountId}
-              onChange={(e) => handleSenderAccountChange(e.target.value)}
-              disabled={!canWrite}
-              className="mb-2.5 h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary disabled:opacity-60"
-            >
-              <option value="">Auto (best available)</option>
-              {senderAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
-                </option>
-              ))}
-            </select>
+            <div className="mb-2.5 max-h-44 space-y-1 overflow-y-auto">
+              {senderAccounts.length === 0 && (
+                <p className="text-[11px] text-text-muted">No sender accounts yet — Auto will use the global pool.</p>
+              )}
+              {senderAccounts.map((acc) => {
+                const checked = senderAccountIds.includes(acc.id);
+                return (
+                  <label
+                    key={acc.id}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs ${
+                      checked ? 'border-accent bg-accent/10 text-text-primary' : 'border-border-strong text-text-secondary hover:bg-raised'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleSenderToggle(acc.id)}
+                      disabled={!canWrite}
+                      className="accent-accent"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {acc.displayName || acc.email} — {acc.provider.toUpperCase()}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
             <div className="mb-2">
               <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-text-label">
                 From name
@@ -975,8 +1067,13 @@ export function SequenceBuilder() {
                 className="h-8 w-full rounded-md border border-border-strong bg-field px-2 text-xs text-text-primary placeholder:text-text-quaternary disabled:opacity-60"
               />
             </div>
-            <p className="mt-2.5 text-[10.5px] text-text-meta">Applies to every "Send email" step in this sequence.</p>
+            <p className="mt-2.5 text-[10.5px] text-text-meta">
+              {senderAccountIds.length > 0
+                ? 'Step 1 rotates across checked accounts; the winner sends every later step for that contact.'
+                : 'No senders checked — Auto picks the best available account per send.'}
+            </p>
           </div>
+          )}
 
           <div className="rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Summary</div>
@@ -1001,6 +1098,30 @@ export function SequenceBuilder() {
 
       {tab === 'Enrolled contacts' && (
         <div className="overflow-hidden rounded-md border border-border-default bg-panel">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border-default p-2.5">
+            <input
+              value={enrolledFilter}
+              onChange={(e) => setEnrolledFilter(e.target.value)}
+              placeholder="Search name or email…"
+              className="h-8 min-w-0 flex-1 rounded-md border border-border-strong bg-field px-2.5 text-xs text-text-primary placeholder:text-text-quaternary focus:border-accent focus:outline-none"
+            />
+            <select
+              value={enrolledStatus}
+              onChange={(e) => setEnrolledStatus(e.target.value as typeof enrolledStatus)}
+              className="h-8 rounded-md border border-border-strong bg-field px-2 text-xs text-text-secondary focus:border-accent focus:outline-none"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="stopped">Stopped</option>
+              <option value="completed">Completed</option>
+            </select>
+            {(enrolledFilter || enrolledStatus !== 'all') && (
+              <span className="text-[11px] text-text-faint">
+                {visibleEnrollments.length} of {enrollments.length}
+              </span>
+            )}
+          </div>
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border-default bg-surface text-[11px] uppercase tracking-wide text-text-meta">
@@ -1014,7 +1135,7 @@ export function SequenceBuilder() {
               </tr>
             </thead>
             <tbody>
-              {enrollments.map((e) => {
+              {visibleEnrollments.map((e) => {
                 const c = contacts.find((x) => x.id === e.contactId);
                 return (
                   <tr key={e.id} className="border-t border-border-subtle hover:bg-raised">
@@ -1067,10 +1188,10 @@ export function SequenceBuilder() {
                   </tr>
                 );
               })}
-              {enrollments.length === 0 && (
+              {visibleEnrollments.length === 0 && (
                 <tr>
                   <td colSpan={canWrite ? 7 : 6} className="px-3.5 py-8 text-center text-text-muted">
-                    No contacts enrolled yet.
+                    {enrollments.length === 0 ? 'No contacts enrolled yet.' : 'No contacts match the current search or filter.'}
                   </td>
                 </tr>
               )}
@@ -1114,8 +1235,16 @@ export function SequenceBuilder() {
               </div>
 
               <div className="rounded-md border border-border-default bg-panel p-4">
-                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Contacts per step</div>
-                {stats.stepBreakdown.length === 0 ? (
+                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Revenue pipeline</div>
+                <div className="grid grid-cols-3 gap-3.5">
+                  <RatioStat label="Deal value" value={`$${stats.pipeline?.dealValue ?? 0}`} />
+                  <RatioStat label="Positive threads" value={stats.pipeline?.positiveThreads ?? 0} />
+                  <RatioStat label="Pipeline" value={`$${stats.pipeline?.total ?? 0}`} />
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border-default bg-panel p-4">
+                <div className="mb-3.5 text-[13px] font-semibold text-text-heading">Contacts per step</div>                {stats.stepBreakdown.length === 0 ? (
                   <p className="text-xs text-text-muted">This sequence has no send steps yet.</p>
                 ) : (
                   <div className="flex flex-col gap-3">
@@ -1153,6 +1282,12 @@ export function SequenceBuilder() {
             </div>
           )}
         </div>
+      )}
+      {tab === 'Settings' && sequence && !sequence.parentSequenceId && (
+        <SequenceSettingsTab sequenceId={sequence.id} sequenceName={sequence.name} />
+      )}
+      {tab === 'Subsequences' && sequence && !sequence.parentSequenceId && (
+        <SubsequenceTab sequenceId={sequence.id} onViewSettings={() => setTab('Settings')} />
       )}
     </div>
   );

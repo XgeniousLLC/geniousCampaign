@@ -7,6 +7,7 @@ import { google } from 'googleapis';
 import { DrizzleService } from '../db/drizzle.service';
 import { senderAccounts } from '../db/schema';
 import { decryptToken } from './token-encryption.util';
+import { gmailAuthClient, gmailCredsFor, gmailTokenSecret } from './gmail-client.util';
 import { SuppressionService } from '../suppression/suppression.service';
 
 const BOUNCE_QUERY = 'from:mailer-daemon OR subject:"Delivery Status Notification" OR subject:"Undelivered Mail"';
@@ -39,11 +40,8 @@ export class GmailBounceScannerProcessor extends WorkerHost {
   }
 
   async process(_job: Job): Promise<{ accountsScanned: number; bouncesFound: number }> {
-    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
-    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
-    if (!clientId || !clientSecret || !redirectUri || !encryptionSecret) {
+    const encryptionSecret = gmailTokenSecret(this.settings);
+    if (!encryptionSecret) {
       // Not configured yet — nothing to scan, not an error (mirrors every
       // other unconfigured-integration path: skip quietly rather than spam
       // the log every 15 minutes for a feature nobody has connected).
@@ -58,7 +56,7 @@ export class GmailBounceScannerProcessor extends WorkerHost {
     for (const account of gmailAccounts) {
       if (!account.isActive || !account.gmailRefreshTokenEncrypted) continue;
       try {
-        bouncesFound += await this.scanAccount(account, clientId, clientSecret, redirectUri, encryptionSecret);
+        bouncesFound += await this.scanAccount(account, encryptionSecret);
       } catch (err) {
         this.logger.error(`Bounce scan failed for ${account.email}: ${err instanceof Error ? err.message : err}`);
       }
@@ -69,14 +67,15 @@ export class GmailBounceScannerProcessor extends WorkerHost {
 
   private async scanAccount(
     account: typeof senderAccounts.$inferSelect,
-    clientId: string,
-    clientSecret: string,
-    redirectUri: string,
     encryptionSecret: string,
   ): Promise<number> {
+    // Skip quietly when this mailbox has neither its own OAuth app nor a
+    // shared one configured — not worth an error log every 15 minutes.
+    const creds = gmailCredsFor(account, this.settings, encryptionSecret);
+    if (!creds.clientId || !creds.clientSecret || !creds.redirectUri) return 0;
+
     const refreshToken = decryptToken(account.gmailRefreshTokenEncrypted!, encryptionSecret);
-    const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    client.setCredentials({ refresh_token: refreshToken });
+    const client = gmailAuthClient(account, this.settings, encryptionSecret, refreshToken);
     const gmail = google.gmail({ version: 'v1', auth: client });
 
     const sinceQuery = account.gmailLastBounceScanAt

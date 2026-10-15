@@ -1,0 +1,1 @@
+ALTER TABLE "sequence_settings" ADD COLUMN "threaded_replies" boolean DEFAULT false NOT NULL;

@@ -77,7 +77,10 @@ function renderNodeHtml(node: ProseMirrorNode): string {
     case 'image': {
       const src = typeof node.attrs?.src === 'string' ? node.attrs.src : '';
       const alt = typeof node.attrs?.alt === 'string' ? node.attrs.alt : '';
-      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}">`;
+      // max-width:100% keeps a large upload from overflowing the email body
+      // (and the preview frame) — email clients don't constrain <img> on their
+      // own, so a wide image would otherwise blow past the container edges.
+      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" style="max-width:100%;height:auto;display:block">`;
     }
     case 'ctaButton': {
       const href = typeof node.attrs?.href === 'string' ? node.attrs.href : '#';

@@ -34,9 +34,7 @@ export class SesSenderProvider implements EmailSenderProvider {
   // no restart. Per-account fields win when present; otherwise falls back
   // to the single global Settings > Integrations AWS_* values, same
   // DB-overrides-env pattern used everywhere else in this app.
-  private async buildTransporter(
-    senderAccountId?: string,
-  ): Promise<{
+  private async buildTransporter(senderAccountId?: string): Promise<{
     transporter: nodemailer.Transporter<
       SESTransport.SentMessageInfo,
       SESTransport.Options
@@ -100,14 +98,19 @@ export class SesSenderProvider implements EmailSenderProvider {
       const info = await config.transporter.sendMail({
         from: params.from,
         to: params.to,
+        cc: params.cc || undefined,
+        bcc: params.bcc || undefined,
         replyTo: params.replyTo,
         subject: params.subject,
-        html: params.html,
+        html: params.html || undefined,
         text: params.text,
-        headers: {
-          'List-Unsubscribe': `<${params.unsubscribeUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
+        headers:
+          params.unsubscribeUrl && params.includeUnsubscribeHeader !== false
+            ? {
+                'List-Unsubscribe': `<${params.unsubscribeUrl}>`,
+                'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+              }
+            : {},
         ses: {
           ConfigurationSetName: config.configurationSet,
           EmailTags: params.messageTags

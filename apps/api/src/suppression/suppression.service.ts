@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { eq, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
-import { suppressionList, softBounceCounts, type suppressionReasonEnum } from '../db/schema';
+import {
+  suppressionList,
+  softBounceCounts,
+  type suppressionReasonEnum,
+} from '../db/schema';
 
 const SOFT_BOUNCE_THRESHOLD = 3;
 
@@ -13,6 +17,7 @@ const REASON_TO_EVENT: Record<SuppressionReason, string> = {
   repeated_soft_bounce: 'email.bounced',
   complaint: 'email.complained',
   manual_unsubscribe: 'email.unsubscribed',
+  not_interested: 'email.unsubscribed',
   invalid_email: 'email.verification_failed',
 };
 
@@ -26,7 +31,9 @@ export class SuppressionService {
   ) {}
 
   async isSuppressed(email: string): Promise<boolean> {
-    const row = await this.drizzle.db.query.suppressionList.findFirst({ where: eq(suppressionList.email, email) });
+    const row = await this.drizzle.db.query.suppressionList.findFirst({
+      where: eq(suppressionList.email, email),
+    });
     return !!row;
   }
 
@@ -36,7 +43,10 @@ export class SuppressionService {
     });
     if (existing) return existing;
 
-    const [created] = await this.drizzle.db.insert(suppressionList).values({ email, reason, source }).returning();
+    const [created] = await this.drizzle.db
+      .insert(suppressionList)
+      .values({ email, reason, source })
+      .returning();
     this.logger.log(`Suppressed ${email} (${reason}, source=${source})`);
     this.events.emit(REASON_TO_EVENT[reason], { email, reason, source });
     return created;
@@ -48,13 +58,18 @@ export class SuppressionService {
     });
 
     if (!existing) {
-      await this.drizzle.db.insert(softBounceCounts).values({ email, count: 1 });
+      await this.drizzle.db
+        .insert(softBounceCounts)
+        .values({ email, count: 1 });
       return { count: 1, suppressed: false };
     }
 
     const [updated] = await this.drizzle.db
       .update(softBounceCounts)
-      .set({ count: sql`${softBounceCounts.count} + 1`, lastBouncedAt: new Date() })
+      .set({
+        count: sql`${softBounceCounts.count} + 1`,
+        lastBouncedAt: new Date(),
+      })
       .where(eq(softBounceCounts.id, existing.id))
       .returning();
 
@@ -68,8 +83,14 @@ export class SuppressionService {
   async listAll(page = 1, limit = 50) {
     const offset = (page - 1) * limit;
     const [data, [{ count }]] = await Promise.all([
-      this.drizzle.db.query.suppressionList.findMany({ orderBy: (s, { desc }) => desc(s.createdAt), limit, offset }),
-      this.drizzle.db.select({ count: sql<number>`count(*)::int` }).from(suppressionList),
+      this.drizzle.db.query.suppressionList.findMany({
+        orderBy: (s, { desc }) => desc(s.createdAt),
+        limit,
+        offset,
+      }),
+      this.drizzle.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(suppressionList),
     ]);
     return { data, total: count, page, limit };
   }

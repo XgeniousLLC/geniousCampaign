@@ -4,6 +4,7 @@ import { useUiStore } from '../stores/useUiStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { getPublicSummary } from '../lib/analyticsApi';
 import { listSenderAccounts } from '../lib/senderAccountsApi';
+import { getUnreadCount } from '../lib/inboxApi';
 import { Footer } from './Footer';
 import { ChevronDownIcon, UserIcon, LockIcon } from './icons';
 
@@ -16,6 +17,7 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['/templates', 'Templates'],
   ['/campaigns', 'Campaigns'],
   ['/sequences', 'Sequences'],
+  ['/inbox', 'Unified Inbox'],
   ['/triggers', 'Triggers'],
   ['/webhooks', 'Webhooks'],
   ['/email-log', 'Email Log'],
@@ -179,13 +181,14 @@ function formatCount(n: number): string {
 }
 
 export function Layout() {
-  const { sidebarOpen, toggleSidebar } = useUiStore();
+  const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useUiStore();
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [senderWarn, setSenderWarn] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [unreadInbox, setUnreadInbox] = useState(0);
 
   useEffect(() => {
     getPublicSummary()
@@ -194,6 +197,11 @@ export function Layout() {
     listSenderAccounts()
       .then((accounts) => setSenderWarn(accounts.some((a) => a.isActive && a.sentToday / a.dailySendLimit >= 0.9)))
       .catch(() => setSenderWarn(false));
+    // Unseen-reply badge on the Unified Inbox nav item, refreshed every 5 min.
+    const loadUnread = () => getUnreadCount().then((r) => setUnreadInbox(r.unread)).catch(() => setUnreadInbox(0));
+    loadUnread();
+    const t = setInterval(loadUnread, 5 * 60_000);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
@@ -264,6 +272,19 @@ export function Layout() {
             <NavItem to="/sequences" icon={ICONS.sequences}>
               Sequences
             </NavItem>
+            <NavItem
+              to="/inbox"
+              icon={ICONS.emailLog}
+              badge={
+                unreadInbox > 0 ? (
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+                    {formatCount(unreadInbox)}
+                  </span>
+                ) : undefined
+              }
+            >
+              Unified Inbox
+            </NavItem>
             <NavItem to="/triggers" icon={ICONS.triggers}>
               Triggers
             </NavItem>
@@ -317,6 +338,30 @@ export function Layout() {
           </button>
 
           <div className="flex-1" />
+
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-strong text-text-quaternary hover:bg-field"
+          >
+            {theme === 'dark' ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <line x1="12" y1="2" x2="12" y2="5" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="5" y2="12" />
+                <line x1="19" y1="12" x2="22" y2="12" />
+                <line x1="4.9" y1="4.9" x2="7" y2="7" />
+                <line x1="17" y1="17" x2="19.1" y2="19.1" />
+                <line x1="4.9" y1="19.1" x2="7" y2="17" />
+                <line x1="17" y1="7" x2="19.1" y2="4.9" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+              </svg>
+            )}
+          </button>
 
           {user && (
             <div className="relative">
