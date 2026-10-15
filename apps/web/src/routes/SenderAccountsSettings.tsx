@@ -10,6 +10,7 @@ import {
 import { SesAccountModal } from '../components/SesAccountModal';
 import { GmailOAuthConfigModal } from '../components/GmailOAuthConfigModal';
 import { GmailConnectModal } from '../components/GmailConnectModal';
+import { DailyQuotaModal } from '../components/DailyQuotaModal';
 import { LockIcon } from '../components/icons';
 import { useAuthStore } from '../stores/useAuthStore';
 
@@ -26,6 +27,7 @@ export function SenderAccountsSettings() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalAccount, setModalAccount] = useState<SenderAccount | 'new' | null>(null);
+  const [quotaAccount, setQuotaAccount] = useState<SenderAccount | null>(null);
   const [gmailConfigOpen, setGmailConfigOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [testEmailAccount, setTestEmailAccount] = useState<SenderAccount | null>(null);
@@ -204,6 +206,14 @@ export function SenderAccountsSettings() {
                       Edit
                     </button>
                   )}
+                  {a.provider === 'gmail' && (
+                    <button
+                      onClick={() => setQuotaAccount(a)}
+                      className="h-7 rounded border border-border-default px-2 text-[11px] text-text-tertiary hover:bg-raised"
+                    >
+                      Edit quota
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setTestEmailAccount(a);
@@ -252,6 +262,17 @@ export function SenderAccountsSettings() {
       )}
 
       {connectOpen && <GmailConnectModal onClose={() => setConnectOpen(false)} />}
+
+      {quotaAccount && (
+        <DailyQuotaModal
+          account={quotaAccount}
+          onClose={() => setQuotaAccount(null)}
+          onSaved={() => {
+            setQuotaAccount(null);
+            load();
+          }}
+        />
+      )}
 
       {gmailConfigOpen && (
         <GmailOAuthConfigModal onClose={() => setGmailConfigOpen(false)} onSaved={() => setError(null)} />
