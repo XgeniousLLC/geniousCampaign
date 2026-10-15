@@ -9,26 +9,18 @@ import {
   type SendingSchedule,
 } from '../lib/sequencesApi';
 
-const SAFETY_DOCS_URL =
-  'https://docs.saleshandy.com/en/articles/13905614-how-to-manage-safety-settings-in-saleshandy';
-
 function Section({
   title,
   hint,
-  action,
   children,
 }: {
   title: string;
   hint?: string;
-  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-md border border-border-default bg-panel p-4">
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-text-label">{title}</div>
-        {action}
-      </div>
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-label">{title}</div>
       {hint && <p className="mb-3 text-xs text-text-faint">{hint}</p>}
       <div className="flex flex-col gap-3">{children}</div>
     </section>
@@ -349,16 +341,6 @@ export function SequenceSettingsTab({
 
       <Section
         title="Safety Settings"
-        action={
-          <a
-            href={SAFETY_DOCS_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] font-medium text-accent hover:underline"
-          >
-            Know more
-          </a>
-        }
       >
         <ToggleRow
           checked={settings.stopOnReply}
