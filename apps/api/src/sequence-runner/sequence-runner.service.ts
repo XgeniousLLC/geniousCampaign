@@ -296,7 +296,10 @@ export class SequenceRunnerService {
       resolvedBodyHtmlRaw = resolvedBodyHtmlRaw
         .replace(/<style[\s\S]*?<\/style>/gi, '')
         .replace(/\sstyle="[^"]*"/gi, '')
-        .replace(/<font[\s\S]*?>([\s\S]*?)<\/font>/gi, '$1');
+        .replace(/<font[\s\S]*?>([\s\S]*?)<\/font>/gi, '$1')
+        // The strip above also removed the image width guard — re-apply it so a
+        // wide upload can't overflow the body with "remove styling" enabled.
+        .replace(/<img\b/gi, '<img style="max-width:100%;height:auto;display:block" ');
     }
     // T09 — verification gate: never send risky/undeliverable when enabled.
     if (seqSettings?.verifyBeforeSend) {

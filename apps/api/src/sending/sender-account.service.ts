@@ -5,10 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
-import { senderAccounts } from '../db/schema';
+import { senderAccounts, gmailOauthSessions } from '../db/schema';
 import { encryptToken, appEncryptionSecret } from './token-encryption.util';
 import type { CreateSesAccountDto } from './dto/create-ses-account.dto';
 import type { UpdateSenderAccountDto } from './dto/update-sender-account.dto';
@@ -44,6 +44,7 @@ export class SenderAccountService {
         awsRegion: senderAccounts.awsRegion,
         sesConfigurationSet: senderAccounts.sesConfigurationSet,
         hasCustomAwsCredentials: sql<boolean>`${senderAccounts.awsAccessKeyId} is not null`,
+        hasCustomGmailCredentials: sql<boolean>`${senderAccounts.gmailClientId} is not null`,
         createdAt: senderAccounts.createdAt,
       })
       .from(senderAccounts)
@@ -259,6 +260,7 @@ export class SenderAccountService {
     email: string,
     displayName: string | undefined,
     encryptedRefreshToken: string,
+    creds?: { clientId: string; clientSecretEncrypted: string; redirectUri: string } | null,
   ) {
     const existing = await this.drizzle.db.query.senderAccounts.findFirst({
       where: and(
@@ -269,6 +271,19 @@ export class SenderAccountService {
     const gmailDailyLimit = Number(
       this.config.get<string>('GMAIL_DEFAULT_DAILY_LIMIT') ?? 300,
     );
+    // creds null = connected via the shared app → keep inheriting the global
+    // GOOGLE_OAUTH_* values (clear any previous per-account override).
+    const credFields = creds
+      ? {
+          gmailClientId: creds.clientId,
+          gmailClientSecretEncrypted: creds.clientSecretEncrypted,
+          gmailRedirectUri: creds.redirectUri,
+        }
+      : {
+          gmailClientId: null,
+          gmailClientSecretEncrypted: null,
+          gmailRedirectUri: null,
+        };
 
     if (existing) {
       const [updated] = await this.drizzle.db
@@ -277,6 +292,7 @@ export class SenderAccountService {
           gmailRefreshTokenEncrypted: encryptedRefreshToken,
           displayName,
           isActive: true,
+          ...credFields,
           updatedAt: new Date(),
         })
         .where(eq(senderAccounts.id, existing.id))
@@ -293,8 +309,41 @@ export class SenderAccountService {
         dailySendLimit: gmailDailyLimit,
         sentTodayDate: today(),
         gmailRefreshTokenEncrypted: encryptedRefreshToken,
+        ...credFields,
       })
       .returning();
     return created;
+  }
+
+  // ── Gmail OAuth connect sessions ──────────────────────────────
+  /** Creates the short-lived row the signed OAuth `state` points at, so the
+   * callback can exchange the code with the same OAuth app that started it. */
+  async createGmailOauthSession(input: {
+    clientId: string;
+    clientSecretEncrypted: string;
+    redirectUri: string;
+    isCustom: boolean;
+  }) {
+    // Opportunistic cleanup of anything older than an hour (abandoned flows).
+    await this.drizzle.db
+      .delete(gmailOauthSessions)
+      .where(lt(gmailOauthSessions.createdAt, new Date(Date.now() - 3_600_000)));
+    const [created] = await this.drizzle.db
+      .insert(gmailOauthSessions)
+      .values(input)
+      .returning();
+    return created;
+  }
+
+  async getGmailOauthSession(id: string) {
+    return this.drizzle.db.query.gmailOauthSessions.findFirst({
+      where: eq(gmailOauthSessions.id, id),
+    });
+  }
+
+  async deleteGmailOauthSession(id: string) {
+    await this.drizzle.db
+      .delete(gmailOauthSessions)
+      .where(eq(gmailOauthSessions.id, id));
   }
 }

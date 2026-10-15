@@ -11,6 +11,7 @@ export interface SenderAccount {
   awsRegion: string | null;
   sesConfigurationSet: string | null;
   hasCustomAwsCredentials: boolean;
+  hasCustomGmailCredentials: boolean;
   createdAt: string;
 }
 
@@ -18,8 +19,16 @@ export function listSenderAccounts() {
   return apiGet<SenderAccount[]>('/sender-accounts');
 }
 
-export function getGmailConnectUrl() {
-  return apiGet<{ authUrl: string }>('/sender-accounts/gmail/connect');
+export interface GmailConnectInput {
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri?: string;
+}
+
+/** Blank input = use the shared Settings OAuth app; set = this mailbox's own
+ * client id/secret (stored on the account after Google redirects back). */
+export function getGmailConnectUrl(input?: GmailConnectInput) {
+  return apiPost<{ authUrl: string }>('/sender-accounts/gmail/connect', input ?? {});
 }
 
 export interface SesAccountInput {

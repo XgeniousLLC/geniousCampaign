@@ -9,6 +9,7 @@ import { google } from 'googleapis';
 import { DrizzleService } from '../db/drizzle.service';
 import { senderAccounts } from '../db/schema';
 import { decryptToken } from './token-encryption.util';
+import { gmailAuthClient, gmailTokenSecret } from './gmail-client.util';
 import type {
   EmailSenderProvider,
   SendEmailParams,
@@ -83,13 +84,10 @@ export class GmailSenderProvider implements EmailSenderProvider {
       );
     }
 
-    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
-    const encryptionSecret = this.settings.get('TOKEN_ENCRYPTION_KEY');
-    if (!clientId || !clientSecret || !redirectUri || !encryptionSecret) {
+    const encryptionSecret = gmailTokenSecret(this.settings);
+    if (!encryptionSecret) {
       throw new InternalServerErrorException(
-        'Gmail sending is not configured — set GOOGLE_OAUTH_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI/TOKEN_ENCRYPTION_KEY in .env.',
+        'No encryption key available (set TOKEN_ENCRYPTION_KEY or JWT_SECRET) — cannot decrypt Gmail tokens.',
       );
     }
 
@@ -111,12 +109,13 @@ export class GmailSenderProvider implements EmailSenderProvider {
         account.gmailRefreshTokenEncrypted,
         encryptionSecret,
       );
-      const client = new google.auth.OAuth2(
-        clientId,
-        clientSecret,
-        redirectUri,
+      // Per-mailbox OAuth app when set, else the shared Settings app.
+      const client = gmailAuthClient(
+        account,
+        this.settings,
+        encryptionSecret,
+        refreshToken,
       );
-      client.setCredentials({ refresh_token: refreshToken });
 
       const gmail = google.gmail({ version: 'v1', auth: client });
       const res = await gmail.users.messages.send({

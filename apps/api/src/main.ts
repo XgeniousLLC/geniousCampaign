@@ -1,11 +1,46 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { raw } from 'express';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { IncomingMessage } from 'http';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { AppModule } from './app.module';
+import { DrizzleService } from './db/drizzle.service';
+
+// Arbitrary but stable key for the advisory lock guarding startup migrations.
+const MIGRATION_LOCK_KEY = 728_113_001;
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // Apply pending migrations before accepting traffic, so a deploy is just
+  // "start the app" — no separate `npm run db:migrate` step. drizzle's
+  // migrator is idempotent (tracks applied files in __drizzle_migrations),
+  // and the migration folder ships in the image at src/db/migrations.
+  const logger = new Logger('Bootstrap');
+  const migrationsFolder = resolve(process.cwd(), 'src/db/migrations');
+  if (existsSync(migrationsFolder)) {
+    const drizzle = app.get(DrizzleService);
+    try {
+      // Serialize across boots (watch restarts / multiple replicas) with an
+      // advisory lock so concurrent CREATE TABLE/TYPE statements can't race.
+      await drizzle.withAdvisoryLock(MIGRATION_LOCK_KEY, () =>
+        migrate(drizzle.db, { migrationsFolder }),
+      );
+      logger.log('Database migrations are up to date');
+    } catch (err) {
+      logger.error(
+        `Database migration failed: ${err instanceof Error ? err.message : err}`,
+      );
+      throw err;
+    }
+  } else {
+    logger.warn(
+      `Migrations folder not found at ${migrationsFolder} — skipping migrations`,
+    );
+  }
+
   app.enableCors();
   // AWS SNS posts webhook notifications with Content-Type: text/plain even
   // though the body is JSON. Nest's `rawBody: true` capture only recognizes

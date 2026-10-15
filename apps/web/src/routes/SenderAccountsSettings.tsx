@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   listSenderAccounts,
-  getGmailConnectUrl,
   updateSenderAccount,
   deleteSenderAccount,
   sendTestEmail,
@@ -10,6 +9,7 @@ import {
 } from '../lib/senderAccountsApi';
 import { SesAccountModal } from '../components/SesAccountModal';
 import { GmailOAuthConfigModal } from '../components/GmailOAuthConfigModal';
+import { GmailConnectModal } from '../components/GmailConnectModal';
 import { LockIcon } from '../components/icons';
 import { useAuthStore } from '../stores/useAuthStore';
 
@@ -23,7 +23,7 @@ const PROVIDER_LABEL: Record<SenderAccount['provider'], string> = { ses: 'SES', 
 
 export function SenderAccountsSettings() {
   const [accounts, setAccounts] = useState<SenderAccount[]>([]);
-  const [connecting, setConnecting] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalAccount, setModalAccount] = useState<SenderAccount | 'new' | null>(null);
   const [gmailConfigOpen, setGmailConfigOpen] = useState(false);
@@ -47,25 +47,6 @@ export function SenderAccountsSettings() {
     if (callbackError) setError(callbackError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function handleConnect() {
-    setConnecting(true);
-    setError(null);
-    try {
-      const { authUrl } = await getGmailConnectUrl();
-      window.location.href = authUrl;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setConnecting(false);
-      // The config modal explains and fixes this directly — showing the raw
-      // API error banner underneath it too is redundant.
-      if (message.includes('Google OAuth is not configured')) {
-        setGmailConfigOpen(true);
-      } else {
-        setError(message);
-      }
-    }
-  }
 
   async function toggleActive(a: SenderAccount) {
     setBusy(a.id);
@@ -126,11 +107,10 @@ export function SenderAccountsSettings() {
               Add AWS account
             </button>
             <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-panel px-3 text-xs font-medium text-text-secondary hover:bg-raised disabled:opacity-50"
+              onClick={() => setConnectOpen(true)}
+              className="flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-panel px-3 text-xs font-medium text-text-secondary hover:bg-raised"
             >
-              {connecting ? 'Redirecting…' : 'Connect Gmail account'}
+              Connect Gmail account
             </button>
             <button
               onClick={() => setGmailConfigOpen(true)}
@@ -187,6 +167,20 @@ export function SenderAccountsSettings() {
                   {a.sesConfigurationSet && (
                     <span className="rounded border border-border-subtle bg-surface px-1.5 py-0.5 font-mono text-[10.5px] text-text-tertiary">{a.sesConfigurationSet}</span>
                   )}
+                </div>
+              )}
+
+              {a.provider === 'gmail' && (
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10.5px] ${
+                      a.hasCustomGmailCredentials
+                        ? 'border-info/25 bg-info/10 text-info'
+                        : 'border-border-subtle bg-surface text-text-faint'
+                    }`}
+                  >
+                    {a.hasCustomGmailCredentials ? 'own OAuth app' : 'shared OAuth app'}
+                  </span>
                 </div>
               )}
 
@@ -256,6 +250,8 @@ export function SenderAccountsSettings() {
           }}
         />
       )}
+
+      {connectOpen && <GmailConnectModal onClose={() => setConnectOpen(false)} />}
 
       {gmailConfigOpen && (
         <GmailOAuthConfigModal onClose={() => setGmailConfigOpen(false)} onSaved={() => setError(null)} />

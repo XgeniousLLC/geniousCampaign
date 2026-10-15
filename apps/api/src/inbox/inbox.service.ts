@@ -20,6 +20,7 @@ import {
   subsequences,
 } from '../db/schema';
 import { decryptToken } from '../sending/token-encryption.util';
+import { gmailAuthClient, gmailTokenSecret } from '../sending/gmail-client.util';
 import {
   evaluateConditionTree,
   type ConditionContext,
@@ -63,18 +64,15 @@ export class InboxService {
   ) {}
 
   private gmailClientFor(account: typeof senderAccounts.$inferSelect) {
-    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
-    const secret = this.settings.get('TOKEN_ENCRYPTION_KEY');
-    if (!clientId || !clientSecret || !redirectUri || !secret)
-      throw new Error('Gmail not configured');
+    const secret = gmailTokenSecret(this.settings);
+    if (!account.gmailRefreshTokenEncrypted || !secret)
+      throw new Error('Gmail not configured for this account');
     const refreshToken = decryptToken(
-      account.gmailRefreshTokenEncrypted!,
+      account.gmailRefreshTokenEncrypted,
       secret,
     );
-    const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    client.setCredentials({ refresh_token: refreshToken });
+    // Per-mailbox OAuth app when set, else the shared Settings app.
+    const client = gmailAuthClient(account, this.settings, secret, refreshToken);
     return google.gmail({ version: 'v1', auth: client });
   }
 

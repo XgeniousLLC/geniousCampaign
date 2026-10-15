@@ -5,6 +5,7 @@ import { DrizzleService } from '../db/drizzle.service';
 import { SettingsService } from '../settings/settings.service';
 import { senderAccounts } from '../db/schema';
 import { decryptToken } from '../sending/token-encryption.util';
+import { gmailAuthClient, gmailTokenSecret } from '../sending/gmail-client.util';
 
 /** T10 — users.watch registration + 5-day renewal. Poller stays as fallback. */
 @Injectable()
@@ -25,15 +26,21 @@ export class GmailWatchService {
       where: eq(senderAccounts.id, accountId),
     });
     if (!account?.gmailRefreshTokenEncrypted) return null;
-    const clientId = this.settings.get('GOOGLE_OAUTH_CLIENT_ID');
-    const clientSecret = this.settings.get('GOOGLE_OAUTH_CLIENT_SECRET');
-    const redirectUri = this.settings.get('GOOGLE_OAUTH_REDIRECT_URI');
-    const secret = this.settings.get('TOKEN_ENCRYPTION_KEY');
-    if (!clientId || !clientSecret || !redirectUri || !secret) return null;
-    const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    client.setCredentials({
-      refresh_token: decryptToken(account.gmailRefreshTokenEncrypted, secret),
-    });
+    const secret = gmailTokenSecret(this.settings);
+    if (!secret) return null;
+    let client;
+    try {
+      // Per-mailbox OAuth app when set, else the shared Settings app.
+      client = gmailAuthClient(
+        account,
+        this.settings,
+        secret,
+        decryptToken(account.gmailRefreshTokenEncrypted, secret),
+      );
+    } catch {
+      // No per-account credentials and no shared Gmail app — nothing to watch.
+      return null;
+    }
     const gmail = google.gmail({ version: 'v1', auth: client });
     const res = await gmail.users.watch({
       userId: 'me',

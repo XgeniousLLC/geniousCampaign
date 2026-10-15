@@ -293,7 +293,7 @@ export function TemplatePreviewModal({
             <ClientChrome client={client} subject={resolvedSubject} senderName={senderName} senderEmail={senderEmail} />
             <iframe
               title="Email preview"
-              srcDoc={`<html><body style="margin:0;padding:20px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#2b2b2b;background:#ffffff;">${resolvedHtml}</body></html>`}
+              srcDoc={`<html><head><style>body{margin:0;padding:20px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#2b2b2b;background:#ffffff;}img{max-width:100%;height:auto;display:block;}table{max-width:100%;}</style></head><body>${resolvedHtml}</body></html>`}
               sandbox=""
               style={{ width, height: 480, border: 'none', background: '#fff' }}
             />
