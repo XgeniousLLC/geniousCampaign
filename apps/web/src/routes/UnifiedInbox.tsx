@@ -72,8 +72,16 @@ function splitQuotedBody(raw: string): { visible: string; quoted: string } {
   return { visible: raw.trim(), quoted: '' };
 }
 
-function MessageCard({ message: m }: { message: InboxMessage }) {
-  const [collapsed, setCollapsed] = useState(false);
+function MessageCard({
+  message: m,
+  defaultCollapsed = false,
+}: {
+  message: InboxMessage;
+  /** Older messages start collapsed so a long thread reads as a list; only
+   * the two most recent open by default (see the caller). */
+  defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [showQuoted, setShowQuoted] = useState(false);
   const { visible, quoted } = splitQuotedBody(m.bodyText ?? m.snippet ?? '');
 
@@ -527,7 +535,14 @@ export function UnifiedInbox() {
               </div>
             )}
             {!loadingThread &&
-              messages.map((m) => <MessageCard key={m.id} message={m} />)}
+              messages.map((m, i) => (
+                <MessageCard
+                  key={m.id}
+                  message={m}
+                  // Everything but the two most recent starts collapsed.
+                  defaultCollapsed={i < messages.length - 2}
+                />
+              ))}
             <div className="mt-4 min-w-0 rounded-lg border border-border-subtle bg-panel p-3.5">
               <div className="mb-2 flex min-w-0 items-center gap-2 text-[13px]">
                 <span className="shrink-0 text-text-muted">To:</span>
