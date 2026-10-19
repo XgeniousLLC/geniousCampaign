@@ -1,8 +1,30 @@
 import {
   classifyReply,
   replyRequestsUnsubscribe,
+  replySubject,
   unsubKeywordsFrom,
 } from './thread-classifier.util';
+
+describe('replySubject', () => {
+  it.each([
+    ['Plain subject', 'Re: Plain subject'],
+    ['Re: already replied', 'Re: already replied'],
+    ['RE: shouty', 'RE: shouty'],
+    ['re: lowercase', 're: lowercase'],
+    ['  Re:  padded  ', 'Re:  padded'],
+    ['   Untrimmed   ', 'Re: Untrimmed'],
+    ['Re:RE: mixed', 'Re:RE: mixed'],
+  ])('prefixes %j once', (input, expected) => {
+    expect(replySubject(input)).toBe(expected);
+  });
+
+  it.each([null, undefined, '', '   '])(
+    'falls back to a bare Re: for %j',
+    (input) => {
+      expect(replySubject(input)).toBe('Re:');
+    },
+  );
+});
 
 describe('thread-classifier', () => {
   const cases: Array<[string, string, string, string]> = [
