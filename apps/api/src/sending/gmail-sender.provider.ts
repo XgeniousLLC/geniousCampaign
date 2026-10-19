@@ -134,12 +134,19 @@ export class GmailSenderProvider implements EmailSenderProvider {
         providerThreadId: res.data.threadId ?? params.threadId,
       };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `Gmail send failed for account ${account.email}: ${err instanceof Error ? err.message : err}`,
+        `Gmail send failed for account ${account.email}: ${message}`,
       );
-      throw new InternalServerErrorException(
-        `Gmail send failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // A 404 here almost always means the supplied threadId belongs to a
+      // different Gmail mailbox than this sender account — the thread does
+      // not exist from `me`'s point of view.
+      if (params.threadId && /not found/i.test(message)) {
+        throw new InternalServerErrorException(
+          `Gmail send failed from ${account.email}: this thread belongs to a different mailbox. Reconnect ${account.email} or reply from the mailbox that received the email.`,
+        );
+      }
+      throw new InternalServerErrorException(`Gmail send failed: ${message}`);
     }
   }
 }
