@@ -204,6 +204,9 @@ export class InboxService {
           bodyText: text,
           headers,
           sent,
+          // The mailbox we polled is the one that owns this Gmail thread —
+          // authoritative, unlike the old headroom/sequence heuristic.
+          mailboxAccountId: account.id,
           sentAt: full.data.internalDate
             ? new Date(Number(full.data.internalDate))
             : new Date(),
@@ -230,6 +233,9 @@ export class InboxService {
     bodyText: string;
     headers: Record<string, string>;
     sent: typeof sends.$inferSelect;
+    /** The Gmail mailbox this thread was polled from — the account that
+     * actually owns the thread, so replies go out from the same mailbox. */
+    mailboxAccountId?: string;
     sentAt: Date;
   }) {
     const { status, confidence, source } = await this.classifyWithAiFallback({
@@ -249,7 +255,9 @@ export class InboxService {
           enrollmentId: input.sent.sequenceEnrollmentId,
           sequenceId: input.sent.sequenceId,
           contactId: input.sent.contactId,
-          senderAccountId: await this.senderAccountIdForSend(input.sent),
+          senderAccountId:
+            input.mailboxAccountId ??
+            (await this.senderAccountIdForSend(input.sent)),
           subject: input.subject,
           status,
           statusSource: 'auto',
@@ -400,6 +408,12 @@ export class InboxService {
   private async senderAccountIdForSend(
     sent: typeof sends.$inferSelect,
   ): Promise<string | null> {
+    // Authoritative: the account that actually sent this email (recorded by
+    // the dispatcher at send time). A sequence can rotate across several
+    // senders, so sequence.senderAccountId is only a hint — using it for a
+    // thread whose mail came from a different mailbox makes Gmail replies
+    // 404 ("Requested entity was not found").
+    if (sent.senderAccountId) return sent.senderAccountId;
     if (sent.sequenceId) {
       const seq = await this.drizzle.db.query.sequences.findFirst({
         where: eq(sequences.id, sent.sequenceId),
@@ -625,6 +639,39 @@ export class InboxService {
     return updated;
   }
 
+  /** Which mailbox must send a thread's reply — the Gmail thread only exists
+   * inside the mailbox that sent the original, so picking the wrong account
+   * makes messages.send fail with "Requested entity was not found". Prefers
+   * the recorded sender of the thread's sends, then the mailbox that received
+   * the inbound reply, and only then the (possibly stale/heuristic) value
+   * stored on the thread. */
+  private async resolveReplySenderAccountId(
+    thread: typeof emailThreads.$inferSelect,
+  ): Promise<string | undefined> {
+    const sent = await this.drizzle.db.query.sends.findFirst({
+      where: eq(sends.providerThreadId, thread.providerThreadId),
+    });
+    if (sent?.senderAccountId) return sent.senderAccountId;
+
+    const inbound = await this.drizzle.db.query.emailMessages.findFirst({
+      where: and(
+        eq(emailMessages.threadId, thread.id),
+        eq(emailMessages.dir, 'in'),
+      ),
+      orderBy: (m, { desc }) => desc(m.sentAt),
+    });
+    if (inbound?.toEmail) {
+      const acct = await this.drizzle.db.query.senderAccounts.findFirst({
+        where: and(
+          eq(senderAccounts.provider, 'gmail'),
+          eq(senderAccounts.email, inbound.toEmail),
+        ),
+      });
+      if (acct) return acct.id;
+    }
+    return thread.senderAccountId ?? undefined;
+  }
+
   async replyToThread(
     id: string,
     input: { html: string; text: string; cc?: string; bcc?: string },
@@ -658,13 +705,16 @@ export class InboxService {
       where: and(eq(emailMessages.threadId, id), eq(emailMessages.dir, 'in')),
       orderBy: (m, { desc }) => desc(m.sentAt),
     });
+    // Send from the mailbox that owns this Gmail thread, not whatever
+    // account the dispatcher's quota rotation would otherwise pick.
+    const senderAccountId = await this.resolveReplySenderAccountId(thread);
     const result = await this.dispatcher.send({
       to: contact.email,
       subject: `Re: ${thread.subject ?? ''}`,
       html,
       text,
       // Manual 1:1 reply — no bulk List-Unsubscribe headers.
-      senderAccountId: thread.senderAccountId ?? undefined,
+      senderAccountId,
       threadId: thread.providerThreadId,
       inReplyToMessageId: lastIn[0]?.providerMessageId?.startsWith('send:')
         ? undefined
