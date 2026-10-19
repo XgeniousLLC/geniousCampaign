@@ -211,12 +211,16 @@ export function UnifiedInbox() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [editorEmpty, setEditorEmpty] = useState(true);
+  const [loadingThread, setLoadingThread] = useState(false);
 
   // Latest search text for the auto-fetch timer (avoids stale closures).
   const qRef = useRef(q);
   qRef.current = q;
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
+  // The thread whose messages are currently being fetched — a response for
+  // an older thread must never overwrite a newer one that resolved first.
+  const requestedThreadRef = useRef<string | null>(null);
 
   const editor = useEditor({
     extensions: [StarterKit, Link.configure({ openOnClick: false }), R2Image],
@@ -305,11 +309,26 @@ export function UnifiedInbox() {
   }, [tab, status]);
 
   async function openThread(id: string) {
+    requestedThreadRef.current = id;
     setSelectedId(id);
-    const res = await getThread(id);
-    setMessages(res.messages);
-    await patchThread(id, { isRead: true });
-    setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, isRead: true, unread: false } : t)));
+    // Clear immediately — otherwise a slow or failed load leaves the previous
+    // thread's messages (including whatever was just replied to) sitting under
+    // this thread's subject.
+    setMessages([]);
+    setLoadingThread(true);
+    try {
+      const res = await getThread(id);
+      if (requestedThreadRef.current !== id) return;
+      setMessages(res.messages);
+      await patchThread(id, { isRead: true });
+      if (requestedThreadRef.current !== id) return;
+      setThreads((ts) => ts.map((t) => (t.id === id ? { ...t, isRead: true, unread: false } : t)));
+    } catch (e) {
+      if (requestedThreadRef.current !== id) return;
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (requestedThreadRef.current === id) setLoadingThread(false);
+    }
   }
 
   function editorContent(): { html: string; text: string } | null {
@@ -326,8 +345,11 @@ export function UnifiedInbox() {
     try {
       await replyToThread(selectedId, { ...content, cc: cc || undefined, bcc: bcc || undefined });
       editor?.commands.clearContent();
-      const res = await getThread(selectedId);
-      setMessages(res.messages);
+      // Only refresh the list if the reader hasn't switched threads since.
+      if (requestedThreadRef.current === selectedId) {
+        const res = await getThread(selectedId);
+        if (requestedThreadRef.current === selectedId) setMessages(res.messages);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -499,9 +521,13 @@ export function UnifiedInbox() {
                 {selected.isFinished ? 'Reopen' : 'Finished'}
               </button>
             </div>
-            {messages.map((m) => (
-              <MessageCard key={m.id} message={m} />
-            ))}
+            {loadingThread && (
+              <div className="mb-2.5 px-1 py-6 text-center text-xs text-text-faint">
+                Loading conversation…
+              </div>
+            )}
+            {!loadingThread &&
+              messages.map((m) => <MessageCard key={m.id} message={m} />)}
             <div className="mt-4 min-w-0 rounded-lg border border-border-subtle bg-panel p-3.5">
               <div className="mb-2 flex min-w-0 items-center gap-2 text-[13px]">
                 <span className="shrink-0 text-text-muted">To:</span>
