@@ -6,6 +6,15 @@ export type ThreadStatus =
   | 'out_of_office'
   | 'closed';
 
+/** Reply subject line — adds "Re:" only when the subject doesn't already
+ * carry one, so replying to an already-replied thread doesn't stack up
+ * "Re: Re: Re: …". Matching is case-insensitive (RE:, re:, Re:). */
+export function replySubject(subject: string | null | undefined): string {
+  const base = (subject ?? '').trim();
+  if (!base) return 'Re:';
+  return /^re:/i.test(base) ? base : `Re: ${base}`;
+}
+
 export function stripQuoted(body: string): string {
   return body
     .split('\n')

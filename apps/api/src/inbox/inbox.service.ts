@@ -28,6 +28,7 @@ import {
 import {
   classifyReply,
   replyRequestsUnsubscribe,
+  replySubject,
   unsubKeywordsFrom,
   type ThreadStatus,
 } from './thread-classifier.util';
@@ -710,7 +711,7 @@ export class InboxService {
     const senderAccountId = await this.resolveReplySenderAccountId(thread);
     const result = await this.dispatcher.send({
       to: contact.email,
-      subject: `Re: ${thread.subject ?? ''}`,
+      subject: replySubject(thread.subject),
       html,
       text,
       // Manual 1:1 reply — no bulk List-Unsubscribe headers.
