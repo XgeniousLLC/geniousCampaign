@@ -6,6 +6,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import { R2Image } from '../lib/tiptap/r2-image';
 import { uploadImageFile } from '../lib/imageUploadPipeline';
 import { useImageUpload } from '../lib/useImageUpload';
+import { ChevronDownIcon, ChevronUpIcon } from '../components/icons';
 import {
   listThreads,
   getThread,
@@ -41,6 +42,98 @@ function initials(email: string | null | undefined): string {
   const parts = name.split(' ').filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
+}
+
+// A body line that marks the start of quoted reply/forwarded content — the
+// same things Gmail tucks behind its "..." toggle.
+const QUOTE_START = [
+  /^\s*>/,
+  /^\s*On .+wrote:\s*$/i,
+  /^\s*-{2,}\s*Original Message\s*-{2,}/i,
+  /^\s*-{2,}\s*Forwarded message\s*-{2,}/i,
+  /^\s*_{10,}\s*$/,
+];
+
+/** Splits a message body into the freshly-written part and the quoted or
+ * forwarded tail, so the tail can be hidden until the reader asks for it. */
+function splitQuotedBody(raw: string): { visible: string; quoted: string } {
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!QUOTE_START.some((re) => re.test(lines[i]))) continue;
+    const visible = lines.slice(0, i).join('\n').trim();
+    const quoted = lines.slice(i).join('\n').trim();
+    // A body that is *only* quoted content (a bare forward, an OOO
+    // autoresponder) stays visible rather than collapsing to nothing.
+    if (!visible) break;
+    // Trailing bare markers like ">" aren't worth their own toggle.
+    if (!/[^\s>]/.test(quoted)) return { visible, quoted: '' };
+    return { visible, quoted };
+  }
+  return { visible: raw.trim(), quoted: '' };
+}
+
+function MessageCard({ message: m }: { message: InboxMessage }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [showQuoted, setShowQuoted] = useState(false);
+  const { visible, quoted } = splitQuotedBody(m.bodyText ?? m.snippet ?? '');
+
+  return (
+    <div className="mb-2.5 overflow-hidden rounded-lg border border-border-subtle bg-panel">
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        title={collapsed ? 'Expand message' : 'Collapse message'}
+        className="flex w-full min-w-0 items-center gap-2 px-3.5 py-2.5 text-left hover:bg-raised"
+      >
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-info-alt to-accent text-[9px] font-semibold text-white">
+          {m.dir === 'in' ? initials(m.fromEmail) : 'Y'}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-secondary">
+          {m.dir === 'in' ? m.fromEmail : `You → ${m.toEmail}`}
+        </span>
+        <span className="shrink-0 text-[11px] text-text-faint">
+          {m.sentAt ? new Date(m.sentAt).toLocaleString() : ''}
+        </span>
+        <span className="shrink-0 text-text-faint">
+          {collapsed ? (
+            <ChevronDownIcon className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronUpIcon className="h-3.5 w-3.5" />
+          )}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="px-3.5 pb-3.5">
+          <div className="pl-8">
+            <div className="whitespace-pre-wrap break-words text-[13px] text-text-primary">
+              {visible}
+            </div>
+            {quoted && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowQuoted((v) => !v)}
+                  title={showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+                  className={`mt-1.5 inline-flex h-5 items-center rounded border px-1.5 text-[13px] leading-none tracking-[0.2em] ${
+                    showQuoted
+                      ? 'border-accent/40 bg-accent/10 text-accent-light'
+                      : 'border-border-default text-text-faint hover:bg-raised hover:text-text-muted'
+                  }`}
+                >
+                  •••
+                </button>
+                {showQuoted && (
+                  <div className="mt-1.5 whitespace-pre-wrap break-words border-l-2 border-border-default pl-2.5 text-[12px] text-text-muted">
+                    {quoted}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EmptyState({ title, hint }: { title: string; hint: string }) {
@@ -407,20 +500,7 @@ export function UnifiedInbox() {
               </button>
             </div>
             {messages.map((m) => (
-              <div key={m.id} className="mb-2.5 rounded-lg border border-border-subtle bg-panel p-3.5">
-                <div className="mb-1.5 flex min-w-0 items-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-info-alt to-accent text-[9px] font-semibold text-white">
-                    {m.dir === 'in' ? initials(m.fromEmail) : 'Y'}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-secondary">
-                    {m.dir === 'in' ? m.fromEmail : `You → ${m.toEmail}`}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-text-faint">
-                    {m.sentAt ? new Date(m.sentAt).toLocaleString() : ''}
-                  </span>
-                </div>
-                <div className="whitespace-pre-wrap break-words pl-8 text-[13px] text-text-primary">{m.bodyText ?? m.snippet}</div>
-              </div>
+              <MessageCard key={m.id} message={m} />
             ))}
             <div className="mt-4 min-w-0 rounded-lg border border-border-subtle bg-panel p-3.5">
               <div className="mb-2 flex min-w-0 items-center gap-2 text-[13px]">
