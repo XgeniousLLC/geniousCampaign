@@ -507,9 +507,13 @@ export function UnifiedInbox() {
               <select
                 value={selected.status}
                 onChange={async (e) => {
-                  await setThreadStatus(selected.id, e.target.value as ThreadStatus);
+                  // Capture the value before awaiting — React resets a
+                  // controlled select to its last rendered value once the
+                  // handler yields, so e.target.value is stale afterwards.
+                  const nextStatus = e.target.value as ThreadStatus;
+                  await setThreadStatus(selected.id, nextStatus);
                   setThreads((ts) =>
-                    ts.map((t) => (t.id === selected.id ? { ...t, status: e.target.value as ThreadStatus, statusSource: 'manual' } : t)),
+                    ts.map((t) => (t.id === selected.id ? { ...t, status: nextStatus, statusSource: 'manual' } : t)),
                   );
                 }}
                 className="rounded-md border border-border-default bg-field px-2 py-1 text-xs text-text-secondary focus:border-accent focus:outline-none"
