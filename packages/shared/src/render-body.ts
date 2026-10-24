@@ -40,9 +40,23 @@ function applyMarks(html: string, marks: ProseMirrorMark[] = []): string {
   }, html);
 }
 
-function textAlignStyle(node: ProseMirrorNode): string {
+function textAlignDeclaration(node: ProseMirrorNode): string {
   const align = node.attrs?.textAlign;
-  return typeof align === 'string' && align !== 'left' ? ` style="text-align:${align}"` : '';
+  return typeof align === 'string' && align !== 'left' ? `text-align:${align}` : '';
+}
+
+// Email clients reset the margins of block elements in the message body
+// (Gmail in particular renders `<p>one</p><p>two</p>` as two flush lines), so
+// spacing that looks right in the editor collapses into one solid block on
+// arrival. Only an inline style survives — a client can drop a <style> block
+// but not an attribute — so every text block carries its own spacing. 16px is
+// the browser default `1em` paragraph gap, so the in-app preview (a plain
+// iframe with no reset) and the delivered email show the same rhythm.
+const BLOCK_SPACING = 'margin:0 0 16px';
+
+function blockStyle(node: ProseMirrorNode): string {
+  const align = textAlignDeclaration(node);
+  return align ? `${BLOCK_SPACING};${align}` : BLOCK_SPACING;
 }
 
 const DEFAULT_BUTTON_COLOR = '#6366F1';
@@ -56,11 +70,16 @@ function renderNodeHtml(node: ProseMirrorNode): string {
   switch (node.type) {
     case 'doc':
       return (node.content ?? []).map(renderNodeHtml).join('');
-    case 'paragraph':
-      return `<p${textAlignStyle(node)}>${(node.content ?? []).map(renderNodeHtml).join('')}</p>`;
+    case 'paragraph': {
+      const content = (node.content ?? []).map(renderNodeHtml).join('');
+      // An empty paragraph is how a blank line is typed in the editor, and
+      // Gmail drops an empty <p> outright — a non-breaking space keeps the
+      // line the author actually sees.
+      return `<p style="${blockStyle(node)}">${content || '&nbsp;'}</p>`;
+    }
     case 'heading': {
       const level = typeof node.attrs?.level === 'number' ? node.attrs.level : 1;
-      return `<h${level}${textAlignStyle(node)}>${(node.content ?? []).map(renderNodeHtml).join('')}</h${level}>`;
+      return `<h${level} style="${blockStyle(node)}">${(node.content ?? []).map(renderNodeHtml).join('')}</h${level}>`;
     }
     case 'bulletList':
       return `<ul>${(node.content ?? []).map(renderNodeHtml).join('')}</ul>`;
