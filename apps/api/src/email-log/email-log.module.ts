@@ -4,9 +4,10 @@ import { EmailLogService } from './email-log.service';
 import { AuthModule } from '../auth/auth.module';
 import { SendingModule } from '../sending/sending.module';
 import { TrackingModule } from '../tracking/tracking.module';
+import { SuppressionModule } from '../suppression/suppression.module';
 
 @Module({
-  imports: [AuthModule, SendingModule, TrackingModule],
+  imports: [AuthModule, SendingModule, TrackingModule, SuppressionModule],
   controllers: [EmailLogController],
   providers: [EmailLogService],
 })

@@ -20,7 +20,7 @@ import {
   resolveNextExecutableStep,
   type RunnerStep,
 } from './step-resolution.util';
-import { resolveTemplateContent } from '@genius-campaign/shared';
+import { appendToHtmlBody, resolveTemplateContent } from '@genius-campaign/shared';
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { SenderAccountService } from '../sending/sender-account.service';
 import { SuppressionService } from '../suppression/suppression.service';
@@ -253,10 +253,12 @@ export class SequenceRunnerService {
     }
 
     // Two independent gates: suppression_list and contact.status — a
-    // contact can carry status 'suppressed'/'unsubscribed' without a
+    // contact can carry status 'suppressed'/'unsubscribed'/'bounced' without a
     // matching suppression_list row and must still never receive a send.
     const statusBlocked =
-      contact.status === 'suppressed' || contact.status === 'unsubscribed';
+      contact.status === 'suppressed' ||
+      contact.status === 'unsubscribed' ||
+      contact.status === 'bounced';
     if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
       await this.drizzle.db.insert(sends).values({
         contactId: contact.id,
@@ -299,7 +301,10 @@ export class SequenceRunnerService {
         .replace(/<font[\s\S]*?>([\s\S]*?)<\/font>/gi, '$1')
         // The strip above also removed the image width guard — re-apply it so a
         // wide upload can't overflow the body with "remove styling" enabled.
-        .replace(/<img\b/gi, '<img style="max-width:100%;height:auto;display:block" ');
+        .replace(
+          /<img\b/gi,
+          '<img style="max-width:100%;height:auto;display:block" ',
+        );
     }
     // T09 — verification gate: never send risky/undeliverable when enabled.
     if (seqSettings?.verifyBeforeSend) {
@@ -335,7 +340,10 @@ export class SequenceRunnerService {
         )
       : resolvedBodyHtmlRaw;
     const resolvedBodyHtml = trackOpen
-      ? `${htmlWithClickTracking}<img src="${this.tracking.buildOpenPixelUrl(sendId)}" width="1" height="1" alt="" style="display:none" />`
+      ? appendToHtmlBody(
+          htmlWithClickTracking,
+          `<img src="${this.tracking.buildOpenPixelUrl(sendId)}" width="1" height="1" alt="" style="display:none" />`,
+        )
       : htmlWithClickTracking;
     let bodyHtml = resolvedBodyHtml;
 
@@ -354,18 +362,24 @@ export class SequenceRunnerService {
       if ((seqSettings?.unsubFormat ?? 'text') === 'link') {
         if (unsubscribeUrl !== '#') {
           resolvedBodyText += `\n\n---\nUnsubscribe: ${unsubscribeUrl}`;
-          bodyHtml += `<p style="margin-top:16px;font-size:12px;color:#6b7280"><a href="${unsubscribeUrl}" style="color:#6b7280">Unsubscribe</a></p>`;
+          bodyHtml = appendToHtmlBody(
+            bodyHtml,
+            `<p style="margin-top:16px;font-size:12px;color:#6b7280"><a href="${unsubscribeUrl}" style="color:#6b7280">Unsubscribe</a></p>`,
+          );
         }
       } else {
         resolvedBodyText += `\n\n---\n${message}`;
         if (unsubscribeUrl !== '#') {
           resolvedBodyText += `\nUnsubscribe: ${unsubscribeUrl}`;
         }
-        bodyHtml += `<p style="margin-top:16px;font-size:12px;color:#6b7280">${escapeHtml(message)}${
-          unsubscribeUrl !== '#'
-            ? ` <a href="${unsubscribeUrl}" style="color:#6b7280">Unsubscribe</a>`
-            : ''
-        }</p>`;
+        bodyHtml = appendToHtmlBody(
+          bodyHtml,
+          `<p style="margin-top:16px;font-size:12px;color:#6b7280">${escapeHtml(message)}${
+            unsubscribeUrl !== '#'
+              ? ` <a href="${unsubscribeUrl}" style="color:#6b7280">Unsubscribe</a>`
+              : ''
+          }</p>`,
+        );
       }
     }
 
@@ -622,10 +636,11 @@ export class SequenceRunnerService {
         : await this.drizzle.db.query.sequences.findFirst({
             where: eq(sequences.id, rootSequenceId),
           });
-    const rootSettings =
-      await this.drizzle.db.query.sequenceSettings.findFirst({
+    const rootSettings = await this.drizzle.db.query.sequenceSettings.findFirst(
+      {
         where: eq(sequenceSettings.sequenceId, rootSequenceId),
-      });
+      },
+    );
     const ownSettings =
       rootSequenceId === sequenceId
         ? rootSettings

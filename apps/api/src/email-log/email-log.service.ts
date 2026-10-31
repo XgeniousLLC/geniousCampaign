@@ -46,7 +46,11 @@ export class EmailLogService {
    * resending (GC-132). */
   async getDetail(sendId: string) {
     const [row] = await this.drizzle.db
-      .select({ send: sends, contactEmail: contacts.email })
+      .select({
+        send: sends,
+        contactEmail: contacts.email,
+        contactStatus: contacts.status,
+      })
       .from(sends)
       .leftJoin(contacts, eq(sends.contactId, contacts.id))
       .where(eq(sends.id, sendId));
@@ -61,6 +65,7 @@ export class EmailLogService {
     return {
       send: row.send,
       recipientEmail: row.contactEmail || '',
+      contactStatus: row.contactStatus ?? null,
       events,
     };
   }
