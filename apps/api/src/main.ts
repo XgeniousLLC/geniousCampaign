@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { raw } from 'express';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,7 +13,9 @@ import { DrizzleService } from './db/drizzle.service';
 const MIGRATION_LOCK_KEY = 728_113_001;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
 
   // Apply pending migrations before accepting traffic, so a deploy is just
   // "start the app" — no separate `npm run db:migrate` step. drizzle's
@@ -42,6 +45,9 @@ async function bootstrap() {
   }
 
   app.enableCors();
+  // Designed (email-studio) templates save the block tree plus compiled HTML,
+  // which outgrows express's 100kb default once images are inlined.
+  app.useBodyParser('json', { limit: '5mb' });
   // AWS SNS posts webhook notifications with Content-Type: text/plain even
   // though the body is JSON. Nest's `rawBody: true` capture only recognizes
   // application/json and application/x-www-form-urlencoded, so req.rawBody

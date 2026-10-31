@@ -31,4 +31,9 @@ describe('resolveSpintax', () => {
     // value would be a ~4^-19 chance — this is a real spread check, not a tautology.
     expect(seen.size).toBeGreaterThan(1);
   });
+
+  it('leaves <style> blocks untouched', () => {
+    const css = '<style>a{color:red}@media (max-width:600px){.x{display:block}}</style>';
+    expect(resolveSpintax(`${css}{Hi|Hi}`)).toBe(`${css}Hi`);
+  });
 });

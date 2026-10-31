@@ -90,6 +90,10 @@ function resolveNode(node: SpintaxNode): string {
  * Picks uniformly at random among each group's options.
  */
 export function resolveSpintax(text: string): string {
-  const { node } = parseSequence(text, 0, '');
-  return resolveNode(node);
+  // CSS in an email's <style> block is full of `{...}` that would otherwise
+  // parse as single-option groups and lose its braces — pass those through.
+  return text
+    .split(/(<style[\s\S]*?<\/style>)/i)
+    .map((part, i) => (i % 2 === 1 ? part : resolveNode(parseSequence(part, 0, '').node)))
+    .join('');
 }

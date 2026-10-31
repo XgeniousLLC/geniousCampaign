@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { EditorView } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
@@ -12,7 +12,7 @@ import { R2Image } from '../lib/tiptap/r2-image';
 import { CtaButton } from '../lib/tiptap/cta-button';
 import { uploadImageFile } from '../lib/imageUploadPipeline';
 import { TemplateEditorToolbar } from '../components/TemplateEditorToolbar';
-import { TemplateLineField } from '../components/TemplateLineField';
+import { TemplateLinesFields } from '../components/TemplateLinesFields';
 import { TemplateLibraryModal } from '../components/TemplateLibraryModal';
 import { TemplatePreviewModal } from '../components/TemplatePreviewModal';
 import { SendTestEmailModal } from '../components/SendTestEmailModal';
@@ -20,14 +20,15 @@ import { LinkClickPopover } from '../components/LinkClickPopover';
 import { PromptDialog } from '../components/PromptDialog';
 import { CheckCircleIcon, XCircleIcon } from '../components/icons';
 import { TemplateEditorSkeleton } from '../components/skeletons';
-import { createTemplate, getTemplate, updateTemplate, deleteTemplate } from '../lib/templatesApi';
+import { createTemplate, getTemplate, updateTemplate, deleteTemplate, type Template } from '../lib/templatesApi';
+import { StudioTemplateEditor } from './StudioTemplateEditor';
 import { useAuthStore } from '../stores/useAuthStore';
 import type { LibraryTemplate } from '../lib/emailTemplateLibrary';
 
 const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] };
 
-export function TemplateEditor() {
-  const { id } = useParams();
+export function PlainTemplateEditor({ template }: { template?: Template }) {
+  const id = template?.id;
   const navigate = useNavigate();
   const isNew = !id;
 
@@ -126,18 +127,13 @@ export function TemplateEditor() {
   }
 
   useEffect(() => {
-    if (!id || !editor) return;
-    let cancelled = false;
-    getTemplate(id).then((template) => {
-      if (cancelled || editor.isDestroyed) return;
-      setName(template.name);
-      setSubjectLines(template.subjectLines.length > 0 ? template.subjectLines : ['']);
-      setPreviewTextLines(template.previewTextLines);
-      editor.commands.setContent(template.bodyJson);
-      setLoaded(true);
-    });
-    return () => { cancelled = true; };
-  }, [id, editor]);
+    if (!template || !editor || editor.isDestroyed) return;
+    setName(template.name);
+    setSubjectLines(template.subjectLines.length > 0 ? template.subjectLines : ['']);
+    setPreviewTextLines(template.previewTextLines);
+    editor.commands.setContent(template.bodyJson);
+    setLoaded(true);
+  }, [template, editor]);
 
   function toast(text: string, tone: 'success' | 'error') {
     setNotice({ text, tone });
@@ -179,22 +175,6 @@ export function TemplateEditor() {
     setShowLibrary(false);
   }
 
-  function updateSubjectLine(index: number, value: string) {
-    setSubjectLines((prev) => prev.map((s, i) => (i === index ? value : s)));
-  }
-
-  function removeSubjectLine(index: number) {
-    setSubjectLines((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function updatePreviewTextLine(index: number, value: string) {
-    setPreviewTextLines((prev) => prev.map((s, i) => (i === index ? value : s)));
-  }
-
-  function removePreviewTextLine(index: number) {
-    setPreviewTextLines((prev) => prev.filter((_, i) => i !== index));
-  }
-
   async function handleDelete() {
     if (!id) return;
     if (!confirm('Delete this template?')) return;
@@ -221,7 +201,11 @@ export function TemplateEditor() {
         ← Templates
       </RouterLink>
       {showLibrary && canWrite && (
-        <TemplateLibraryModal onPick={applyLibraryTemplate} onBlank={() => setShowLibrary(false)} />
+        <TemplateLibraryModal
+          onPick={applyLibraryTemplate}
+          onBlank={() => setShowLibrary(false)}
+          onDesigned={() => navigate('/templates/new?designed', { replace: true })}
+        />
       )}
       {notice && (
         <div
@@ -289,55 +273,13 @@ export function TemplateEditor() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-meta">Subject lines — one is picked at random per send</span>
-            {canWrite && (
-              <button
-                type="button"
-                onClick={() => setSubjectLines((prev) => [...prev, ''])}
-                className="text-[11px] font-medium text-accent-light hover:text-accent-lighter"
-              >
-                + Add subject line
-              </button>
-            )}
-          </div>
-          {subjectLines.map((line, i) => (
-            <TemplateLineField
-              key={i}
-              value={line}
-              onChange={(v) => updateSubjectLine(i, v)}
-              onRemove={canWrite ? () => removeSubjectLine(i) : undefined}
-              removeDisabled={subjectLines.length <= 1}
-              placeholder="Subject line, e.g. Hi {{contact.firstName}}"
-            />
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-2 border-b border-border-subtle px-5 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-meta">Preview text — inbox preheader, also shuffled per send</span>
-            {canWrite && (
-              <button
-                type="button"
-                onClick={() => setPreviewTextLines((prev) => [...prev, ''])}
-                className="text-[11px] font-medium text-accent-light hover:text-accent-lighter"
-              >
-                + Add preview text
-              </button>
-            )}
-          </div>
-          {previewTextLines.length === 0 && <div className="text-xs text-text-faint">No preview text set.</div>}
-          {previewTextLines.map((line, i) => (
-            <TemplateLineField
-              key={i}
-              value={line}
-              onChange={(v) => updatePreviewTextLine(i, v)}
-              onRemove={canWrite ? () => removePreviewTextLine(i) : undefined}
-              placeholder="Preview text shown next to the subject in the inbox"
-            />
-          ))}
-        </div>
+        <TemplateLinesFields
+          subjectLines={subjectLines}
+          setSubjectLines={setSubjectLines}
+          previewTextLines={previewTextLines}
+          setPreviewTextLines={setPreviewTextLines}
+          canWrite={canWrite}
+        />
 
         <TemplateEditorToolbar editor={editor} />
 
@@ -398,5 +340,41 @@ export function TemplateEditor() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Routes to the right editor: designed (drag-and-drop studio) when the saved
+ * body came from it or `?designed` is set on /templates/new, otherwise the
+ * plain TipTap editor.
+ */
+export function TemplateEditor() {
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const [template, setTemplate] = useState<Template | undefined>();
+  const [loading, setLoading] = useState(Boolean(id));
+
+  useEffect(() => {
+    if (!id) {
+      setTemplate(undefined);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    getTemplate(id).then((t) => {
+      if (cancelled) return;
+      setTemplate(t);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) return <TemplateEditorSkeleton />;
+  const designed = template ? template.bodyJson.type === 'email-studio' : searchParams.has('designed');
+  return designed ? (
+    <StudioTemplateEditor key={id ?? 'new'} template={template} />
+  ) : (
+    <PlainTemplateEditor key={id ?? 'new'} template={template} />
   );
 }

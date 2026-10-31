@@ -163,10 +163,55 @@ function renderNodeText(node: ProseMirrorNode): string {
   }
 }
 
-export function renderBodyHtml(bodyJson: ProseMirrorNode): string {
-  return renderNodeHtml(bodyJson);
+/**
+ * Body of a template built in the drag-and-drop email studio (apps/web
+ * public/email-studio). `doc` is the editable block tree, only meaningful to
+ * the studio; `html` is the finished table-based, inline-styled email the
+ * studio compiled from it and is what actually gets sent. Stored in the same
+ * `bodyJson` column as TipTap documents, discriminated by `type`.
+ */
+export interface EmailStudioBody {
+  type: 'email-studio';
+  doc: Record<string, unknown>;
+  html: string;
 }
 
-export function renderBodyText(bodyJson: ProseMirrorNode): string {
-  return renderNodeText(bodyJson).trim();
+export function isEmailStudioBody(body: { type: string }): body is EmailStudioBody {
+  return body.type === 'email-studio' && typeof (body as Partial<EmailStudioBody>).html === 'string';
+}
+
+function studioHtmlToText(html: string): string {
+  return html
+    .replace(/<(style|head|title)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, label: string) => {
+      const text = label.replace(/<[^>]+>/g, '').trim();
+      return !href || href === '#' || text === href ? text : `${text} (${href})`;
+    })
+    .replace(/<\/(p|div|h[1-6]|li|tr|table)>|<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+export function renderBodyHtml(bodyJson: ProseMirrorNode | EmailStudioBody): string {
+  return isEmailStudioBody(bodyJson) ? bodyJson.html : renderNodeHtml(bodyJson);
+}
+
+export function renderBodyText(bodyJson: ProseMirrorNode | EmailStudioBody): string {
+  return (isEmailStudioBody(bodyJson) ? studioHtmlToText(bodyJson.html) : renderNodeText(bodyJson)).trim();
+}
+
+/**
+ * Appends a fragment (tracking pixel, unsubscribe footer) inside <body> when
+ * the HTML is a full document — content after </html> is invalid and some
+ * clients drop it. Plain fragments (TipTap bodies) just get it appended.
+ */
+export function appendToHtmlBody(html: string, fragment: string): string {
+  const at = html.toLowerCase().lastIndexOf('</body>');
+  return at === -1 ? html + fragment : html.slice(0, at) + fragment + html.slice(at);
 }

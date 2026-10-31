@@ -5,7 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { resolveTemplateContent } from '@genius-campaign/shared';
+import { appendToHtmlBody, resolveTemplateContent } from '@genius-campaign/shared';
 import { DrizzleService } from '../db/drizzle.service';
 import type { DbOrTx } from '../db/types';
 import { campaigns, sends, templates, lists, contacts, contactTags, emailEvents, senderAccounts } from '../db/schema';
@@ -492,7 +492,10 @@ export class CampaignsService {
       resolvedBodyHtmlRaw,
       (url) => this.tracking.buildClickUrl(sendId, url),
     );
-    const resolvedBodyHtml = `${htmlWithClickTracking}<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`;
+    const resolvedBodyHtml = appendToHtmlBody(
+      htmlWithClickTracking,
+      `<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`,
+    );
 
     const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
     const unsubscribeUrl = trackingSecret
