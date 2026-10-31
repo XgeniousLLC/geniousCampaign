@@ -689,6 +689,20 @@ export class InboxService {
         })
       : null;
     if (!contact) throw new Error('Contact not found');
+    // Same send gate as campaign/sequence sends: never reply to a contact
+    // whose status is suppressed/unsubscribed/bounced or whose email is on
+    // the suppression list.
+    const statusBlocked =
+      contact.status === 'suppressed' ||
+      contact.status === 'unsubscribed' ||
+      contact.status === 'bounced';
+    if (statusBlocked || (await this.suppression.isSuppressed(contact.email))) {
+      throw new Error(
+        statusBlocked
+          ? `Cannot reply: ${contact.email} has status "${contact.status}"`
+          : `Cannot reply: ${contact.email} is on the suppression list`,
+      );
+    }
     // Resolve {{firstName}} style tokens from contact — non-scalar fields
     // resolve to '' rather than '[object Object]'.
     const resolveToken = (key: string): string => {

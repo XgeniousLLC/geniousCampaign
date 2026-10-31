@@ -17,6 +17,7 @@ import {
   type Tag,
 } from '../lib/contactsApi';
 import { listCustomFieldDefs, type CustomFieldDef } from '../lib/customFieldsApi';
+import { manualUnsubscribe } from '../lib/suppressionApi';
 import { useAuthStore } from '../stores/useAuthStore';
 import { ContactEnrollments } from '../components/ContactEnrollments';
 import { CustomFieldInput, FormField } from './ContactsList';
@@ -33,6 +34,9 @@ export function ContactDetail() {
   const [newFieldValue, setNewFieldValue] = useState<string | boolean>('');
   const [savingField, setSavingField] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmUnsubscribe, setConfirmUnsubscribe] = useState(false);
+  const [unsubscribing, setUnsubscribing] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
   const canWriteLists = useAuthStore((s) => s.user?.role !== 'viewer');
 
   async function reload() {
@@ -48,6 +52,12 @@ export function ContactDetail() {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   if (!contact) return <ContactDetailSkeleton />;
 
@@ -66,6 +76,25 @@ export function ContactDetail() {
     if (has) await removeContactList(listId, id);
     else await addContactList(listId, id);
     reload();
+  }
+
+  // Quick action: adds the contact to the real suppression list (so future
+  // campaign/sequence sends actually skip them) and flips status to
+  // 'unsubscribed' — same backend path as the contacts bulk action.
+  async function runUnsubscribe() {
+    if (!id || unsubscribing) return;
+    setUnsubscribing(true);
+    try {
+      await manualUnsubscribe(id);
+      setConfirmUnsubscribe(false);
+      await reload();
+      setNotice({ text: 'Contact unsubscribed — they will not receive future emails.', tone: 'success' });
+    } catch (err) {
+      setConfirmUnsubscribe(false);
+      setNotice({ text: err instanceof Error ? err.message : 'Failed to unsubscribe contact.', tone: 'error' });
+    } finally {
+      setUnsubscribing(false);
+    }
   }
 
   const availableFieldDefs = customFieldDefs.filter((def) => !(def.key in contact.customFields));
@@ -105,14 +134,35 @@ export function ContactDetail() {
           </div>
         </div>
         {canWriteLists && (
-          <button
-            onClick={() => setEditing(true)}
-            className="h-8 shrink-0 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
-          >
-            Edit
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {contact.status !== 'unsubscribed' && (
+              <button
+                onClick={() => setConfirmUnsubscribe(true)}
+                className="h-8 shrink-0 rounded-md border border-danger/30 bg-danger/10 px-3 text-xs font-medium text-danger hover:bg-danger/15"
+              >
+                Unsubscribe
+              </button>
+            )}
+            <button
+              onClick={() => setEditing(true)}
+              className="h-8 shrink-0 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
+            >
+              Edit
+            </button>
+          </div>
         )}
       </div>
+
+      {notice && (
+        <div
+          role="status"
+          className={`mb-4 rounded-md border px-3 py-2 text-xs ${
+            notice.tone === 'success' ? 'border-success/25 bg-success/10 text-success' : 'border-danger/25 bg-danger/10 text-danger'
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
 
       <div className="grid grid-cols-[280px_1fr] items-start gap-4">
         <div className="flex flex-col gap-3.5">
@@ -224,6 +274,36 @@ export function ContactDetail() {
       </div>
 
       {editing && <EditContactModal contact={contact} onClose={() => setEditing(false)} onSaved={reload} />}
+
+      {confirmUnsubscribe && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-6" onClick={() => setConfirmUnsubscribe(false)}>
+          <div
+            className="w-[420px] max-w-full rounded-xl border border-border-modal bg-panel2 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-sm font-semibold text-text-heading">Unsubscribe this contact?</h3>
+            <p className="mb-4 text-xs text-text-muted">
+              <span className="font-mono text-text-secondary">{contact.email}</span> will be added to the suppression list and
+              won&apos;t receive any future campaigns or sequences. The contact and their history are kept.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmUnsubscribe(false)}
+                className="h-8 rounded-md border border-border-subtle px-3.5 text-xs font-medium text-text-secondary hover:bg-raised"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runUnsubscribe}
+                disabled={unsubscribing}
+                className="h-8 rounded-md bg-danger px-3.5 text-xs font-semibold text-white hover:bg-danger/90 disabled:opacity-50"
+              >
+                {unsubscribing ? 'Unsubscribing…' : 'Unsubscribe'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

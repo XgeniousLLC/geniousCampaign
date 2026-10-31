@@ -8,6 +8,7 @@ import { EmailLogService, type EmailLogFilter, EMAIL_LOG_KEEP_DAYS_OPTIONS, type
 import { SendDispatcherService } from '../sending/send-dispatcher.service';
 import { SettingsService } from '../settings/settings.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { SuppressionService } from '../suppression/suppression.service';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
 
 @Controller('email-log')
@@ -19,6 +20,7 @@ export class EmailLogController {
     private readonly auditLog: AuditLogService,
     private readonly settings: SettingsService,
     private readonly tracking: TrackingService,
+    private readonly suppression: SuppressionService,
   ) {}
 
   @Get()
@@ -53,6 +55,20 @@ export class EmailLogController {
     }
     if (!detail.recipientEmail) {
       throw new BadRequestException('Cannot resend: recipient email not found');
+    }
+    // Same send gate as campaign/sequence sends: a contact whose status is
+    // suppressed/unsubscribed/bounced — or whose email is on the suppression
+    // list — must never receive a resend, even if the original send failed.
+    const statusBlocked =
+      detail.contactStatus === 'suppressed' ||
+      detail.contactStatus === 'unsubscribed' ||
+      detail.contactStatus === 'bounced';
+    if (statusBlocked || (await this.suppression.isSuppressed(detail.recipientEmail))) {
+      throw new BadRequestException(
+        statusBlocked
+          ? `Cannot resend: ${detail.recipientEmail} has status "${detail.contactStatus}"`
+          : `Cannot resend: ${detail.recipientEmail} is on the suppression list`,
+      );
     }
     const trackingSecret = this.settings.get('TRACKING_SIGNING_SECRET');
     const unsubscribeUrl = trackingSecret
