@@ -158,47 +158,57 @@ export class TrackingService implements OnModuleInit {
   }
 
   async recordOpen(sendId: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({
-      where: eq(sends.id, sendId),
-    });
-    if (!send) {
-      await this.debugLog.record({
-        source: 'backend',
-        message: `[TRACKING_ERROR] Send not found for sendId: ${sendId}`,
-        context: { sendId, error: 'Send record not found' },
-      });
-      return;
-    }
     try {
+      const send = await this.drizzle.db.query.sends.findFirst({
+        where: eq(sends.id, sendId),
+      });
+      if (!send) {
+        await this.debugLog.record({
+          source: 'backend',
+          message: `[TRACKING_ERROR] Send not found for sendId: ${sendId}`,
+          context: { sendId, error: 'Send record not found' },
+        });
+        return;
+      }
       await this.drizzle.db
         .insert(emailEvents)
         .values({ sendId, type: 'open' });
       this.events.emit('email.opened', { sendId, contactId: send.contactId });
     } catch (err) {
-      await this.debugLog.record({
-        source: 'backend',
-        message: `[TRACKING_ERROR] Failed to record open event for sendId: ${sendId}`,
-        stack: err instanceof Error ? err.stack : String(err),
-        context: {
-          sendId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      });
+      await this.recordTrackingFailure('open', sendId, err);
     }
   }
 
   async recordClick(sendId: string, url: string) {
-    const send = await this.drizzle.db.query.sends.findFirst({
-      where: eq(sends.id, sendId),
-    });
-    if (!send) return;
-    await this.drizzle.db
-      .insert(emailEvents)
-      .values({ sendId, type: 'click', url });
-    this.events.emit('email.clicked', {
-      sendId,
-      contactId: send.contactId,
-      url,
+    try {
+      const send = await this.drizzle.db.query.sends.findFirst({
+        where: eq(sends.id, sendId),
+      });
+      if (!send) return;
+      await this.drizzle.db
+        .insert(emailEvents)
+        .values({ sendId, type: 'click', url });
+      this.events.emit('email.clicked', {
+        sendId,
+        contactId: send.contactId,
+        url,
+      });
+    } catch (err) {
+      await this.recordTrackingFailure('click', sendId, err);
+    }
+  }
+
+  // Tracking is best-effort: the pixel must still return its GIF and a click
+  // must still redirect when the database is unhappy. Drizzle wraps driver
+  // errors ("Failed query: ...") and hides the Postgres message in `cause`,
+  // so log that — it is the only part that says what actually went wrong.
+  private async recordTrackingFailure(kind: 'open' | 'click', sendId: string, err: unknown) {
+    const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined;
+    await this.debugLog.record({
+      source: 'backend',
+      message: `[TRACKING_ERROR] Failed to record ${kind} event for sendId: ${sendId}${cause ? ` — ${cause}` : ''}`,
+      stack: err instanceof Error ? err.stack : String(err),
+      context: { sendId, error: err instanceof Error ? err.message : String(err), cause },
     });
   }
 }
