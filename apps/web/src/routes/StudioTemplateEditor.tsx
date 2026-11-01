@@ -9,8 +9,6 @@ import { uploadImageFile } from '../lib/imageUploadPipeline';
 import { createTemplate, updateTemplate, deleteTemplate, type Template } from '../lib/templatesApi';
 import { useAuthStore } from '../stores/useAuthStore';
 
-const STUDIO_URL = '/email-studio/index.html';
-
 // Messages exchanged with the editor iframe (public/email-studio/index.html).
 // It runs same-origin, so every message is origin- and source-checked.
 type FromStudio =
@@ -40,6 +38,25 @@ export function StudioTemplateEditor({ template }: { template?: Template }) {
   const [showPreview, setShowPreview] = useState(false);
   const [showSendTest, setShowSendTest] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // The editor page ships inside the JS bundle and is served from a blob: URL
+  // (same origin as this page), so it can't 404 behind a SPA fallback or a
+  // static-file rule on the host.
+  const [frameUrl, setFrameUrl] = useState<string>();
+
+  useEffect(() => {
+    if (!canWrite) return;
+    let url: string | undefined;
+    let cancelled = false;
+    import('../studio/email-studio.html?raw').then((m) => {
+      if (cancelled) return;
+      url = URL.createObjectURL(new Blob([m.default], { type: 'text/html' }));
+      setFrameUrl(url);
+    });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [canWrite]);
 
   const bodyHtml = useMemo(() => (body ? renderBodyHtml(body) : ''), [body]);
   const bodyText = useMemo(() => (body ? renderBodyText(body) : ''), [body]);
@@ -189,7 +206,7 @@ export function StudioTemplateEditor({ template }: { template?: Template }) {
 
         <div className="h-[78vh] min-h-[600px] bg-white">
           {canWrite ? (
-            <iframe ref={frameRef} src={STUDIO_URL} title="Email designer" className="h-full w-full border-0" />
+            frameUrl && <iframe ref={frameRef} src={frameUrl} title="Email designer" className="h-full w-full border-0" />
           ) : (
             <iframe srcDoc={bodyHtml} sandbox="" title="Template preview" className="h-full w-full border-0" />
           )}

@@ -21,7 +21,7 @@ interface Studio {
 
 function loadStudio(): Studio {
   const page = readFileSync(
-    resolve(__dirname, '../../../web/public/email-studio/index.html'),
+    resolve(__dirname, '../../../web/src/studio/email-studio.html'),
     'utf8',
   );
   const script = page.slice(

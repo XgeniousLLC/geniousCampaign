@@ -63,6 +63,8 @@ export function ContactDetail() {
 
   const name = contact.firstName || contact.lastName ? `${contact.firstName ?? ''} ${contact.lastName ?? ''}`.trim() : contact.email;
   const initials = ((contact.firstName?.[0] ?? contact.email[0]) + (contact.lastName?.[0] ?? '')).toUpperCase();
+  const statusLabel = contact.status.charAt(0).toUpperCase() + contact.status.slice(1);
+  const statusBlocked = contact.status === 'unsubscribed' || contact.status === 'suppressed' || contact.status === 'bounced';
 
   async function toggleTag(tagId: string, has: boolean) {
     if (!id) return;
@@ -129,7 +131,15 @@ export function ContactDetail() {
             {initials}
           </span>
           <div>
-            <h1 className="text-base font-semibold text-text-heading">{name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-semibold text-text-heading">{name}</h1>
+              {statusBlocked && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[11px] font-semibold text-danger">
+                  <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+                  {statusLabel}
+                </span>
+              )}
+            </div>
             <div className="mt-0.5 font-mono text-xs text-text-muted">{contact.email}</div>
           </div>
         </div>
@@ -164,12 +174,23 @@ export function ContactDetail() {
         </div>
       )}
 
-      <div className="grid grid-cols-[280px_1fr] items-start gap-4">
+      {editing ? (
+        <EditContactForm
+          contact={contact}
+          defs={customFieldDefs}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            reload();
+          }}
+        />
+      ) : (
+        <div className="grid grid-cols-[280px_1fr] items-start gap-4">
         <div className="flex flex-col gap-3.5">
           <div className="rounded-md border border-border-default bg-panel p-4">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-label">Fields</div>
             <div className="flex flex-col gap-2 text-xs">
-              <Field label="Status" value={contact.status.charAt(0).toUpperCase() + contact.status.slice(1)} />
+              <Field label="Status" value={statusLabel} tone={statusBlocked ? 'danger' : 'default'} />
               <Field label="Created" value={new Date(contact.createdAt).toLocaleDateString()} />
               {Object.entries(contact.customFields).map(([k, v]) => (
                 <Field key={k} label={k} value={String(v)} />
@@ -272,8 +293,7 @@ export function ContactDetail() {
           </div>
         </div>
       </div>
-
-      {editing && <EditContactModal contact={contact} onClose={() => setEditing(false)} onSaved={reload} />}
+      )}
 
       {confirmUnsubscribe && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-6" onClick={() => setConfirmUnsubscribe(false)}>
@@ -314,7 +334,17 @@ export function ContactDetail() {
 // later removed, are never hidden from editing) and appends every catalog
 // definition not already present. Definitions are never created here (same
 // GC-134 boundary: this page picks from the catalog, it doesn't invent keys).
-function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onClose: () => void; onSaved: () => void }) {
+function EditContactForm({
+  contact,
+  defs,
+  onCancel,
+  onSaved,
+}: {
+  contact: Contact;
+  defs: CustomFieldDef[];
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
   const [firstName, setFirstName] = useState(contact.firstName ?? '');
   const [lastName, setLastName] = useState(contact.lastName ?? '');
   const [email, setEmail] = useState(contact.email);
@@ -325,15 +355,8 @@ function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onC
       Object.entries(contact.customFields).map(([k, v]) => [k, typeof v === 'boolean' ? v : v == null ? '' : String(v)]),
     ),
   );
-  const [defs, setDefs] = useState<CustomFieldDef[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    listCustomFieldDefs()
-      .then(setDefs)
-      .catch(() => setDefs([]));
-  }, []);
 
   function defFor(key: string): CustomFieldDef {
     return (
@@ -382,7 +405,6 @@ function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onC
         customFields,
       });
       onSaved();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save contact');
     } finally {
@@ -391,11 +413,7 @@ function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onC
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-6" onClick={onClose}>
-      <div
-        className="max-h-[85vh] w-[460px] max-w-full overflow-y-auto rounded-lg border border-border-modal bg-panel2 p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="rounded-md border border-border-default bg-panel p-4">
         <h3 className="mb-4 text-sm font-semibold text-text-primary">Edit contact</h3>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="First name" value={firstName} onChange={setFirstName} placeholder="Amelia" />
@@ -436,7 +454,7 @@ function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onC
         {error && <div className="mt-3 text-[11px] text-danger">{error}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <button
-            onClick={onClose}
+            onClick={onCancel}
             className="h-8 rounded-md border border-border-strong bg-field px-3 text-xs font-medium text-text-secondary hover:bg-raised"
           >
             Cancel
@@ -449,7 +467,6 @@ function EditContactModal({ contact, onClose, onSaved }: { contact: Contact; onC
             {saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>
-      </div>
     </div>
   );
 }
@@ -515,11 +532,11 @@ function ContactDetailSkeleton() {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'danger' }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-text-muted">{label}</span>
-      <span className="truncate font-medium text-text-secondary">{value}</span>
+      <span className={`truncate font-medium ${tone === 'danger' ? 'text-danger' : 'text-text-secondary'}`}>{value}</span>
     </div>
   );
 }
