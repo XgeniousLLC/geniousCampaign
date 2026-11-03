@@ -127,7 +127,7 @@ Everything else in `.env.example` (AWS SES, Cloudflare R2, Reoon/NeverBounce, Gm
 - Base Directory: `/` (repo root)
 - Install Command: `npm install` (**not** `npm ci` — the committed `package-lock.json` was generated on macOS and is missing the Linux optional-dependency entry for `rolldown`'s native binding; `npm ci` installs exactly what's locked and fails on the Linux build container with `Cannot find module '.../rolldown-binding.linux-x64-gnu.node'`, a known npm optional-deps bug (npm/cli#4828). `npm install` re-resolves and pulls the correct platform binary. The API resource is unaffected — keep `npm ci` there.)
 - Build Command: `npm run build --workspace packages/shared && npm run build --workspace apps/web`
-- Start Command: `npx serve -s apps/web/dist -l 3000` (or any static-file server with SPA fallback — `apps/web/dist` is a static build, Nixpacks' default Node start won't serve it on its own)
+- Start Command: `npx --no-install serve -s apps/web/dist -l 3000` (or any static-file server with SPA fallback — `apps/web/dist` is a static build, Nixpacks' default Node start won't serve it on its own. `serve` is a real dependency of `apps/web`, so `--no-install` runs the locally installed copy: plain `npx serve` would try to download it from the npm registry on every container start, and that fails/hangs on a container with no registry egress, or aborts on the non-TTY "Ok to proceed?" prompt.)
 - Port: `3000` (or whatever port your static server binds)
 
 Set one **Build-Time Variable** (Coolify has a separate section for this vs. runtime env — must be build-time, since Vite inlines it into the JS bundle and it does nothing set at runtime):
