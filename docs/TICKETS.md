@@ -147,6 +147,7 @@ Status values: `Not Started` / `In Progress` / `Done` / `Blocked`. Update the ta
 | GC-149 | Settings > Integrations: re-add a Slack notifications page (reverses GC-080's removal, so `SLACK_WEBHOOK_URL` no longer needs `.env`/Coolify to configure) | 4 | S | Done | GC-051, GC-080, GC-148 |
 | GC-150 | Sequence enrollment views: show enrolled date, last executed step, and last executed time (Enrolled contacts tab + contact detail panel) | 4 | S | Done | GC-034, GC-042, GC-074 |
 | GC-151 | Fix paragraph/blank-line spacing disappearing in sent emails (renderer emitted bare `<p>`, email clients reset its margins; empty paragraphs were dropped) | 4 | S | Done | GC-015, GC-016 |
+| GC-152 | Campaign emails always include a visible unsubscribe footer; unsubscribe link now opens a 3-step confirmation page instead of opting out on GET | 4 | S | Done | GC-019, GC-050 |
 
 ---
 
@@ -1604,3 +1605,12 @@ Reported with two screenshots: a Halloween template looked correctly spaced in t
 Note: `templates.bodyHtml` is stored at save time, so templates saved before this fix keep the old markup for real campaign/sequence sends until they're saved again; the editor's `Send test`/Preview render live from `bodyJson` and pick the fix up immediately.
 
 Verified: `packages/shared` builds; added three cases to `apps/api/src/templates/render-body.spec.ts` (inline paragraph style, blank paragraph preserved as `&nbsp;` while `renderBodyText` still yields the blank line, text-align combined with spacing) — all 5 tests in the file pass; `apps/api` and `apps/web` both typecheck clean.
+
+### GC-152 — Campaign unsubscribe footer + 3-step unsubscribe confirmation page (2026-11-03)
+Requested: automatically append an unsubscribe link to campaign emails, and make the unsubscribe page require 2–3 steps before the opt-out is actually applied.
+
+**Campaign footer**: `CampaignsService.sendRecipient()` now appends a visible opt-out paragraph to every campaign email (HTML) and an `Unsubscribe: <url>` line to the text body, via `appendCampaignUnsubscribeFooter()`. It runs after click-tracking rewrite and the open pixel so the opt-out link is never wrapped in a tracking redirect. Templates stay untouched — the footer is added per send, so the same template can still be used by sequences with their own footer settings. The `List-Unsubscribe` / `List-Unsubscribe-Post` headers remain, unchanged. Campaign Compose shows a note that the footer and header are added automatically.
+
+**Unsubscribe page**: `GET /unsubscribe/:token` used to suppress immediately. A mail-client/scanner prefetch could therefore opt someone out before they saw the page. GET now renders a self-contained 3-step page instead: (1) confirm intent, (2) pick a reason, (3) type the full email address to confirm. The suppression is only written when the page calls the new `POST /unsubscribe/:token/confirm`. RFC 8058 `POST /unsubscribe/:token` stays an immediate one-click opt-out — adding steps there would break the contract inbox providers rely on. Invalid tokens get a 400 page. The page is served by the API (the host unsubscribe links already point at), no frontend bundle involved; `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`.
+
+Verified: new Jest coverage for the footer helper (full document, fragment, disabled `#` URL, attribute escaping), the page renderer (all 3 steps, masked address, script/HTML escaping), and the controller (GET does not suppress, confirm does, invalid token rejected, one-click POST still immediate) — 13 tests pass. `campaign-send.processor.spec.ts`, `campaigns.service.spec.ts`, and `rbac.spec.ts` still pass. `tsc --noEmit` clean on both apps.

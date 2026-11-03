@@ -19,6 +19,7 @@ import { rewriteLinksForTracking } from '../tracking/rewrite-links.util';
 import { signUnsubscribeToken } from '../sending/unsubscribe-token.util';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
+import { appendCampaignUnsubscribeFooter } from './campaign-unsubscribe-footer.util';
 
 const DEFAULT_LARGE_SEND_THRESHOLD = 5000;
 
@@ -484,7 +485,7 @@ export class CampaignsService {
     const resolved = resolveTemplateContent(template, contact);
     const resolvedSubject = resolved.subject;
     const resolvedBodyHtmlRaw = resolved.bodyHtml;
-    const resolvedBodyText = resolved.bodyText;
+    let resolvedBodyText = resolved.bodyText;
 
     const sendId = randomUUID();
     const openPixelUrl = this.tracking.buildOpenPixelUrl(sendId);
@@ -492,7 +493,7 @@ export class CampaignsService {
       resolvedBodyHtmlRaw,
       (url) => this.tracking.buildClickUrl(sendId, url),
     );
-    const resolvedBodyHtml = appendToHtmlBody(
+    let resolvedBodyHtml = appendToHtmlBody(
       htmlWithClickTracking,
       `<img src="${openPixelUrl}" width="1" height="1" alt="" style="display:none" />`,
     );
@@ -501,6 +502,21 @@ export class CampaignsService {
     const unsubscribeUrl = trackingSecret
       ? `${this.tracking.baseUrl}/unsubscribe/${signUnsubscribeToken(trackingSecret, contact.email)}`
       : '#';
+
+    // Campaigns are bulk mail, so every message carries a visible opt-out
+    // link in addition to the List-Unsubscribe header (RFC 8058 one-click
+    // still lives in the headers). Applied after click-tracking rewrite and
+    // the open pixel so the opt-out link is never wrapped in a tracking
+    // redirect — the recipient must land on the unsubscribe page even if
+    // tracking is blocked. Templates are shared with sequences, so this
+    // deliberately does not mutate the template itself.
+    const withFooter = appendCampaignUnsubscribeFooter(
+      resolvedBodyHtml,
+      resolvedBodyText,
+      unsubscribeUrl,
+    );
+    resolvedBodyHtml = withFooter.html;
+    resolvedBodyText = withFooter.text;
 
     if (campaign.isDryRun) {
       // Dry-run stops here — never calls the real sender at all. Distinct

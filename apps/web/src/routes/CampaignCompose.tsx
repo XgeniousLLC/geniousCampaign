@@ -319,6 +319,9 @@ export function CampaignCompose() {
                 {selectedTemplate.subjectLines.length > 1 && ` (+${selectedTemplate.subjectLines.length - 1} more)`}
               </div>
             )}
+            <div className="mt-2 text-[11px] text-text-faint">
+              An unsubscribe link and List-Unsubscribe header are added automatically to every campaign email.
+            </div>
           </div>
 
           <div className="rounded-md border border-border-default bg-panel p-5">
